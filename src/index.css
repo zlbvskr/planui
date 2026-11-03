@@ -1,0 +1,199 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  /* C16 Semantic Color Tokens — Light Mode */
+  --bg-canvas: #F5F5F7;
+  --bg-surface: #FFFFFF;
+  --bg-elevated: #ECEEF1;
+  --bg-pressed: #E1E4E9;
+  --text-primary: #18191C;
+  --text-secondary: #5D626C;
+  --border-subtle: rgba(24, 25, 28, 0.08);
+  --border-strong: rgba(24, 25, 28, 0.16);
+
+  /* Brand & Category Semantic Accents (C16) */
+  --color-brand: #B93E4B;
+  --color-brand-text: #A63340;
+  --color-brand-tint: rgba(185, 62, 75, 0.11);
+
+  --color-work: #876238;
+  --color-work-text: #75532E;
+  --color-work-tint: rgba(135, 98, 56, 0.12);
+
+  --color-dayoff: #3F705A;
+  --color-dayoff-text: #35614D;
+  --color-dayoff-tint: rgba(63, 112, 90, 0.12);
+
+  --color-personal: #3D689F;
+  --color-personal-text: #345B8C;
+  --color-personal-tint: rgba(61, 104, 159, 0.12);
+
+  --color-reservation: #745298;
+  --color-reservation-text: #654587;
+  --color-reservation-tint: rgba(116, 82, 152, 0.12);
+
+  --color-rest: #606A7D;
+  --color-rest-text: #525B6C;
+  --color-rest-tint: rgba(96, 106, 125, 0.12);
+
+  /* Floating Shell Materials (C17) */
+  --glass-bg: rgba(255, 255, 255, 0.78);
+  --glass-bg-fallback: rgba(255, 255, 255, 0.95);
+  --glass-border: rgba(24, 25, 28, 0.09);
+  --glass-shadow: 0 10px 30px -6px rgba(24, 25, 28, 0.10), 0 2px 8px -2px rgba(24, 25, 28, 0.05);
+
+  /* Motion Timing Tokens (C18) */
+  --dur-micro: 120ms;
+  --dur-small: 180ms;
+  --dur-screen: 210ms;
+  --dur-modal: 240ms;
+  --ease-out-quart: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Safe-area and Floating Geometry */
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-top: env(safe-area-inset-top, 0px);
+  --floating-scroll-clearance: calc(156px + env(safe-area-inset-bottom, 0px));
+
+  color-scheme: light;
+}
+
+.dark {
+  /* C16 Semantic Color Tokens — Dark Mode */
+  --bg-canvas: #000000;
+  --bg-surface: #111214;
+  --bg-elevated: #1B1D21;
+  --bg-pressed: #272A30;
+  --text-primary: #F5F5F7;
+  --text-secondary: #ADB1BA;
+  --border-subtle: rgba(245, 245, 247, 0.09);
+  --border-strong: rgba(245, 245, 247, 0.18);
+
+  /* Brand & Category Semantic Accents (C16 Dark) */
+  --color-brand: #F08B95;
+  --color-brand-text: #F08B95;
+  --color-brand-tint: rgba(240, 139, 149, 0.15);
+
+  --color-work: #C6A172;
+  --color-work-text: #C6A172;
+  --color-work-tint: rgba(198, 161, 114, 0.15);
+
+  --color-dayoff: #8AB49E;
+  --color-dayoff-text: #8AB49E;
+  --color-dayoff-tint: rgba(138, 180, 158, 0.15);
+
+  --color-personal: #89AEE0;
+  --color-personal-text: #89AEE0;
+  --color-personal-tint: rgba(137, 174, 224, 0.15);
+
+  --color-reservation: #B9A1DE;
+  --color-reservation-text: #B9A1DE;
+  --color-reservation-tint: rgba(185, 161, 222, 0.15);
+
+  --color-rest: #A1ABC0;
+  --color-rest-text: #A1ABC0;
+  --color-rest-tint: rgba(161, 171, 192, 0.15);
+
+  /* Floating Shell Materials (C17 Dark) */
+  --glass-bg: rgba(27, 29, 33, 0.78);
+  --glass-bg-fallback: rgba(27, 29, 33, 0.96);
+  --glass-border: rgba(245, 245, 247, 0.11);
+  --glass-shadow: 0 12px 32px -4px rgba(0, 0, 0, 0.55), 0 2px 10px -2px rgba(0, 0, 0, 0.35);
+
+  color-scheme: dark;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-micro: 0ms;
+    --dur-small: 0ms;
+    --dur-screen: 0ms;
+    --dur-modal: 0ms;
+  }
+}
+
+:root[data-reduced-motion="true"] {
+  --dur-micro: 0ms;
+  --dur-small: 0ms;
+  --dur-screen: 0ms;
+  --dur-modal: 0ms;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  min-height: 100dvh;
+  background-color: var(--bg-canvas);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 17px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+input, textarea, select {
+  font-family: inherit;
+  font-size: 16px;
+}
+
+button, a, [role="button"], [role="tab"] {
+  touch-action: manipulation;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+.planui-floating-capsule {
+  background-color: var(--glass-bg-fallback);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+}
+
+@supports ((backdrop-filter: blur(16px)) or (-webkit-backdrop-filter: blur(16px))) {
+  .planui-floating-capsule {
+    background-color: var(--glass-bg);
+    backdrop-filter: saturate(180%) blur(18px);
+    -webkit-backdrop-filter: saturate(180%) blur(18px);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .planui-floating-capsule {
+    background-color: var(--bg-elevated);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+:root[data-reduced-transparency="true"] .planui-floating-capsule {
+  background-color: var(--bg-elevated);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.planui-transition-micro {
+  transition-property: transform, opacity, background-color, border-color, color;
+  transition-duration: var(--dur-micro);
+  transition-timing-function: var(--ease-out-quart);
+}
+
+.planui-transition-small {
+  transition-property: transform, opacity, background-color, border-color, color;
+  transition-duration: var(--dur-small);
+  transition-timing-function: var(--ease-out-quart);
+}
+
+.planui-transition-modal {
+  transition-property: transform, opacity;
+  transition-duration: var(--dur-modal);
+  transition-timing-function: var(--ease-out-quart);
+}

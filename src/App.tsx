@@ -1,0 +1,775 @@
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import {
+  Calendar as CalendarIcon,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  HeartHandshake,
+  Repeat,
+  Sparkles,
+} from 'lucide-react';
+import { PrimaryDestinationId, UK_STRINGS } from './i18n/uk';
+import {
+  CalendarViewMode,
+  DestinationContextMap,
+  HabitsFilterMode,
+  ImplementedCreationActionKind,
+  MeSubViewMode,
+  applyThemeAndAccessibilityToDocument,
+  buildInitialCreationContext,
+  createInitialDestinationContextMap,
+  formatHashForDestination,
+  parseDestinationFromHash,
+  updateDestinationContext,
+} from './state/shellStore';
+import {
+  addDaysToLocalDate,
+  detectDeviceTimeZone,
+  evaluateTimeZoneStatus,
+  formatUkrainianDateHeading,
+  todayLocalDateInZone,
+} from './domain/temporal';
+import {
+  UnoccupiedTimeGap,
+  projectScheduleForDate,
+} from './domain/scheduling';
+import {
+  CalendarEvent,
+  PlanuiDomainSnapshot,
+  RecoverySnapshotRecord,
+} from './domain/types';
+import {
+  PlanuiRepositories,
+  TaskLifecycleUndoToken,
+} from './storage/repositories';
+import { FloatingShell } from './components/shell/FloatingShell';
+import { SharedEditorHost } from './components/editors/SharedEditorHost';
+import { SharedDayTimeline } from './components/timeline/SharedDayTimeline';
+import { GapTaskPickerSheet } from './components/timeline/GapTaskPickerSheet';
+import { EventDetailSheet } from './components/timeline/EventDetailSheet';
+import { TodayWorkspaceView } from './views/TodayWorkspaceView';
+import { CalendarWorkspaceView } from './views/CalendarWorkspaceView';
+import { HabitsWorkspaceView } from './views/HabitsWorkspaceView';
+import { MeWorkspaceView } from './views/MeWorkspaceView';
+import { PlansView } from './views/PlansView';
+import { FeedbackBanner } from './components/ui/primitives';
+
+const repositories = new PlanuiRepositories();
+
+export function App() {
+  const detectedZone = detectDeviceTimeZone();
+  const initialZone = detectedZone ?? 'UTC';
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
+  const initialTodayDate = todayLocalDateInZone(initialZone, nowMs);
+
+  const [activeDestination, setActiveDestination] =
+    useState<PrimaryDestinationId>(() =>
+      typeof window !== 'undefined'
+        ? parseDestinationFromHash(window.location.hash)
+        : 'today'
+    );
+
+  const [contexts, setContexts] = useState<DestinationContextMap>(() =>
+    createInitialDestinationContextMap(initialTodayDate)
+  );
+
+  const [snapshot, setSnapshot] = useState<PlanuiDomainSnapshot | null>(null);
+  const [mediaBlobs, setMediaBlobs] = useState<Map<string, Uint8Array>>(
+    () => new Map()
+  );
+  const [recoverySnapshots, setRecoverySnapshots] = useState<
+    RecoverySnapshotRecord[]
+  >([]);
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [isLocalModalOpen, setIsLocalModalOpen] = useState(false);
+  const [editorInitialAction, setEditorInitialAction] = useState<
+    ImplementedCreationActionKind | undefined
+  >(undefined);
+  const [activeGapForPicker, setActiveGapForPicker] =
+    useState<UnoccupiedTimeGap | null>(null);
+  const [inspectedEvent, setInspectedEvent] = useState<CalendarEvent | null>(
+    null
+  );
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [zoneNoticeMessage, setZoneNoticeMessage] = useState<string | null>(
+    null
+  );
+  const [todayUndoToken, setTodayUndoToken] =
+    useState<TaskLifecycleUndoToken | null>(null);
+  const [midnightRolloverDate, setMidnightRolloverDate] = useState<
+    string | null
+  >(null);
+
+  const hydratedNextDayPrefRef = useRef(false);
+
+  const reloadLocalData = useCallback(async () => {
+    repositories.acknowledgeExternalGenerationChange();
+    const { snapshot: snap, mediaBlobs: blobs } =
+      await repositories.captureCoherentSnapshot();
+    const recoveries = await repositories.listRecoverySnapshots();
+    setSnapshot(snap);
+    setMediaBlobs(blobs);
+    setRecoverySnapshots(recoveries);
+    applyThemeAndAccessibilityToDocument(
+      snap.settings.theme,
+      snap.settings.reducedMotionOverride,
+      snap.settings.reducedTransparencyOverride
+    );
+
+    if (!hydratedNextDayPrefRef.current) {
+      hydratedNextDayPrefRef.current = true;
+      setContexts((prev) =>
+        updateDestinationContext(prev, 'today', {
+          nextDayCollapsed: Boolean(snap.settings.todayNextDayCollapsed),
+        })
+      );
+    }
+  }, []);
+
+  useEffect(() => {
+    void reloadLocalData();
+    const unsubscribe = repositories.tabSync.subscribe((msg) => {
+      if (msg.type === 'ENTITY_MUTATED' || msg.type === 'IMPORT_FINISHED') {
+        void reloadLocalData();
+      }
+    });
+    return unsubscribe;
+  }, [reloadLocalData]);
+
+  const activeZone =
+    snapshot?.settings.timeZoneMode === 'manual' &&
+    snapshot.settings.manualTimeZone
+      ? snapshot.settings.manualTimeZone
+      : snapshot?.settings.lastDetectedTimeZone ?? initialZone;
+
+  const actualTodayDate = useMemo(
+    () => todayLocalDateInZone(activeZone, nowMs),
+    [activeZone, nowMs]
+  );
+
+  const prevActualTodayRef = useRef<string>(actualTodayDate);
+
+  // 6.3 Midnight transition: detect when actualTodayDate changes without ejecting user or forcing scroll jump
+  useEffect(() => {
+    const prevToday = prevActualTodayRef.current;
+    if (prevToday !== actualTodayDate) {
+      prevActualTodayRef.current = actualTodayDate;
+      setMidnightRolloverDate(actualTodayDate);
+    }
+  }, [actualTodayDate]);
+
+  // Stage 5 (5.2 / C08) & Stage 6 (6.3): Recheck device time zone and clock on foregrounding and ~once per minute
+  const recheckDeviceTimeZone = useCallback(async () => {
+    setNowMs(Date.now());
+    if (!snapshot) return;
+    const currentDeviceZone = detectDeviceTimeZone();
+    const status = evaluateTimeZoneStatus(snapshot.settings, currentDeviceZone);
+    if (status.requiresManualZoneChoice && status.explanationBannerUk) {
+      setZoneNoticeMessage(status.explanationBannerUk);
+      return;
+    }
+    if (
+      status.zoneChangedInDeviceMode &&
+      status.explanationBannerUk &&
+      currentDeviceZone &&
+      currentDeviceZone !== snapshot.settings.lastDetectedTimeZone
+    ) {
+      setZoneNoticeMessage(status.explanationBannerUk);
+      const nextSettings = {
+        ...snapshot.settings,
+        lastDetectedTimeZone: currentDeviceZone,
+        updatedAt: new Date().toISOString(),
+        revision: snapshot.settings.revision + 1,
+      };
+      await repositories.saveSettings(nextSettings);
+      setSnapshot((prev) =>
+        prev ? { ...prev, settings: nextSettings } : prev
+      );
+    }
+  }, [snapshot]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const intervalId = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 60_000);
+
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        void recheckDeviceTimeZone();
+      }
+    };
+    window.addEventListener('focus', handleVisibilityOrFocus);
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+    };
+  }, [recheckDeviceTimeZone]);
+
+  // Follow system color-scheme changes only when theme === 'system' (3.3)
+  useEffect(() => {
+    if (!snapshot || typeof window.matchMedia !== 'function') return;
+    const mql = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleChange = () => {
+      if (snapshot.settings.theme === 'system') {
+        applyThemeAndAccessibilityToDocument(
+          snapshot.settings.theme,
+          snapshot.settings.reducedMotionOverride,
+          snapshot.settings.reducedTransparencyOverride
+        );
+      }
+    };
+    mql.addEventListener('change', handleChange);
+    return () => mql.removeEventListener('change', handleChange);
+  }, [snapshot]);
+
+  // Synchronize URL hash and window scroll per destination (3.1 Preserve route/context/scroll per destination)
+  useEffect(() => {
+    const handleHashChange = () => {
+      const nextDest = parseDestinationFromHash(window.location.hash);
+      setActiveDestination((prev) => {
+        if (prev !== nextDest) {
+          const currentScroll = window.scrollY;
+          setContexts((oldMap) =>
+            updateDestinationContext(oldMap, prev, { scrollTop: currentScroll })
+          );
+        }
+        return nextDest;
+      });
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  // Restore saved scroll position when switching destinations (never on clock ticks)
+  useLayoutEffect(() => {
+    const targetScroll = contexts[activeDestination].scrollTop ?? 0;
+    window.scrollTo({
+      top: targetScroll,
+      behavior: 'instant' as ScrollBehavior,
+    });
+  }, [activeDestination]);
+
+  const handleSelectDestination = (dest: PrimaryDestinationId) => {
+    if (dest === activeDestination) return;
+    const currentScroll = typeof window !== 'undefined' ? window.scrollY : 0;
+    setContexts((prev) =>
+      updateDestinationContext(prev, activeDestination, {
+        scrollTop: currentScroll,
+      })
+    );
+    setActiveDestination(dest);
+    if (typeof window !== 'undefined') {
+      const targetHash = formatHashForDestination(dest);
+      if (window.location.hash !== targetHash) {
+        window.history.pushState(null, '', targetHash);
+      }
+    }
+  };
+
+  const openGlobalCreation = (
+    preferredAction?: ImplementedCreationActionKind
+  ) => {
+    setEditorInitialAction(preferredAction);
+    setIsEditorOpen(true);
+  };
+
+  const handleToggleTaskState = async (taskId: string) => {
+    if (!snapshot) return;
+    const existing = snapshot.tasks.find((t) => t.id === taskId);
+    if (!existing) return;
+    const nowIso = new Date().toISOString();
+    try {
+      if (existing.state === 'open') {
+        const res = await repositories.completeTaskTransactionally(
+          taskId,
+          nowIso,
+          existing.revision
+        );
+        setTodayUndoToken(res.undoToken);
+      } else {
+        setTodayUndoToken(null);
+        await repositories.reopenTaskTransactionally(
+          taskId,
+          nowIso,
+          existing.revision
+        );
+      }
+      await reloadLocalData();
+    } catch (err) {
+      setToastMessage(
+        err instanceof Error ? err.message : 'Не вдалося оновити стан справи.'
+      );
+    }
+  };
+
+  const handleUndoTodayLifecycle = async () => {
+    if (!todayUndoToken) return;
+    try {
+      const res = await repositories.undoTaskLifecycleTransactionally(
+        todayUndoToken,
+        new Date().toISOString(),
+        activeZone
+      );
+      setTodayUndoToken(null);
+      await reloadLocalData();
+      if (
+        res.conflictReport.hasConflicts &&
+        res.conflictReport.warningMessageUk
+      ) {
+        setToastMessage(res.conflictReport.warningMessageUk);
+      } else {
+        setToastMessage(UK_STRINGS.scheduling.undoSuccessFeedback);
+      }
+    } catch (err) {
+      setTodayUndoToken(null);
+      setToastMessage(
+        err instanceof Error
+          ? err.message
+          : 'Не вдалося скасувати дію життєвого циклу справи.'
+      );
+    }
+  };
+
+  const handleCancelEvent = async (eventId: string, revision: number) => {
+    try {
+      await repositories.cancelCalendarEventTransactionally(
+        eventId,
+        new Date().toISOString(),
+        revision
+      );
+      await reloadLocalData();
+      setToastMessage('Подію скасовано.');
+    } catch (err) {
+      setToastMessage(
+        err instanceof Error ? err.message : 'Не вдалося скасувати подію.'
+      );
+    }
+  };
+
+  const handleToggleNextDayCollapsed = async (nextCollapsed: boolean) => {
+    setContexts((prev) =>
+      updateDestinationContext(prev, 'today', {
+        nextDayCollapsed: nextCollapsed,
+      })
+    );
+    if (snapshot) {
+      const nextSettings = {
+        ...snapshot.settings,
+        todayNextDayCollapsed: nextCollapsed,
+        updatedAt: new Date().toISOString(),
+        revision: snapshot.settings.revision + 1,
+      };
+      await repositories.saveSettings(nextSettings);
+      setSnapshot((prev) =>
+        prev ? { ...prev, settings: nextSettings } : prev
+      );
+    }
+  };
+
+  // Derived data for current views
+  const folders = snapshot?.folders ?? [];
+  const projects = snapshot?.projects ?? [];
+  const stages = snapshot?.stages ?? [];
+  const tasks = snapshot?.tasks ?? [];
+  const reservations = snapshot?.reservations ?? [];
+  const events = snapshot?.events ?? [];
+  const shiftTemplates = snapshot?.shiftTemplates ?? [];
+  const dayOffAnnotations = snapshot?.dayOffAnnotations ?? [];
+  const habits = snapshot?.habits ?? [];
+  const habitEntries = snapshot?.habitEntries ?? [];
+  const personalRecords = snapshot?.personalRecords ?? [];
+  const lifeAreaQuestions = snapshot?.lifeAreaQuestions ?? [];
+  const lifeAreaAssessments = snapshot?.lifeAreaAssessments ?? [];
+  const inspirationItems = snapshot?.inspirationItems ?? [];
+  const mediaMeta = snapshot?.mediaMeta ?? [];
+  const wishlistCategories = snapshot?.wishlistCategories ?? [];
+  const wishes = snapshot?.wishes ?? [];
+
+  const calendarCtx = contexts.calendar;
+  const plansCtx = contexts.plans;
+  const todayCtx = contexts.today;
+  const habitsCtx = contexts.habits;
+  const meCtx = contexts.me;
+
+  const calendarDayProjection = useMemo(
+    () =>
+      projectScheduleForDate({
+        localDate: calendarCtx.selectedDate,
+        displayZone: activeZone,
+        events,
+        reservations,
+        tasks,
+        dayOffAnnotations,
+        includeReleasedReservations: false,
+      }),
+    [
+      calendarCtx.selectedDate,
+      activeZone,
+      events,
+      reservations,
+      tasks,
+      dayOffAnnotations,
+    ]
+  );
+
+  const calendarDayProjectionWithReleased = useMemo(
+    () =>
+      projectScheduleForDate({
+        localDate: calendarCtx.selectedDate,
+        displayZone: activeZone,
+        events,
+        reservations,
+        tasks,
+        dayOffAnnotations,
+        includeReleasedReservations: true,
+      }),
+    [
+      calendarCtx.selectedDate,
+      activeZone,
+      events,
+      reservations,
+      tasks,
+      dayOffAnnotations,
+    ]
+  );
+
+  const anyModalOpen =
+    isEditorOpen ||
+    isLocalModalOpen ||
+    Boolean(activeGapForPicker) ||
+    Boolean(inspectedEvent);
+
+  return (
+    <>
+      <FloatingShell
+        activeDestination={activeDestination}
+        onSelectDestination={handleSelectDestination}
+        onOpenGlobalCreate={() => openGlobalCreation()}
+        isModalOpen={anyModalOpen}
+      >
+        <div className="space-y-6">
+          {toastMessage && (
+            <FeedbackBanner
+              tone="success"
+              message={toastMessage}
+              onDismiss={() => setToastMessage(null)}
+            />
+          )}
+
+          {zoneNoticeMessage && (
+            <FeedbackBanner
+              tone="info"
+              message={zoneNoticeMessage}
+              onDismiss={() => setZoneNoticeMessage(null)}
+            />
+          )}
+
+          {/* DESTINATION 1: КАЛЕНДАР (Calendar — Stage 7 Month/Week/Day + Stage 8 Work Schedule) */}
+          {activeDestination === 'calendar' && (
+            <div className="space-y-4" data-testid="destination-view-calendar">
+              <header className="space-y-1">
+                <h1 className="text-[32px] font-bold tracking-tight leading-tight m-0">
+                  {UK_STRINGS.destinations.calendar.title}
+                </h1>
+                <p
+                  className="text-[15px] m-0"
+                  style={{ color: 'var(--text-secondary)' }}
+                >
+                  {UK_STRINGS.destinations.calendar.subtitle}
+                </p>
+              </header>
+
+              <CalendarWorkspaceView
+                selectedDate={calendarCtx.selectedDate}
+                actualTodayDate={actualTodayDate}
+                mode={calendarCtx.mode}
+                secondaryFilter={calendarCtx.secondaryFilter ?? 'all'}
+                displayZone={activeZone}
+                nowMs={nowMs}
+                events={events}
+                reservations={reservations}
+                tasks={tasks}
+                dayOffAnnotations={dayOffAnnotations}
+                shiftTemplates={shiftTemplates}
+                repositories={repositories}
+                onChangeMode={(mode) =>
+                  setContexts((prev) =>
+                    updateDestinationContext(prev, 'calendar', { mode })
+                  )
+                }
+                onChangeSecondaryFilter={(secondaryFilter) =>
+                  setContexts((prev) =>
+                    updateDestinationContext(prev, 'calendar', {
+                      secondaryFilter,
+                    })
+                  )
+                }
+                onSelectDate={(selectedDate) =>
+                  setContexts((prev) =>
+                    updateDestinationContext(prev, 'calendar', { selectedDate })
+                  )
+                }
+                onToggleTaskState={handleToggleTaskState}
+                onCancelEvent={handleCancelEvent}
+                onInspectEvent={(ev) => setInspectedEvent(ev)}
+                onOpenGapPicker={(gap) => setActiveGapForPicker(gap)}
+                onOpenGlobalCreation={openGlobalCreation}
+                onDataChanged={async (msg) => {
+                  await reloadLocalData();
+                  if (msg) setToastMessage(msg);
+                }}
+                onModalStateChange={setIsLocalModalOpen}
+              />
+            </div>
+          )}
+
+          {/* DESTINATION 2: ПЛАНИ (Plans — Stage 4 Full Organization & Projects & Tasks) */}
+          {activeDestination === 'plans' && (
+            <PlansView
+              folders={folders}
+              projects={projects}
+              stages={stages}
+              tasks={tasks}
+              reservations={reservations}
+              events={events}
+              activeZone={activeZone}
+              actualTodayDate={actualTodayDate}
+              plansContext={plansCtx}
+              repositories={repositories}
+              onUpdatePlansContext={(patch) =>
+                setContexts((prev) =>
+                  updateDestinationContext(prev, 'plans', patch)
+                )
+              }
+              onOpenGlobalCreation={openGlobalCreation}
+              onDataChanged={async (msg) => {
+                await reloadLocalData();
+                if (msg) setToastMessage(msg);
+              }}
+              onModalStateChange={setIsLocalModalOpen}
+            />
+          )}
+
+          {/* DESTINATION 3 (CENTER): СЬОГОДНІ (Today — Stage 6 Full Workspace & Shared Timeline) */}
+          {activeDestination === 'today' && (
+            <TodayWorkspaceView
+              selectedDate={todayCtx.selectedDate}
+              actualTodayDate={actualTodayDate}
+              activeZone={activeZone}
+              nowMs={nowMs}
+              untimedCollapsed={todayCtx.untimedCollapsed}
+              nextDayCollapsed={todayCtx.nextDayCollapsed}
+              midnightRolloverDate={midnightRolloverDate}
+              todayUndoToken={todayUndoToken}
+              events={events}
+              reservations={reservations}
+              tasks={tasks}
+              projects={projects}
+              dayOffAnnotations={dayOffAnnotations}
+              habits={habits}
+              habitEntries={habitEntries}
+              repositories={repositories}
+              onSelectDate={(nextDate) =>
+                setContexts((prev) =>
+                  updateDestinationContext(prev, 'today', {
+                    selectedDate: nextDate,
+                  })
+                )
+              }
+              onToggleUntimedCollapsed={() =>
+                setContexts((prev) =>
+                  updateDestinationContext(prev, 'today', {
+                    untimedCollapsed: !prev.today.untimedCollapsed,
+                  })
+                )
+              }
+              onToggleNextDayCollapsed={handleToggleNextDayCollapsed}
+              onDismissMidnightRollover={() => setMidnightRolloverDate(null)}
+              onToggleTaskState={handleToggleTaskState}
+              onUndoLifecycle={handleUndoTodayLifecycle}
+              onCancelEvent={handleCancelEvent}
+              onInspectEvent={(ev) => setInspectedEvent(ev)}
+              onOpenGapPicker={(gap) => setActiveGapForPicker(gap)}
+              onOpenGlobalCreation={openGlobalCreation}
+              onNavigateToHabits={(targetDate) => {
+                setContexts((prev) =>
+                  updateDestinationContext(prev, 'habits', {
+                    selectedDate: targetDate,
+                  })
+                );
+                handleSelectDestination('habits');
+              }}
+              onDataChanged={async (msg) => {
+                await reloadLocalData();
+                if (msg) setToastMessage(msg);
+              }}
+            />
+          )}
+
+          {/* DESTINATION 4: ЗВИЧКИ (Habits — Stage 9 Full Workspace) */}
+          {activeDestination === 'habits' && (
+            <HabitsWorkspaceView
+              selectedDate={habitsCtx.selectedDate}
+              actualTodayDate={actualTodayDate}
+              filter={habitsCtx.filter}
+              habits={habits}
+              habitEntries={habitEntries}
+              projects={projects}
+              lifeAreaQuestions={lifeAreaQuestions}
+              repositories={repositories}
+              onSelectDate={(selectedDate) =>
+                setContexts((prev) =>
+                  updateDestinationContext(prev, 'habits', { selectedDate })
+                )
+              }
+              onChangeFilter={(filter) =>
+                setContexts((prev) =>
+                  updateDestinationContext(prev, 'habits', { filter })
+                )
+              }
+              onOpenGlobalCreation={openGlobalCreation}
+              onDataChanged={async (msg) => {
+                await reloadLocalData();
+                if (msg) setToastMessage(msg);
+              }}
+              onModalStateChange={setIsLocalModalOpen}
+            />
+          )}
+
+          {/* DESTINATION 5: Я (Me — Stage 10 Overview, Personal Records, Life Areas, Inspiration, Wishlist, Settings) */}
+          {activeDestination === 'me' && snapshot && (
+            <MeWorkspaceView
+              subView={meCtx.subView}
+              activeWishlistCategoryId={meCtx.activeWishlistCategoryId ?? null}
+              activeZone={activeZone}
+              actualTodayDate={actualTodayDate}
+              personalRecords={personalRecords}
+              lifeAreaQuestions={lifeAreaQuestions}
+              lifeAreaAssessments={lifeAreaAssessments}
+              inspirationItems={inspirationItems}
+              mediaMeta={mediaMeta}
+              mediaBlobs={mediaBlobs}
+              wishlistCategories={wishlistCategories}
+              wishes={wishes}
+              projects={projects}
+              settings={snapshot.settings}
+              snapshot={snapshot}
+              recoverySnapshots={recoverySnapshots}
+              repositories={repositories}
+              onChangeSubView={(subView, activeWishlistCategoryId) =>
+                setContexts((prev) =>
+                  updateDestinationContext(prev, 'me', {
+                    subView,
+                    ...(activeWishlistCategoryId !== undefined
+                      ? { activeWishlistCategoryId }
+                      : {}),
+                  })
+                )
+              }
+              onOpenGlobalCreation={openGlobalCreation}
+              onSettingsPatch={(patch) => {
+                setSnapshot((prev) => {
+                  if (!prev) return prev;
+                  const merged = { ...prev.settings, ...patch };
+                  applyThemeAndAccessibilityToDocument(
+                    merged.theme,
+                    merged.reducedMotionOverride,
+                    merged.reducedTransparencyOverride
+                  );
+                  return { ...prev, settings: merged };
+                });
+              }}
+              onDataChanged={async (msg) => {
+                await reloadLocalData();
+                if (msg) setToastMessage(msg);
+              }}
+              onNavigateToWorkRoster={() => {
+                setContexts((prev) =>
+                  updateDestinationContext(prev, 'calendar', {
+                    mode: 'work_schedule',
+                  })
+                );
+                handleSelectDestination('calendar');
+              }}
+              onNavigateToHabits={() => {
+                handleSelectDestination('habits');
+              }}
+              onModalStateChange={setIsLocalModalOpen}
+            />
+          )}
+        </div>
+      </FloatingShell>
+
+      <SharedEditorHost
+        isOpen={isEditorOpen}
+        activeDestination={activeDestination}
+        contexts={contexts}
+        initialContext={buildInitialCreationContext(
+          activeDestination,
+          contexts
+        )}
+        initialActionKind={editorInitialAction}
+        activeZone={activeZone}
+        folders={folders}
+        projects={projects}
+        stages={stages}
+        tasks={tasks}
+        reservations={reservations}
+        events={events}
+        shiftTemplates={shiftTemplates}
+        lifeAreaQuestions={lifeAreaQuestions}
+        wishlistCategories={wishlistCategories}
+        preferredWishlistCurrency={
+          snapshot?.settings.preferredWishlistCurrency ?? null
+        }
+        repositories={repositories}
+        onClose={() => setIsEditorOpen(false)}
+        onEntityCreated={async (msg) => {
+          await reloadLocalData();
+          setToastMessage(msg);
+        }}
+      />
+
+      <GapTaskPickerSheet
+        isOpen={Boolean(activeGapForPicker)}
+        gap={activeGapForPicker}
+        displayZone={activeZone}
+        tasks={tasks}
+        projects={projects}
+        events={events}
+        reservations={reservations}
+        repositories={repositories}
+        onClose={() => setActiveGapForPicker(null)}
+        onReservationCreated={async (msg) => {
+          await reloadLocalData();
+          setToastMessage(msg);
+        }}
+      />
+
+      <EventDetailSheet
+        event={inspectedEvent}
+        displayZone={activeZone}
+        events={events}
+        reservations={reservations}
+        tasks={tasks}
+        repositories={repositories}
+        onClose={() => setInspectedEvent(null)}
+        onEventUpdated={async (msg) => {
+          await reloadLocalData();
+          setToastMessage(msg);
+        }}
+      />
+    </>
+  );
+}
+export default App;

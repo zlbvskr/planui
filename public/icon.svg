@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="PLANUI">
+  <rect width="512" height="512" rx="112" fill="#18191C" />
+  <rect x="64" y="64" width="384" height="384" rx="76" fill="#23252A" stroke="#363942" stroke-width="6" />
+  <!-- Top calendar bar -->
+  <rect x="104" y="108" width="304" height="68" rx="26" fill="#B93E4B" />
+  <!-- Proportional timeline & blocks -->
+  <rect x="104" y="204" width="96" height="200" rx="22" fill="#2E3239" />
+  <rect x="128" y="232" width="48" height="16" rx="8" fill="#ADB1BA" />
+  <rect x="128" y="284" width="48" height="16" rx="8" fill="#ADB1BA" />
+  <rect x="128" y="336" width="48" height="16" rx="8" fill="#ADB1BA" />
+  <!-- Right schedule lanes -->
+  <rect x="220" y="204" width="188" height="56" rx="18" fill="#C6A172" />
+  <rect x="220" y="276" width="188" height="56" rx="18" fill="#89AEE0" />
+  <rect x="220" y="348" width="132" height="56" rx="18" fill="#8AB49E" />
+</svg>

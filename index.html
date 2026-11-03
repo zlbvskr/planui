@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="uk">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>PLANUI — Особистий локальний планувальник</title>
+    <meta name="description" content="Приватний локальний планувальник розкладу, справ, змін, звичок та особистого простору." />
+    <meta property="og:title" content="PLANUI — Особистий локальний планувальник" />
+    <meta property="og:description" content="Приватний локальний планувальник розкладу, справ, змін, звичок та особистого простору." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="theme-color" content="#F5F5F7" id="planui-theme-color" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="PLANUI" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <script>
+      (function () {
+        try {
+          var mode = localStorage.getItem('planui_theme_bootstrap') || 'system';
+          var reducedMotion = localStorage.getItem('planui_reduced_motion') === 'true';
+          var reducedTransparency = localStorage.getItem('planui_reduced_transparency') === 'true';
+          var sysDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          var resolved = mode === 'dark' || (mode === 'system' && sysDark) ? 'dark' : 'light';
+          var root = document.documentElement;
+          root.classList.toggle('dark', resolved === 'dark');
+          root.setAttribute('data-theme', resolved);
+          root.setAttribute('data-theme-mode', mode);
+          if (reducedMotion) root.setAttribute('data-reduced-motion', 'true');
+          if (reducedTransparency) root.setAttribute('data-reduced-transparency', 'true');
+          var metaTheme = document.getElementById('planui-theme-color');
+          if (metaTheme) {
+            metaTheme.setAttribute('content', resolved === 'dark' ? '#000000' : '#F5F5F7');
+          }
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

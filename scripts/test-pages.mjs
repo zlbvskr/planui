@@ -86,6 +86,7 @@ try {
   await page.evaluate(async()=>{const reg=await navigator.serviceWorker.ready;await reg.update();});
   await page.waitForFunction(async()=>Boolean((await navigator.serviceWorker.ready).waiting),undefined,{timeout:90000});
   console.log('PASS: update worker staged');
+  await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
   await page.getByTestId('pwa-update-banner').waitFor();assert.equal(await page.locator('meta[name=pages-test-version]').count(),0);
   await page.getByTestId('mobile-nav-item-today').click();
   await page.getByTestId('mobile-global-create-button').click();

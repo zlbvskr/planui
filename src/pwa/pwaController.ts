@@ -202,7 +202,12 @@ export function usePwaLifecycle(
 
     let isMounted = true;
     let registration: ServiceWorkerRegistration | null = null;
-    const checkUpdate = () => { if (document.visibilityState === 'visible') void registration?.update().catch(() => {}); };
+    const checkUpdate = () => {
+      if (document.visibilityState !== 'visible') return;
+      const syncWaiting = () => { if (isMounted && registration?.waiting) { setWaitingWorker(registration.waiting); setSwStatus('update_available'); } };
+      syncWaiting();
+      void registration?.update().then(syncWaiting).catch(() => {});
+    };
 
     const registerSw = async () => {
       try {
@@ -213,6 +218,7 @@ export function usePwaLifecycle(
         if (!isMounted) return;
         registration = reg;
         window.addEventListener('online', checkUpdate);
+        window.addEventListener('focus', checkUpdate);
         document.addEventListener('visibilitychange', checkUpdate);
 
         if (reg.waiting) {
@@ -255,6 +261,7 @@ export function usePwaLifecycle(
     return () => {
       isMounted = false;
       window.removeEventListener('online', checkUpdate);
+      window.removeEventListener('focus', checkUpdate);
       document.removeEventListener('visibilitychange', checkUpdate);
     };
   }, []);

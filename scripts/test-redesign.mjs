@@ -55,7 +55,7 @@ try {
  await page.goto(`${base}/#/directions`);
  await page.getByRole('button',{name:'Глобальна дорожня карта',exact:true}).click();
  assert.equal(await page.getByRole('heading',{name:'Напрями',exact:true}).isVisible(),false);
- await page.getByRole('button',{name:'Напрями',exact:true}).click();
+ await page.getByRole('navigation',{name:'Простір напрямів',exact:true}).getByRole('button',{name:'Напрями',exact:true}).click();
  assert.equal(await page.getByRole('heading',{name:'Напрями',exact:true}).isVisible(),true);
  await page.goto(`${base}/#/life_areas`);
  await page.getByRole('button',{name:'Щотижневий огляд · 4 кроки',exact:true}).click();

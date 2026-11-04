@@ -9,10 +9,9 @@ import { FloatingShell } from './components/shell/FloatingShell';
 import { transitionCreation } from './components/shell/creationTransition';
 import { EventDetailSheet } from './components/timeline/EventDetailSheet';
 import { GapTaskPickerSheet } from './components/timeline/GapTaskPickerSheet';
-import { SharedDayTimeline } from './components/timeline/SharedDayTimeline';
 import { FeedbackBanner } from './components/ui/primitives';
 import { selectAmbientContext } from './domain/projections';
-import { UnoccupiedTimeGap, projectScheduleForDate } from './domain/scheduling';
+import type { UnoccupiedTimeGap } from './domain/scheduling';
 import {
   detectDeviceTimeZone,
   evaluateTimeZoneStatus,
@@ -437,48 +436,6 @@ export function App() {
   const directionsCtx = contexts.directions ?? contexts.plans;
   const todayCtx = contexts.today;
   const meCtx = contexts.me;
-
-  const calendarDayProjection = useMemo(
-    () =>
-      projectScheduleForDate({
-        localDate: calendarCtx.selectedDate,
-        displayZone: activeZone,
-        events,
-        reservations,
-        tasks,
-        dayOffAnnotations,
-        includeReleasedReservations: false,
-      }),
-    [
-      calendarCtx.selectedDate,
-      activeZone,
-      events,
-      reservations,
-      tasks,
-      dayOffAnnotations,
-    ]
-  );
-
-  const calendarDayProjectionWithReleased = useMemo(
-    () =>
-      projectScheduleForDate({
-        localDate: calendarCtx.selectedDate,
-        displayZone: activeZone,
-        events,
-        reservations,
-        tasks,
-        dayOffAnnotations,
-        includeReleasedReservations: true,
-      }),
-    [
-      calendarCtx.selectedDate,
-      activeZone,
-      events,
-      reservations,
-      tasks,
-      dayOffAnnotations,
-    ]
-  );
 
   const anyModalOpen =
     isEditorOpen ||

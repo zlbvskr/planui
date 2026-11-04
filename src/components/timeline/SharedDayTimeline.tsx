@@ -753,7 +753,7 @@ export function SharedDayTimeline({
       </Card>
 
       {/* Availability & Unoccupied Windows Summary Card with Gap Picker Actions (C10 / 5.6 / 6.4) */}
-      {!compactMode && (
+      {!compactMode && !testIdPrefix.startsWith('today') && (
         <Card
           title={UK_STRINGS.scheduling.availabilityCardTitle}
           data-testid={`${testIdPrefix}-availability-card`}

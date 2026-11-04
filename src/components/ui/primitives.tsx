@@ -514,7 +514,7 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
       const timer = window.setTimeout(() => {
         const root = dialogRef.current;
         if (!root) return;
-        const focusable = root.querySelector<HTMLElement>(
+        const focusable = root.querySelector<HTMLElement>('[data-testid="create-task-title-input"]') ?? root.querySelector<HTMLElement>(
           'input:not([disabled]), textarea:not([disabled]), select:not([disabled]), button:not([disabled])'
         );
         if (focusable) {
@@ -594,9 +594,9 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className="w-full sm:max-w-[540px] max-h-[92dvh] flex flex-col rounded-t-3xl sm:rounded-3xl overflow-hidden planui-transition-modal"
+        className="planui-floating-capsule w-full sm:max-w-[540px] max-h-[92dvh] flex flex-col rounded-t-3xl sm:rounded-3xl overflow-hidden planui-transition-modal"
         style={{
-          backgroundColor: 'var(--bg-surface)',
+          backgroundColor: 'var(--glass-bg)',
           border: '1px solid var(--border-strong)',
           boxShadow: 'var(--glass-shadow)',
         }}

@@ -156,6 +156,8 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
     useState<EditableCreationContext>(initialContext);
 
   // Task fields
+  const [taskEffort, setTaskEffort] = useState<Task['effort']>(null);
+  const [taskLifeArea, setTaskLifeArea] = useState('');
   const [taskTitle, setTaskTitle] = useState('');
   const [taskDescription, setTaskDescription] = useState('');
   const [taskPriority, setTaskPriority] = useState<TaskPriority>('normal');
@@ -313,6 +315,8 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
       });
 
       setTaskTitle('');
+      setTaskEffort(null);
+      setTaskLifeArea('');
       setTaskDescription('');
       setTaskPriority('normal');
       setTaskEstimate('');
@@ -697,6 +701,8 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
             description: taskDescription.trim() ? taskDescription.trim() : null,
             state: 'open',
             priority: taskPriority,
+            effort: taskEffort,
+            lifeAreaId: taskLifeArea || null,
             deadline: parsedDeadline,
             estimatedDurationMinutes: parsedEstimate,
             planningState: 'unplanned',
@@ -733,6 +739,8 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
             description: taskDescription.trim() ? taskDescription.trim() : null,
             state: 'open',
             priority: taskPriority,
+            effort: taskEffort,
+            lifeAreaId: taskLifeArea || null,
             deadline: parsedDeadline,
             estimatedDurationMinutes: parsedEstimate,
             planningState: hasTargetDate ? 'date_only' : 'unplanned',
@@ -1302,6 +1310,8 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
           })}
         </div>
 
+        <details open={selectedAction !== 'task'}>
+          <summary className="min-h-[44px] py-3 cursor-pointer">Дата / час · Напрям / проєкт</summary>
         {/* Editable Prefilled Context Block (C04: Prefilled date/folder/project/stage must be visible and editable) */}
         <div
           className="p-3.5 rounded-2xl space-y-3"
@@ -1783,9 +1793,14 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
           )}
         </div>
 
+        </details>
+        {selectedAction === 'task' && <div className="flex flex-wrap gap-2">
+          <SelectField label="Зусилля" value={taskEffort ?? ''} onChange={e => setTaskEffort((e.target.value || null) as Task['effort'])} options={[{value:'',label:'Не задано'},{value:'small',label:'•'},{value:'medium',label:'••'},{value:'large',label:'•••'}]} />
+          <SelectField label="Сфера життя" value={taskLifeArea} onChange={e => setTaskLifeArea(e.target.value)} options={[{value:'',label:'Успадкувати'},...lifeAreaQuestions.filter(area => !area.archived && !area.mergedIntoId).map(area => ({value:area.id,label:area.questionTextUk}))]} />
+        </div>}
         {/* Specific Form Fields by Action */}
         {selectedAction === 'task' && (
-          <div className="space-y-3.5">
+          <details className="space-y-3.5"><summary className="min-h-[44px] py-3 cursor-pointer">Тривалість · Дедлайн · Деталі</summary>
             <TextAreaField
               label={UK_STRINGS.creation.taskForm.descriptionLabel}
               placeholder={UK_STRINGS.creation.taskForm.descriptionPlaceholder}
@@ -1877,7 +1892,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
                 data-testid="create-task-deadline-instant-input"
               />
             )}
-          </div>
+          </details>
         )}
 
         {/* 5.3 / 8.2 Shared Event & Work Shift Form */}

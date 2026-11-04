@@ -1,3 +1,4 @@
+import { OptionalSlider } from '../components/ui/OptionalSlider';
 import { PlanuiError } from '../i18n/errorsUk';
 import React, { useEffect, useState } from 'react';
 import { LifeAreaQuestion, PlanuiDomainSnapshot, Project, Task, RoadmapOwner } from '../domain/types';
@@ -78,7 +79,7 @@ export function LifeAreasReviewView({ snapshot, zone, today, repositories, onCha
         <p>Усі відповіді необов’язкові. «Без відповіді» відрізняється від 0, «Ні» та навмисно порожнього тексту.</p>
         {active.map(area => { const answer = drafts[area.id] ?? EMPTY_ANSWER; return <fieldset key={area.id} className="border rounded-xl p-3 space-y-2" style={{ borderColor: 'var(--border-subtle)' }}><legend className="font-semibold break-words">{area.questionTextUk}</legend>
           {area.goodEnoughUk && <p>Достатньо добре для мене: {area.goodEnoughUk}</p>}
-          <SelectField label={SATISFACTION_QUESTION_UK} value={answer.score === null ? '' : String(answer.score)} options={[{ value: '', label: 'Без відповіді' }, ...Array.from({ length: 11 }, (_, n) => ({ value: String(n), label: `${n} / 10` }))]} onChange={e => update(area.id, { score: e.target.value === '' ? null : Number(e.target.value) as ReviewAnswerDraft['score'] })} />
+          <OptionalSlider label={SATISFACTION_QUESTION_UK} max={10} value={answer.score} onChange={score => update(area.id, {score:score as ReviewAnswerDraft['score']})} />
           <SelectField label="Хочу приділити цій сфері увагу зараз?" value={answer.attentionNow === null ? '' : answer.attentionNow ? 'yes' : 'no'} options={[{ value: '', label: 'Без відповіді' }, { value: 'yes', label: 'Так' }, { value: 'no', label: 'Ні' }]} onChange={e => update(area.id, { attentionNow: e.target.value === '' ? null : e.target.value === 'yes' })} />
           <TextAreaField label="Одна потенційно корисна зміна" value={answer.usefulChangeUk ?? ''} onChange={e => update(area.id, { usefulChangeUk: e.target.value })} />
           <p>{answer.usefulChangeUk === null ? 'Без відповіді' : answer.usefulChangeUk === '' ? 'Відповідь залишено порожньою' : 'Відповідь додано'}</p><div className="flex flex-wrap gap-2"><Button onClick={() => update(area.id, { usefulChangeUk: null })}>Залишити зміну без відповіді</Button><Button onClick={() => update(area.id, { usefulChangeUk: '' })}>Позначити порожню відповідь</Button></div>

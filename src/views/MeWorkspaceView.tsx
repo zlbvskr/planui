@@ -1364,7 +1364,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
           ) : (
             <div
               className="grid grid-cols-1 sm:grid-cols-2 gap-3.5"
-              data-testid="inspiration-items-grid"
+              data-testid="inspiration-items-grid" style={{gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))'}}
             >
               {filteredInspirationItems.map((item) => {
                 const linkedProject = item.projectId

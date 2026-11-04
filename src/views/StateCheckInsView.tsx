@@ -1,3 +1,4 @@
+import { OptionalSlider } from '../components/ui/OptionalSlider';
 import React, { useState } from 'react';
 import type { PersonalRecord, Scale1To5 } from '../domain/types';
 import { STATE_SCALE_V1, isCheckIn, downloadPersonalRecordsCsv, printPersonalRecords, downloadPersonalRecords } from '../domain/stateCheckIns';
@@ -16,13 +17,14 @@ export function StateCheckInsView({ records, today, zone, enabled, repositories,
     reset(); await onChanged();
   } catch { setError('Не вдалося зберегти відмітку. Перевірте значення та спробуйте ще раз.'); } };
   return <div className="space-y-4">
+    <div className="planui-floating-header"><h2 className="font-semibold">Стан і відновлення</h2><p className="text-sm">Збіг змін стану й графіка не доводить причинного зв’язку. Застосунок не встановлює діагнозів.</p></div>
     <Button onClick={() => setArchive(!archive)}>{archive ? 'Історія стану' : 'Архів щоденника'}</Button>
     {error && <p role="alert">{error}</p>}
     {enabled && !archive && <Card title={editing ? 'Редагувати відмітку' : 'Коротка відмітка стану'} subtitle="Усі поля добровільні. Сон вказуєте лише ви. Шкали 1–5, версія 1."><form onSubmit={save} className="space-y-3">
       <InputField label="Дата" type="date" required value={date} onChange={e => setDate(e.target.value)} />
-      <SelectField label="Настрій" value={mood} options={options(STATE_SCALE_V1.mood)} onChange={e => setMood(e.target.value)} />
-      <SelectField label="Енергія" value={energy} options={options(STATE_SCALE_V1.energy)} onChange={e => setEnergy(e.target.value)} />
-      <SelectField label="Напруга (1 — спокій, 5 — сильна напруга)" value={stress} options={options(STATE_SCALE_V1.stress)} onChange={e => setStress(e.target.value)} />
+      <OptionalSlider label="Настрій" value={mood === '' ? null : Number(mood)} onChange={value => setMood(value === null ? '' : String(value))} />
+      <OptionalSlider label="Енергія" value={energy === '' ? null : Number(energy)} onChange={value => setEnergy(value === null ? '' : String(value))} />
+      <OptionalSlider label="Напруга (1 — спокій, 5 — сильна напруга)" value={stress === '' ? null : Number(stress)} onChange={value => setStress(value === null ? '' : String(value))} />
       <InputField label="Тривалість сну, хвилини (необов’язково)" type="number" min="0" max="1440" step="1" value={sleep} onChange={e => setSleep(e.target.value)} />
       <SelectField label="Суб’єктивна якість сну" value={quality} options={options(STATE_SCALE_V1.sleepQuality)} onChange={e => setQuality(e.target.value)} />
       <Button type="submit">Зберегти</Button>{editing && <Button onClick={reset}>Скасувати</Button>}

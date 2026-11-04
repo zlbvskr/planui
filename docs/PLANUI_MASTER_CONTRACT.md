@@ -600,7 +600,7 @@ Do not invent daily streaks for weekly-frequency habits.
 No punitive streaks or productivity guilt.
 
 Habits can be disabled in Settings without deleting records, without dropping them from backups, and without affecting other views.
-Do not create timed habit reservations in this release.
+Superseded by the explicit M8 request: allow manually planned habit sessions referencing canonical occurrences, under the lifecycle policy documented below.
 
 ---
 
@@ -1008,3 +1008,38 @@ Do not claim unperformed tests or measurements.
 Do not dump the complete codebase into chat.
 
 Stop after reporting and wait for the next instruction.
+
+## M7 latest approved scope (2026-11-04)
+
+The explicit M7 request combines optional state check-ins and preferred-life material, superseding the former M8/M9 labels for these delivered features. Deferred habit alignment is unchanged.
+
+New state input is a short voluntary check-in, never a diary-writing form. Mood, energy and tension retain their existing 1–5 meanings; optional sleep duration (integer minutes, 0–1440) and subjective sleep quality (1 very poor–5 very good) are user-entered. New records carry scaleVersion 1. Multiple records per local date are independent; editing preserves identity, original timestamp, zone, text and tags. Historical text is available in a secondary read/copy/selected-export/explicit-delete archive. Text-only legacy notes are never fabricated into scored check-ins. No cause, diagnosis, treatment or automatic workload conclusions are produced.
+
+“Моє бажане життя”, framed “Як я бачу своє ідеальне життя”, reuses inspiration/media stores. New fragments may contain title/text, local JPEG/PNG/WebP, HTTP/S links and optional life-area, goal and existing project links. Optional prompts cover ordinary days, relationships, work/rest, creativity, and more/less. No automatic task/goal/date conversion or external fetching. Existing unclassified inspiration remains in “Збережене натхнення”. Disabling either module retains its data and complete ZIP coverage.
+
+## M8 latest approved scope (2026-11-04): contextual habits and manual sessions
+
+The explicit M8 request delivers the formerly deferred embedded-habit alignment and supersedes the older prohibition on timed habit reservations. Habits are optional inside Сьогодні → Звички, with no fifth primary destination. Reuse the existing full editor and one canonical habit/date history. Daily, weekday, weekly-frequency, binary/numeric, pause/archive, skip, partial and explicit previous-date logging remain available.
+
+Optional minimum-version wording, cue/context, reminder intention and direction/project/life-area links are user-entered. Minimum completion is separately indicated on a partial entry; it never converts incompatible wording into numeric progress or satisfies the ordinary target. It does not automatically release sessions. “Після пробудження” is a label, with no wake-time inference, notification clock or automatic scheduling.
+
+The days_off rule requires an explicit DayOffAnnotation on that stored calendar date. A blank date is not a day off. The marker is an intentional classification independent of occupied time: a shift ending that morning, or another explicit shift on the date, retains its actual blocking interval. Never describe the whole marked date as unoccupied. Logged occurrences retain their saved rule/target and explicit day-off classification when schedules or markers change; pending unlogged dates use current effective rules/markers. Future habit revisions are visible with their effective dates. Revisions are append-only and old logged timestamps/scores/IDs remain intact.
+
+Manual habit sessions use the existing reservation store, interval validation, overlap engine and calendar projections. They reference a canonical habit/date entry, create no task or duplicate habit, and never multiply weekly completion. Completing or intentionally skipping an occurrence releases its future pending sessions and truncates an ongoing session at action time, retaining elapsed occupancy and original interval metadata. Ended sessions and other occurrences remain unchanged. Clearing completion does not restore released time. Cancelling one session leaves sibling sessions and the log unchanged. Disabling/pausing does not cancel any existing session or remove definitions/history/backup coverage. Calendar session controls remain usable when the module is disabled.
+
+## M9 latest approved scope (2026-11-04): revised Wishlist / purchase list
+
+M9 delivers the revised optional Wishlist inside Я, superseding the older M10 Wishlist stage label. Name alone is sufficient; note, exact approximate price/currency, flat category, safe HTTP/S link, local JPEG/PNG/WebP and canonical project reference are optional. Creation progressively discloses optional fields. No wish/link/status operation creates planning records, deadlines, expenses, budgets or exchanges.
+
+Purchase intent has three current statuses: Хочу, Куплено, Більше не актуально. Archive remains orthogonal. Legacy active records default to Хочу at read time; legacy fulfilled records without an explicit purchase status display Здійснено раніше in a separate history scope. Migration does not infer purchase or generate purchasedAt. Explicit purchase marking records its time; a later status change retains the first explicit marking timestamp and original legacy state/fulfilledAt. Legacy fulfillment timestamps remain historical information, not purchase dates.
+
+Зараз/Пізніше/Колись remain independent secondary timing metadata, with Пізніше as the existing default. Arbitrary category names do not affect timing. Category deletion only unlinks categoryId. Project moves retain canonical projectId; explicit project deletion unlinks without deleting the wish.
+
+Money parsing and formatting use integer/string operations with BigInt intermediates, preserving the existing safe-integer minor-unit and decimal-string storage format. Missing and zero differ. Accept comma or dot decimals and correctly grouped spaces; reject ambiguous grouping, mixed separators, excess precision and unsafe integers without rounding. Existing amounts/currencies and unchanged authored text stay intact. Default currency applies to new entry defaults. Changing an existing priced item's currency requires explicit confirmation that the entered number will be expressed in the new currency, with no conversion. No cross-currency totals or financial tracking.
+
+Local images use the existing bounded raster/media infrastructure, with browser decoding before attachment, atomic wish/media writes and shared reference checks across live wishes, inspiration and retained recovery snapshots. Links open only on user action; no scraping or previews. Disabling the module preserves records, media and complete ZIP coverage.
+
+
+### M10 approved integration/recovery clarification
+
+M10 is integration and recovery hardening before final PWA work, superseding the historical M10 Wishlist stage label already delivered in M9. Reuse the Stage-11 ZIP/single-database recovery infrastructure. Cover every M1–M9 canonical record, association, archive/lifecycle field, exact price, local image and relevant preference regardless of module visibility. Validate before replacement, show a preview and explicit confirmation, preserve live data on validation/commit/quota failure, retain up to three local recovery points when feasible, and block stale/newer-incompatible clients while preserving unsaved input. Native schema 9 is the compatibility barrier; ZIP format 8 is unchanged. Actual protection and local/browser/backup limitations must be documented without invented encryption or secure-deletion claims. Final PWA/deployment verification remains a later stage.

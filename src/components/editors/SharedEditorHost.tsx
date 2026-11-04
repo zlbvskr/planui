@@ -1,3 +1,4 @@
+import { WishExtrasFields, emptyWishExtras, resolveWishExtras } from '../wishlist/WishExtrasFields';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   CheckSquare,
@@ -226,6 +227,8 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
   const [folderName, setFolderName] = useState('');
 
   // Personal record fields (10.2)
+  const [recordSleep, setRecordSleep] = useState('');
+  const [recordSleepQuality, setRecordSleepQuality] = useState('');
   const [recordText, setRecordText] = useState('');
   const [recordMood, setRecordMood] = useState<string>('');
   const [recordEnergy, setRecordEnergy] = useState<string>('');
@@ -246,6 +249,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
   } | null>(null);
 
   // Wish & Wishlist Category fields (10.5 - 10.7)
+  const [wishExtras,setWishExtras] = useState(emptyWishExtras);
   const [wishTitle, setWishTitle] = useState('');
   const [wishNote, setWishNote] = useState('');
   const [wishTiming, setWishTiming] = useState<WishlistTimingGroup>('later');
@@ -257,12 +261,16 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
   const [wishlistCategoryName, setWishlistCategoryName] = useState('');
 
   // Habit fields (Stage 9: 9.1 / 9.3 / 9.4)
+  const [habitMinimum, setHabitMinimum] = useState('');
+  const [habitCue, setHabitCue] = useState('');
+  const [habitReminder, setHabitReminder] = useState('');
+  const [habitFolder, setHabitFolder] = useState('');
   const [habitName, setHabitName] = useState('');
   const [habitDescription, setHabitDescription] = useState('');
   const [habitIcon, setHabitIcon] = useState<string>('repeat');
   const [habitLifeAreaId, setHabitLifeAreaId] = useState<string>('');
   const [habitRuleKind, setHabitRuleKind] = useState<
-    'daily' | 'selected_weekdays' | 'weekly_frequency'
+    'daily' | 'days_off' | 'selected_weekdays' | 'weekly_frequency'
   >('daily');
   const [habitWeekdaysIso, setHabitWeekdaysIso] = useState<number[]>([
     1, 3, 5,
@@ -361,6 +369,8 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
       setStageTargetDate(null);
 
       setFolderName('');
+      setRecordSleep('');
+      setRecordSleepQuality('');
       setRecordText('');
       setRecordMood('');
       setRecordEnergy('');
@@ -374,6 +384,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
       setInspirationIsFavorite(false);
       setInspirationImageFile(null);
 
+      setWishExtras(emptyWishExtras(initialContext.projectId??''));
       setWishTitle('');
       setWishNote('');
       setWishTiming('later');
@@ -382,6 +393,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
       setShowWishDetails(false);
       setWishlistCategoryName('');
 
+      setHabitMinimum(''); setHabitCue(''); setHabitReminder(''); setHabitFolder('');
       setHabitName('');
       setHabitDescription('');
       setHabitIcon('repeat');
@@ -431,9 +443,10 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
     stageTitle.trim().length > 0 ||
     stageExpectedOutcome.trim().length > 0 ||
     folderName.trim().length > 0 ||
+    habitMinimum.trim().length > 0 || habitCue.trim().length > 0 || habitReminder.trim().length > 0 || habitFolder !== '' ||
     habitName.trim().length > 0 ||
     habitDescription.trim().length > 0 ||
-    recordText.trim().length > 0 ||
+    recordSleep !== '' || recordSleepQuality !== '' || recordText.trim().length > 0 ||
     recordMood !== '' ||
     recordEnergy !== '' ||
     recordStress !== '' ||
@@ -442,6 +455,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
     inspirationTextContent.trim().length > 0 ||
     inspirationSafeUrl.trim().length > 0 ||
     inspirationImageFile !== null ||
+    Boolean(wishExtras.linkUrl||wishExtras.projectId||wishExtras.preparedMedia||wishExtras.validating||wishExtras.imageError) ||
     wishTitle.trim().length > 0 ||
     wishNote.trim().length > 0 ||
     wishPriceInput.trim().length > 0 ||
@@ -952,7 +966,8 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
           nowIso.slice(0, 10);
 
         let rule: HabitFrequencyRule;
-        if (habitRuleKind === 'daily') {
+        if (habitRuleKind === 'days_off') { rule = {kind: 'days_off'};
+        } else if (habitRuleKind === 'daily') {
           rule = { kind: 'daily' };
         } else if (habitRuleKind === 'selected_weekdays') {
           rule = {
@@ -984,6 +999,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
         await repositories.saveHabit({
           id,
           name: habitName,
+          minimumVersionUk: habitMinimum.trim() || null, contextCueUk: habitCue.trim() || null, reminderIntentionUk: habitReminder.trim() || null, folderId: editableContext.projectId ? null : habitFolder || null,
           description: habitDescription.trim() ? habitDescription.trim() : null,
           icon: habitIcon.trim() ? habitIcon.trim() : null,
           lifeAreaId: habitLifeAreaId ? habitLifeAreaId : null,
@@ -1026,7 +1042,10 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
           recordedAt: nowIso,
           localDate: editableContext.targetDate ?? nowIso.slice(0, 10),
           zoneId: lockedEditorZone,
-          text: recordText.trim() ? recordText.trim() : null,
+          text: null,
+          scaleVersion: 1,
+          sleepMinutes: recordSleep === '' ? null : Number(recordSleep),
+          sleepQuality: recordSleepQuality === '' ? null : Number(recordSleepQuality) as 1 | 2 | 3 | 4 | 5,
           mood: parsedMood,
           energy: parsedEnergy,
           stress: parsedStress,
@@ -1080,7 +1099,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
           nowIso,
         });
         await repositories.saveInspirationWithMediaTransactionally(
-          item,
+          { ...item, collection: 'preferred_life' },
           preparedMedia
         );
         onEntityCreated(`Елемент натхнення збережено${optFeedback}.`);
@@ -1092,6 +1111,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
         const built = buildWishItemRecord({
           id,
           title: wishTitle,
+          ...resolveWishExtras(wishExtras),
           note: wishNote,
           categoryId: editableContext.wishlistCategoryId || null,
           timing: wishTiming,
@@ -1101,7 +1121,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
           nowIso,
         });
 
-        await repositories.saveWishItem(built.wish);
+        await repositories.saveWishItem(built.wish,undefined,{media:wishExtras.preparedMedia??undefined});
 
         // 10.7: When a price is entered and no preferred currency existed, save the explicit choice
         if (built.explicitCurrencySelected && !preferredWishlistCurrency) {
@@ -2557,6 +2577,10 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
               data-testid="create-habit-description-input"
             />
 
+            <InputField label="Мінімальна версія (текст, необов’язково)" value={habitMinimum} onChange={e => setHabitMinimum(e.target.value)} />
+            <InputField label="Контекст / підказка (необов’язково)" placeholder="Наприклад: після пробудження" value={habitCue} onChange={e => setHabitCue(e.target.value)} />
+            <InputField label="Мій намір нагадати собі (без будильника)" value={habitReminder} onChange={e => setHabitReminder(e.target.value)} />
+            <SelectField label="Напрям (без проєкту)" value={editableContext.projectId ? '' : habitFolder} disabled={Boolean(editableContext.projectId)} onChange={e => setHabitFolder(e.target.value)} options={[{value:'',label:'Без напряму'},...folders.map(f => ({value:f.id,label:f.name}))]} />
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <SelectField
                 label="Піктограма"
@@ -2606,16 +2630,17 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
                 className="text-[14px] font-medium block"
                 style={{ color: 'var(--text-primary)' }}
               >
-                Правило розкладу (без часових слотів у календарі)
+                Правило розкладу (час лише за ручним плануванням)
               </span>
               <SegmentedControl<
-                'daily' | 'selected_weekdays' | 'weekly_frequency'
+                'daily' | 'days_off' | 'selected_weekdays' | 'weekly_frequency'
               >
                 ariaLabel="Правило розкладу звички"
                 value={habitRuleKind}
                 onChange={setHabitRuleKind}
                 options={[
                   { value: 'daily', label: 'Щодня' },
+                  { value: 'days_off', label: 'Позначені вихідні' },
                   { value: 'selected_weekdays', label: 'Обрані дні' },
                   { value: 'weekly_frequency', label: 'Разів на тиждень' },
                 ]}
@@ -2736,13 +2761,8 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
 
         {selectedAction === 'personal_record' && (
           <div className="space-y-3.5" data-testid="create-personal-record-form">
-            <TextAreaField
-              label={UK_STRINGS.creation.recordForm.textLabel}
-              placeholder={UK_STRINGS.creation.recordForm.textPlaceholder}
-              value={recordText}
-              onChange={(e) => setRecordText(e.target.value)}
-              data-testid="create-record-text-input"
-            />
+            <InputField label="Тривалість сну, хвилини (необов’язково)" type="number" min="0" max="1440" step="1" value={recordSleep} onChange={e => setRecordSleep(e.target.value)} />
+            <SelectField label="Суб’єктивна якість сну" value={recordSleepQuality} onChange={e => setRecordSleepQuality(e.target.value)} options={[{value: '', label: 'Не вказано'}, ...['Дуже погана', 'Погана', 'Посередня', 'Добра', 'Дуже добра'].map((label,i) => ({value: String(i+1), label}))]} />
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <SelectField
                 label={PERSONAL_STATE_QUESTIONS_UK.mood}
@@ -2932,7 +2952,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
               >
                 {showWishDetails
                   ? 'Сховати деталі'
-                  : 'Нотатка та орієнтовна ціна'}
+                  : 'Додаткові відомості'}
               </Button>
             </div>
 
@@ -2942,6 +2962,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
                 style={{ borderColor: 'var(--border-subtle)' }}
                 data-testid="wish-progressive-details-section"
               >
+                <WishExtrasFields value={wishExtras} onChange={setWishExtras} projects={projects} onError={setErrorMessage}/>
                 <TextAreaField
                   label="Нотатка (необов’язково)"
                   placeholder="Деталі, характеристики або роздуми..."

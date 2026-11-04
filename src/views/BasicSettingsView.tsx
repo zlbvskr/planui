@@ -384,7 +384,7 @@ export const BasicSettingsView: React.FC<BasicSettingsViewProps> = ({
         message: UK_STRINGS.settings.importSuccess,
       });
     } catch (err) {
-      if (err instanceof PlanuiError && err.code === 'RECOVERY_SNAPSHOT_FAILED') {
+      if (err instanceof PlanuiError && (err.code === 'RECOVERY_SNAPSHOT_FAILED' || err.code === 'STORAGE_QUOTA_EXCEEDED')) {
         setRecoveryFailedFallback(true);
       }
       setFeedback({
@@ -417,7 +417,7 @@ export const BasicSettingsView: React.FC<BasicSettingsViewProps> = ({
         message: UK_STRINGS.settings.restoreSnapshotSuccess,
       });
     } catch (err) {
-      if (err instanceof PlanuiError && err.code === 'RECOVERY_SNAPSHOT_FAILED') {
+      if (err instanceof PlanuiError && (err.code === 'RECOVERY_SNAPSHOT_FAILED' || err.code === 'STORAGE_QUOTA_EXCEEDED')) {
         setRecoveryFailedFallback(true);
       }
       setFeedback({
@@ -511,7 +511,7 @@ export const BasicSettingsView: React.FC<BasicSettingsViewProps> = ({
         message: UK_STRINGS.settings.resetSuccess,
       });
     } catch (err) {
-      if (err instanceof PlanuiError && err.code === 'RECOVERY_SNAPSHOT_FAILED') {
+      if (err instanceof PlanuiError && (err.code === 'RECOVERY_SNAPSHOT_FAILED' || err.code === 'STORAGE_QUOTA_EXCEEDED')) {
         setRecoveryFailedFallback(true);
       }
       setFeedback({

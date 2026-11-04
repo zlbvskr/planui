@@ -38,6 +38,7 @@ import {
   Task,
   TaskOwnership,
   TaskReservation,
+  ReservationReleaseReason,
   WishItem,
   WishlistCategory,
   ZonedInterval,
@@ -49,6 +50,7 @@ import {
   appendEffectiveHabitRuleRevision,
   resolveHabitEntryMutation,
   sortHabitRuleRevisions,
+  getEffectiveHabitRuleRevisionForDate,
 } from '../domain/habits';
 import { isMediaReferencedByLiveOrSnapshots } from '../domain/personalSpace';
 import {
@@ -137,7 +139,6 @@ export class PlanuiRepositories {
   public readonly tabSync: TabSyncCoordinator;
   private readonly rawEngine: StorageEngine;
   private knownDbGeneration: number | null = null;
-  private bypassGenerationCheck = false;
 
   constructor(engine?: StorageEngine, tabSync?: TabSyncCoordinator) {
     const baseEngine = engine ?? createStorageEngine();
@@ -157,8 +158,9 @@ export class PlanuiRepositories {
             ? [...storeNames, STORE_NAMES.settings]
             : storeNames;
 
-        return baseEngine.runTransaction(effectiveStores, mode, async (tx) => {
-          if (mode === 'readwrite' && !this.bypassGenerationCheck) {
+        let committedGeneration: number | null = null;
+        const result = await baseEngine.runTransaction(effectiveStores, mode, async (tx) => {
+          if (mode === 'readwrite') {
             const existingSettings = await tx.get<PlanuiSettings>(
               STORE_NAMES.settings,
               'singleton'
@@ -202,12 +204,17 @@ export class PlanuiRepositories {
               'singleton'
             );
             if (postSettings) {
-              this.knownDbGeneration = postSettings.dbGeneration;
+              committedGeneration = postSettings.dbGeneration;
             }
           }
 
           return result;
+        }).catch((error: unknown) => {
+          if (error instanceof PlanuiError) throw error;
+          throw new PlanuiError(error && typeof error === 'object' && 'name' in error && error.name === 'QuotaExceededError' ? 'STORAGE_QUOTA_EXCEEDED' : 'DB_TRANSACTION_FAILED');
         });
+        if (committedGeneration !== null) this.knownDbGeneration = committedGeneration;
+        return result;
       },
     };
   }
@@ -224,29 +231,12 @@ export class PlanuiRepositories {
     this.knownDbGeneration = null;
   }
 
-  public async runUnguardedReplacementTransaction<R>(
+  // Replacement uses the same schema/generation guard as every other write.
+  public async runReplacementTransaction<R>(
     storeNames: readonly StoreName[],
     work: (tx: StorageTransactionContext) => Promise<R> | R
   ): Promise<R> {
-    const prev = this.bypassGenerationCheck;
-    this.bypassGenerationCheck = true;
-    try {
-      return await this.rawEngine.runTransaction(storeNames, 'readwrite', async (tx) => {
-        const res = await work(tx);
-        if (storeNames.includes(STORE_NAMES.settings)) {
-          const postSettings = await tx.get<PlanuiSettings>(
-            STORE_NAMES.settings,
-            'singleton'
-          );
-          if (postSettings) {
-            this.knownDbGeneration = postSettings.dbGeneration;
-          }
-        }
-        return res;
-      });
-    } finally {
-      this.bypassGenerationCheck = prev;
-    }
+    return this.engine.runTransaction(storeNames, 'readwrite', work);
   }
 
   private assertRevisionMatch(
@@ -275,7 +265,6 @@ export class PlanuiRepositories {
     );
     if (existing) {
       if (
-        !this.bypassGenerationCheck &&
         this.knownDbGeneration !== null &&
         existing.dbGeneration !== this.knownDbGeneration
       ) {
@@ -437,7 +426,9 @@ export class PlanuiRepositories {
 
     return this.engine.runTransaction(
       [
+        STORE_NAMES.habits,
         STORE_NAMES.folders,
+        STORE_NAMES.wishes,
         STORE_NAMES.projects,
         STORE_NAMES.stages,
         STORE_NAMES.tasks,
@@ -451,6 +442,13 @@ export class PlanuiRepositories {
           throw new PlanuiError('ENTITY_NOT_FOUND', folderId);
         }
 
+        const removedDirections = mode === 'recursive_delete' ? collectDescendantFolderIds(allFolders, folderId) : new Set([folderId]);
+        const relatedProjects = await tx.getAll<Project>(STORE_NAMES.projects);
+        const removedProjects = new Set(mode === 'recursive_delete' ? relatedProjects.filter(p => p.folderId && removedDirections.has(p.folderId)).map(p => p.id) : []);
+        for (const wish of await tx.getAll<WishItem>(STORE_NAMES.wishes)) if (wish.projectId && removedProjects.has(wish.projectId)) await tx.put(STORE_NAMES.wishes,{...wish,projectId:null,updatedAt:nowIso,revision:wish.revision+1});
+        for (const habit of await tx.getAll<Habit>(STORE_NAMES.habits)) {
+          if ((habit.folderId && removedDirections.has(habit.folderId)) || (habit.projectId && removedProjects.has(habit.projectId))) await tx.put(STORE_NAMES.habits, {...habit, folderId: habit.folderId && removedDirections.has(habit.folderId) ? (mode === 'rehome_to_parent' ? target.parentId : null) : habit.folderId, projectId: habit.projectId && removedProjects.has(habit.projectId) ? null : habit.projectId, updatedAt: nowIso, revision: habit.revision + 1});
+        }
         const allProjects = await tx.getAll<Project>(STORE_NAMES.projects);
         const allTasks = await tx.getAll<Task>(STORE_NAMES.tasks);
 
@@ -539,7 +537,7 @@ export class PlanuiRepositories {
           STORE_NAMES.reservations
         );
         for (const res of allReservations) {
-          if (deletedTaskIds.has(res.taskId)) {
+          if ((res.taskId !== null && deletedTaskIds.has(res.taskId))) {
             await tx.delete(STORE_NAMES.reservations, res.id);
           }
         }
@@ -645,7 +643,7 @@ export class PlanuiRepositories {
 
     return this.engine.runTransaction(
       [
-        STORE_NAMES.goals,
+        STORE_NAMES.inspirationItems, STORE_NAMES.goals,
         STORE_NAMES.projects,
         STORE_NAMES.stages,
         STORE_NAMES.tasks,
@@ -690,7 +688,7 @@ export class PlanuiRepositories {
           }
           const reservations = await tx.getAll<TaskReservation>(STORE_NAMES.reservations);
           for (const r of reservations) {
-            if (deletedIds.has(r.taskId)) {
+            if ((r.taskId !== null && deletedIds.has(r.taskId))) {
               await tx.delete(STORE_NAMES.reservations, r.id);
             }
           }
@@ -712,6 +710,9 @@ export class PlanuiRepositories {
 
         for (const stage of await tx.getAll<ProjectStage>(STORE_NAMES.stages)) {
           if (stage.goalId === goalId) await tx.delete(STORE_NAMES.stages, stage.id);
+        }
+        for (const item of await tx.getAll<InspirationItem>(STORE_NAMES.inspirationItems)) {
+          if (item.goalId === goalId) await tx.put(STORE_NAMES.inspirationItems, { ...item, goalId: null, revision: item.revision + 1, updatedAt: nowIso });
         }
         await tx.delete(STORE_NAMES.goals, goalId);
 
@@ -850,7 +851,7 @@ export class PlanuiRepositories {
         );
         const activeReservationsByTaskId = new Map<string, number>();
         for (const r of reservations) {
-          if (r.state === 'active') {
+          if (r.state === 'active' && r.taskId !== null) {
             activeReservationsByTaskId.set(
               r.taskId,
               (activeReservationsByTaskId.get(r.taskId) ?? 0) + 1
@@ -953,6 +954,7 @@ export class PlanuiRepositories {
       [STORE_NAMES.reservations, STORE_NAMES.tasks],
       'readwrite',
       async (tx) => {
+        if (reservation.taskId === null || reservation.habitOccurrence) throw new PlanuiError('VALIDATION_FAILED');
         const task = await tx.get<Task>(STORE_NAMES.tasks, reservation.taskId);
         if (!task) {
           throw new PlanuiError(
@@ -1015,6 +1017,7 @@ export class PlanuiRepositories {
         if (!existing) {
           throw new PlanuiError('ENTITY_NOT_FOUND', reservationId);
         }
+        if (existing.taskId === null || existing.habitOccurrence) throw new PlanuiError('VALIDATION_FAILED');
         const task = await tx.get<Task>(STORE_NAMES.tasks, existing.taskId);
         if (!task) {
           throw new PlanuiError('RESERVATION_TASK_NOT_FOUND', existing.taskId);
@@ -1054,6 +1057,7 @@ export class PlanuiRepositories {
         if (!existing) {
           throw new PlanuiError('ENTITY_NOT_FOUND', reservationId);
         }
+        if (existing.taskId === null || existing.habitOccurrence) throw new PlanuiError('VALIDATION_FAILED');
         const task = await tx.get<Task>(STORE_NAMES.tasks, existing.taskId);
         if (!task) {
           throw new PlanuiError('RESERVATION_TASK_NOT_FOUND', existing.taskId);
@@ -1818,7 +1822,7 @@ export class PlanuiRepositories {
           const nowMs = Date.parse(nowIso);
 
           for (const res of allReservations) {
-            if (projectTaskIds.has(res.taskId) && res.state === 'active') {
+            if ((res.taskId !== null && projectTaskIds.has(res.taskId)) && res.state === 'active') {
               const startMs = Date.parse(res.interval.startInstant);
               const endMs = Date.parse(res.interval.endInstant);
               if (startMs >= nowMs) {
@@ -1905,6 +1909,7 @@ export class PlanuiRepositories {
 
     return this.engine.runTransaction(
       [
+        STORE_NAMES.wishes,
         STORE_NAMES.projects,
         STORE_NAMES.stages,
         STORE_NAMES.tasks,
@@ -1919,6 +1924,7 @@ export class PlanuiRepositories {
           throw new PlanuiError('ENTITY_NOT_FOUND', projectId);
         }
 
+        for (const wish of await tx.getAll<WishItem>(STORE_NAMES.wishes)) if (wish.projectId === projectId) await tx.put(STORE_NAMES.wishes,{...wish,projectId:null,updatedAt:nowIso,revision:wish.revision+1});
         const allStages = await tx.getAll<ProjectStage>(STORE_NAMES.stages);
         let deletedStages = 0;
         for (const st of allStages) {
@@ -1982,7 +1988,7 @@ export class PlanuiRepositories {
             STORE_NAMES.reservations
           );
           for (const res of allReservations) {
-            if (deletedTaskIds.has(res.taskId)) {
+            if ((res.taskId !== null && deletedTaskIds.has(res.taskId))) {
               await tx.delete(STORE_NAMES.reservations, res.id);
             }
           }
@@ -2710,6 +2716,69 @@ export class PlanuiRepositories {
     };
   }
 
+  private async pinHabitHistory(tx: StorageTransactionContext, habit: Habit): Promise<void> {
+    for (const entry of await tx.getAll<HabitEntry>(STORE_NAMES.habitEntries)) {
+      if (entry.habitId === habit.id && !entry.ruleSnapshot) {
+        await tx.put(STORE_NAMES.habitEntries, { ...entry, ruleSnapshot: getEffectiveHabitRuleRevisionForDate(habit, entry.localDate) });
+      }
+    }
+  }
+
+  private async releaseHabitOccurrenceSessions(tx: StorageTransactionContext, entry: Pick<HabitEntry, 'id' | 'status'>, now: string, onlySessionId?: string, reason?: ReservationReleaseReason): Promise<void> {
+    if (entry.status !== 'completed' && entry.status !== 'skipped') return;
+    for (const session of await tx.getAll<TaskReservation>(STORE_NAMES.reservations)) {
+      if ((onlySessionId && session.id !== onlySessionId) || session.habitOccurrence?.entryId !== entry.id || session.state !== 'active' || Date.parse(session.interval.endInstant) <= Date.parse(now)) continue;
+      const future = Date.parse(session.interval.startInstant) >= Date.parse(now);
+      const wall = formatInstantInZone(now, session.interval.originZone);
+      const updated: TaskReservation = { ...session,
+        state: future ? 'released' : 'active',
+        interval: future ? session.interval : { ...session.interval, endInstant: now, originEndLocalDate: wall.localDate, originEndLocalTime: wall.localTime },
+        releaseMetadata: { releasedAt: now, reason: reason ?? (entry.status === 'completed' ? 'habit_completed' : 'habit_skipped'), originalStartInstant: session.interval.startInstant, originalEndInstant: session.releaseMetadata?.originalEndInstant ?? session.interval.endInstant },
+        updatedAt: now, revision: session.revision + 1 };
+      validateReservationRecord(updated);
+      await tx.put(STORE_NAMES.reservations, updated);
+    }
+  }
+
+  public async scheduleHabitSession(params: { id: string; habitId: string; localDate: string; interval: ZonedInterval; confirmOverlap?: boolean; expectedHabitRevision: number; nowIso?: string }): Promise<TaskReservation> {
+    this.tabSync.assertNoRemoteImportInProgress();
+    assertValidLocalDate(params.localDate); validateZonedInterval(params.interval);
+    const now = params.nowIso ?? new Date().toISOString();
+    const result = await this.engine.runTransaction([STORE_NAMES.habits, STORE_NAMES.habitEntries, STORE_NAMES.reservations, STORE_NAMES.events, STORE_NAMES.tasks, STORE_NAMES.dayOffAnnotations], 'readwrite', async tx => {
+      const habit = await tx.get<Habit>(STORE_NAMES.habits, params.habitId);
+      if (!habit || habit.state !== 'active') throw new PlanuiError('HABIT_NOT_FOUND');
+      this.assertRevisionMatch(habit, params.expectedHabitRevision);
+      const entries = await tx.getAll<HabitEntry>(STORE_NAMES.habitEntries);
+      let entry = entries.find(e => e.habitId === habit.id && e.localDate === params.localDate);
+      if (entry?.status === 'completed' || entry?.status === 'skipped') throw new PlanuiError('VALIDATION_FAILED');
+      const report = detectScheduleConflicts({ candidateStartInstant: params.interval.startInstant, candidateEndInstant: params.interval.endInstant, displayZone: params.interval.originZone, events: await tx.getAll(STORE_NAMES.events), tasks: await tx.getAll(STORE_NAMES.tasks), reservations: await tx.getAll(STORE_NAMES.reservations) });
+      if (report.hasConflicts && !params.confirmOverlap) throw new PlanuiError('VALIDATION_FAILED');
+      if (await tx.get(STORE_NAMES.reservations, params.id)) throw new PlanuiError('STALE_WRITE_CONFLICT');
+      if (!entry) {
+        const daysOff = await tx.getAll<DayOffAnnotation>(STORE_NAMES.dayOffAnnotations);
+        entry = { id: `hentry_${habit.id}_${params.localDate}`, habitId: habit.id, localDate: params.localDate, status: 'no_entry', numericValue: null, note: null, recordedAt: now, updatedAt: now, revision: 1, ruleSnapshot: getEffectiveHabitRuleRevisionForDate(habit, params.localDate), dayOffSnapshot: daysOff.some(d => d.localDate === params.localDate) };
+        validateHabitEntryRecord(entry); if (await tx.get(STORE_NAMES.habitEntries, entry.id)) throw new PlanuiError('STALE_WRITE_CONFLICT'); await tx.put(STORE_NAMES.habitEntries, entry);
+      }
+      const session: TaskReservation = { id: params.id, taskId: null, habitOccurrence: { entryId: entry.id, habitId: habit.id, localDate: entry.localDate }, interval: params.interval, state: 'active', releaseMetadata: null, createdAt: now, updatedAt: now, revision: 1 };
+      validateReservationRecord(session); await tx.put(STORE_NAMES.reservations, session);
+      return session;
+    });
+    this.tabSync.broadcast({ type: 'ENTITY_MUTATED', stores: [STORE_NAMES.habitEntries, STORE_NAMES.reservations], dbGeneration: this.knownDbGeneration ?? 1, timestamp: now });
+    return result;
+  }
+
+  public async cancelHabitSession(id: string, expectedRevision: number, nowIso = new Date().toISOString()): Promise<void> {
+    this.tabSync.assertNoRemoteImportInProgress();
+    await this.engine.runTransaction([STORE_NAMES.reservations], 'readwrite', async tx => {
+      const session = await tx.get<TaskReservation>(STORE_NAMES.reservations, id);
+      if (!session?.habitOccurrence) throw new PlanuiError('ENTITY_NOT_FOUND');
+      this.assertRevisionMatch(session, expectedRevision);
+      // Same preservation policy as completion: retain the elapsed blocking slice.
+      await this.releaseHabitOccurrenceSessions(tx, { id: session.habitOccurrence.entryId, status: 'skipped' }, nowIso, id, 'manual_unplan');
+    });
+    this.tabSync.broadcast({ type: 'ENTITY_MUTATED', stores: [STORE_NAMES.reservations], dbGeneration: this.knownDbGeneration ?? 1, timestamp: nowIso });
+  }
+
   public async saveHabit(
     habit: Habit,
     expectedRevision?: number
@@ -2723,10 +2792,17 @@ export class PlanuiRepositories {
     validateHabitRecord(sortedHabit);
 
     const saved = await this.engine.runTransaction(
-      [STORE_NAMES.habits, STORE_NAMES.settings],
+      [STORE_NAMES.habits, STORE_NAMES.habitEntries, STORE_NAMES.settings, STORE_NAMES.folders, STORE_NAMES.projects, STORE_NAMES.lifeAreaQuestions],
       'readwrite',
       async (tx) => {
         const existing = await tx.get<Habit>(STORE_NAMES.habits, sortedHabit.id);
+        if (existing) {
+          if (existing.ruleRevisions.some(old => !sortedHabit.ruleRevisions.some(next => JSON.stringify(old) === JSON.stringify(next)))) throw new PlanuiError('HABIT_INVALID_RULE');
+          await this.pinHabitHistory(tx, existing);
+        }
+        if (sortedHabit.folderId && !await tx.get(STORE_NAMES.folders, sortedHabit.folderId)) throw new PlanuiError('ENTITY_NOT_FOUND');
+        if (sortedHabit.projectId && !await tx.get(STORE_NAMES.projects, sortedHabit.projectId)) throw new PlanuiError('PROJECT_NOT_FOUND');
+        if (sortedHabit.lifeAreaId && !await tx.get(STORE_NAMES.lifeAreaQuestions, sortedHabit.lifeAreaId)) throw new PlanuiError('ENTITY_NOT_FOUND');
         const nextRev = this.assertRevisionMatch(existing, expectedRevision);
         const record: Habit = { ...sortedHabit, revision: nextRev };
         validateHabitRecord(record);
@@ -2759,13 +2835,14 @@ export class PlanuiRepositories {
     this.tabSync.assertNoRemoteImportInProgress();
 
     const saved = await this.engine.runTransaction(
-      [STORE_NAMES.habits, STORE_NAMES.settings],
+      [STORE_NAMES.habits, STORE_NAMES.habitEntries, STORE_NAMES.settings, STORE_NAMES.folders, STORE_NAMES.projects, STORE_NAMES.lifeAreaQuestions],
       'readwrite',
       async (tx) => {
         const existing = await tx.get<Habit>(STORE_NAMES.habits, habitId);
         if (!existing) {
           throw new PlanuiError('HABIT_NOT_FOUND', habitId);
         }
+        await this.pinHabitHistory(tx, existing);
         const nextRev = this.assertRevisionMatch(existing, expectedRevision);
         const updatedRevisions = appendEffectiveHabitRuleRevision(
           existing.ruleRevisions,
@@ -2845,7 +2922,7 @@ export class PlanuiRepositories {
     this.tabSync.assertNoRemoteImportInProgress();
 
     const saved = await this.engine.runTransaction(
-      [STORE_NAMES.habitEntries, STORE_NAMES.habits, STORE_NAMES.settings],
+      [STORE_NAMES.habitEntries, STORE_NAMES.habits, STORE_NAMES.settings, STORE_NAMES.reservations, STORE_NAMES.dayOffAnnotations],
       'readwrite',
       async (tx) => {
         const habit = await tx.get<Habit>(STORE_NAMES.habits, entry.habitId);
@@ -2871,9 +2948,11 @@ export class PlanuiRepositories {
 
         const existing = allEntries.find((e) => e.id === entry.id);
         const nextRev = this.assertRevisionMatch(existing, expectedRevision);
-        const record: HabitEntry = { ...entry, revision: nextRev };
+        if (existing && (existing.habitId !== entry.habitId || existing.localDate !== entry.localDate)) throw new PlanuiError('VALIDATION_FAILED');
+        const record: HabitEntry = { ...entry, ruleSnapshot: (existing?.status !== 'no_entry' ? existing?.ruleSnapshot : undefined) ?? entry.ruleSnapshot ?? getEffectiveHabitRuleRevisionForDate(habit, entry.localDate), dayOffSnapshot: (existing?.status !== 'no_entry' ? existing?.dayOffSnapshot : undefined) ?? entry.dayOffSnapshot ?? (await tx.getAll<DayOffAnnotation>(STORE_NAMES.dayOffAnnotations)).some(d => d.localDate === entry.localDate), revision: nextRev };
         validateHabitEntryRecord(record, new Set([habit.id]));
         await tx.put(STORE_NAMES.habitEntries, record);
+        await this.releaseHabitOccurrenceSessions(tx, record, record.updatedAt);
         const settings = await this.ensureSettingsInTx(tx, record.updatedAt);
         return { record, dbGeneration: settings.dbGeneration };
       }
@@ -2881,7 +2960,7 @@ export class PlanuiRepositories {
 
     this.tabSync.broadcast({
       type: 'ENTITY_MUTATED',
-      stores: [STORE_NAMES.habitEntries],
+      stores: [STORE_NAMES.habitEntries, STORE_NAMES.reservations],
       dbGeneration: saved.dbGeneration,
       timestamp: saved.record.updatedAt,
     });
@@ -2904,7 +2983,7 @@ export class PlanuiRepositories {
     const nowIso = params.nowIso ?? new Date().toISOString();
 
     const res = await this.engine.runTransaction(
-      [STORE_NAMES.habitEntries, STORE_NAMES.habits, STORE_NAMES.settings],
+      [STORE_NAMES.habitEntries, STORE_NAMES.habits, STORE_NAMES.settings, STORE_NAMES.reservations, STORE_NAMES.dayOffAnnotations],
       'readwrite',
       async (tx) => {
         const habit = await tx.get<Habit>(STORE_NAMES.habits, params.habitId);
@@ -2931,12 +3010,20 @@ export class PlanuiRepositories {
 
         let savedEntry: HabitEntry | null = null;
         if (mutation.action === 'delete') {
-          await tx.delete(STORE_NAMES.habitEntries, mutation.entryId);
-          savedEntry = null;
+          const hasSession = (await tx.getAll<TaskReservation>(STORE_NAMES.reservations)).some(r => r.habitOccurrence?.entryId === mutation.entryId);
+          if (hasSession && existingEntry) {
+            savedEntry = { ...existingEntry, status: 'no_entry', numericValue: null, minimumCompletedUk: null, revision: existingEntry.revision + 1, updatedAt: nowIso };
+            await tx.put(STORE_NAMES.habitEntries, savedEntry);
+          } else { await tx.delete(STORE_NAMES.habitEntries, mutation.entryId); savedEntry = null; }
         } else if (mutation.action === 'upsert') {
+          mutation.entry.ruleSnapshot = (existingEntry?.status !== 'no_entry' ? existingEntry?.ruleSnapshot : undefined) ?? getEffectiveHabitRuleRevisionForDate(habit, params.localDate);
+          mutation.entry.dayOffSnapshot = (existingEntry?.status !== 'no_entry' ? existingEntry?.dayOffSnapshot : undefined) ?? (await tx.getAll<DayOffAnnotation>(STORE_NAMES.dayOffAnnotations)).some(d => d.localDate === params.localDate);
+          const collision = await tx.get<HabitEntry>(STORE_NAMES.habitEntries, mutation.entry.id);
+          if (collision && (collision.habitId !== habit.id || collision.localDate !== params.localDate)) throw new PlanuiError('STALE_WRITE_CONFLICT');
           validateHabitEntryRecord(mutation.entry, new Set([habit.id]));
           await tx.put(STORE_NAMES.habitEntries, mutation.entry);
           savedEntry = mutation.entry;
+          await this.releaseHabitOccurrenceSessions(tx, savedEntry, nowIso);
         } else {
           savedEntry = existingEntry;
         }
@@ -2948,7 +3035,7 @@ export class PlanuiRepositories {
 
     this.tabSync.broadcast({
       type: 'ENTITY_MUTATED',
-      stores: [STORE_NAMES.habitEntries],
+      stores: [STORE_NAMES.habitEntries, STORE_NAMES.reservations],
       dbGeneration: res.dbGeneration,
       timestamp: nowIso,
     });
@@ -2963,10 +3050,13 @@ export class PlanuiRepositories {
     this.tabSync.assertNoRemoteImportInProgress();
 
     const res = await this.engine.runTransaction(
-      [STORE_NAMES.habitEntries, STORE_NAMES.settings],
+      [STORE_NAMES.habitEntries, STORE_NAMES.settings, STORE_NAMES.reservations],
       'readwrite',
       async (tx) => {
-        await tx.delete(STORE_NAMES.habitEntries, entryId);
+        const entry = await tx.get<HabitEntry>(STORE_NAMES.habitEntries, entryId);
+        const referenced = (await tx.getAll<TaskReservation>(STORE_NAMES.reservations)).some(s => s.habitOccurrence?.entryId === entryId);
+        if (entry && referenced) await tx.put(STORE_NAMES.habitEntries, { ...entry, status: 'no_entry', numericValue: null, minimumCompletedUk: null, revision: entry.revision + 1, updatedAt: nowIso });
+        else await tx.delete(STORE_NAMES.habitEntries, entryId);
         const settings = await this.ensureSettingsInTx(tx, nowIso);
         return { dbGeneration: settings.dbGeneration };
       }
@@ -2990,7 +3080,7 @@ export class PlanuiRepositories {
     this.tabSync.assertNoRemoteImportInProgress();
 
     const res = await this.engine.runTransaction(
-      [STORE_NAMES.habits, STORE_NAMES.habitEntries, STORE_NAMES.settings],
+      [STORE_NAMES.habits, STORE_NAMES.habitEntries, STORE_NAMES.settings, STORE_NAMES.reservations],
       'readwrite',
       async (tx) => {
         const existingHabit = await tx.get<Habit>(STORE_NAMES.habits, habitId);
@@ -3009,6 +3099,7 @@ export class PlanuiRepositories {
           }
         }
 
+        for (const session of await tx.getAll<TaskReservation>(STORE_NAMES.reservations)) if (session.habitOccurrence?.habitId === habitId) await tx.delete(STORE_NAMES.reservations, session.id);
         await tx.delete(STORE_NAMES.habits, habitId);
         const settings = await this.ensureSettingsInTx(tx, nowIso);
         return {
@@ -3020,7 +3111,7 @@ export class PlanuiRepositories {
 
     this.tabSync.broadcast({
       type: 'ENTITY_MUTATED',
-      stores: [STORE_NAMES.habits, STORE_NAMES.habitEntries],
+      stores: [STORE_NAMES.habits, STORE_NAMES.habitEntries, STORE_NAMES.reservations],
       dbGeneration: res.dbGeneration,
       timestamp: nowIso,
     });
@@ -3093,7 +3184,7 @@ export class PlanuiRepositories {
 
   public async setLifeAreaLink(kind: Exclude<LifeLinkKind, 'reservation'>, id: string, areaId: string | null, expectedRevision: number): Promise<void> {
     this.tabSync.assertNoRemoteImportInProgress();
-    const stores = { folder: STORE_NAMES.folders, goal: STORE_NAMES.goals, project: STORE_NAMES.projects, task: STORE_NAMES.tasks, habit: STORE_NAMES.habits, event: STORE_NAMES.events };
+    const stores = { inspiration: STORE_NAMES.inspirationItems, folder: STORE_NAMES.folders, goal: STORE_NAMES.goals, project: STORE_NAMES.projects, task: STORE_NAMES.tasks, habit: STORE_NAMES.habits, event: STORE_NAMES.events };
     const store = stores[kind];
     if (!store) throw new PlanuiError('VALIDATION_FAILED');
     await this.engine.runTransaction([store, STORE_NAMES.lifeAreaQuestions], 'readwrite', async tx => {
@@ -3134,13 +3225,13 @@ export class PlanuiRepositories {
   public async mergeLifeAreas(sourceId: string, targetId: string, sourceRevision: number, targetRevision: number, reviewedSignature: string, explicitConfirmation: boolean): Promise<void> {
     this.tabSync.assertNoRemoteImportInProgress();
     if (!explicitConfirmation || sourceId === targetId) throw new PlanuiError('VALIDATION_FAILED');
-    const stores = { folder: STORE_NAMES.folders, goal: STORE_NAMES.goals, project: STORE_NAMES.projects, task: STORE_NAMES.tasks, habit: STORE_NAMES.habits, event: STORE_NAMES.events };
+    const stores = { inspiration: STORE_NAMES.inspirationItems, folder: STORE_NAMES.folders, goal: STORE_NAMES.goals, project: STORE_NAMES.projects, task: STORE_NAMES.tasks, habit: STORE_NAMES.habits, event: STORE_NAMES.events };
     await this.engine.runTransaction([STORE_NAMES.lifeAreaQuestions, ...Object.values(stores), STORE_NAMES.reservations], 'readwrite', async tx => {
       const areas = await tx.getAll<LifeAreaQuestion>(STORE_NAMES.lifeAreaQuestions);
       const source = areas.find(a => a.id === sourceId), target = areas.find(a => a.id === targetId);
       if (!source || !target || source.mergedIntoId || target.mergedIntoId || target.archived) throw new PlanuiError('VALIDATION_FAILED');
       this.assertRevisionMatch(source, sourceRevision); this.assertRevisionMatch(target, targetRevision);
-      const data: LifeLinkSource = { folders: await tx.getAll(STORE_NAMES.folders), goals: await tx.getAll(STORE_NAMES.goals), projects: await tx.getAll(STORE_NAMES.projects), tasks: await tx.getAll(STORE_NAMES.tasks), habits: await tx.getAll(STORE_NAMES.habits), events: await tx.getAll(STORE_NAMES.events), reservations: await tx.getAll(STORE_NAMES.reservations) };
+      const data: LifeLinkSource = { inspirationItems: await tx.getAll<InspirationItem>(STORE_NAMES.inspirationItems), folders: await tx.getAll(STORE_NAMES.folders), goals: await tx.getAll(STORE_NAMES.goals), projects: await tx.getAll(STORE_NAMES.projects), tasks: await tx.getAll(STORE_NAMES.tasks), habits: await tx.getAll(STORE_NAMES.habits), events: await tx.getAll(STORE_NAMES.events), reservations: await tx.getAll(STORE_NAMES.reservations) };
       if (lifeAreaMergeSignature(data, sourceId) !== reviewedSignature) throw new PlanuiError('STALE_WRITE_CONFLICT');
       const now = new Date().toISOString();
       for (const link of directMergeLinks(data, sourceId)) {
@@ -3263,7 +3354,7 @@ export class PlanuiRepositories {
 
     const saved = await this.engine.runTransaction(
       [
-        STORE_NAMES.inspirationItems,
+        STORE_NAMES.goals, STORE_NAMES.lifeAreaQuestions, STORE_NAMES.inspirationItems,
         STORE_NAMES.mediaMeta,
         STORE_NAMES.mediaBlobs,
         STORE_NAMES.settings,
@@ -3292,6 +3383,8 @@ export class PlanuiRepositories {
         const nextRev = this.assertRevisionMatch(existing, expectedRevision);
         const record: InspirationItem = { ...item, revision: nextRev };
         validateInspirationItemRecord(record, mediaIds);
+        if (record.goalId != null && !await tx.get(STORE_NAMES.goals, record.goalId)) throw new PlanuiError('VALIDATION_FAILED');
+        if (record.lifeAreaId != null && !await tx.get(STORE_NAMES.lifeAreaQuestions, record.lifeAreaId)) throw new PlanuiError('VALIDATION_FAILED');
         await tx.put(STORE_NAMES.inspirationItems, record);
         const settings = await this.ensureSettingsInTx(tx, record.updatedAt);
         return { record, dbGeneration: settings.dbGeneration };
@@ -3319,6 +3412,7 @@ export class PlanuiRepositories {
 
     const res = await this.engine.runTransaction(
       [
+        STORE_NAMES.wishes,
         STORE_NAMES.inspirationItems,
         STORE_NAMES.mediaMeta,
         STORE_NAMES.mediaBlobs,
@@ -3347,7 +3441,8 @@ export class PlanuiRepositories {
             existing.mediaId,
             allLiveInspiration,
             allSnapshots,
-            existing.id
+            existing.id,
+            await tx.getAll<WishItem>(STORE_NAMES.wishes)
           );
           if (!stillReferenced) {
             await tx.delete(STORE_NAMES.mediaMeta, existing.mediaId);
@@ -3417,6 +3512,7 @@ export class PlanuiRepositories {
         const allCategories = await tx.getAll<WishlistCategory>(
           STORE_NAMES.wishlistCategories
         );
+        if (orderedCategoryIds.length !== allCategories.length || new Set(orderedCategoryIds).size !== allCategories.length || allCategories.some(c=>!orderedCategoryIds.includes(c.id))) throw new PlanuiError('STALE_WRITE_CONFLICT');
         const byId = new Map(allCategories.map((c) => [c.id, c]));
         let order = 1;
         for (const id of orderedCategoryIds) {
@@ -3443,68 +3539,45 @@ export class PlanuiRepositories {
     });
   }
 
-  public async saveWishItem(
-    wish: WishItem,
-    expectedRevision?: number
-  ): Promise<WishItem> {
+  private async collectUnusedWishMedia(tx: StorageTransactionContext, mediaId: string): Promise<void> {
+    const referenced = isMediaReferencedByLiveOrSnapshots(mediaId, await tx.getAll<InspirationItem>(STORE_NAMES.inspirationItems), await tx.getAll<RecoverySnapshotRecord>(STORE_NAMES.recoverySnapshots), undefined, await tx.getAll<WishItem>(STORE_NAMES.wishes));
+    if (!referenced) { await tx.delete(STORE_NAMES.mediaMeta, mediaId); await tx.delete(STORE_NAMES.mediaBlobs, mediaId); }
+  }
+
+  public async saveWishItem(wish: WishItem, expectedRevision?: number, options: { media?: {meta: MediaAssetMeta; bytes: Uint8Array}; confirmCurrencyChange?: boolean } = {}): Promise<WishItem> {
     this.tabSync.assertNoRemoteImportInProgress();
-
-    const saved = await this.engine.runTransaction(
-      [
-        STORE_NAMES.wishes,
-        STORE_NAMES.wishlistCategories,
-        STORE_NAMES.settings,
-      ],
-      'readwrite',
-      async (tx) => {
-        const categories = await tx.getAll<WishlistCategory>(
-          STORE_NAMES.wishlistCategories
-        );
-        const categoryIds = new Set(categories.map((c) => c.id));
-        const existing = await tx.get<WishItem>(STORE_NAMES.wishes, wish.id);
-        const nextRev = this.assertRevisionMatch(existing, expectedRevision);
-        const record: WishItem = { ...wish, revision: nextRev };
-        validateWishItemRecord(record, categoryIds);
-        await tx.put(STORE_NAMES.wishes, record);
-        const settings = await this.ensureSettingsInTx(tx, record.updatedAt);
-        return { record, dbGeneration: settings.dbGeneration };
+    if (options.media) { validateMediaAssetMetaAndBytes(options.media.meta, options.media.bytes); if (wish.mediaId !== options.media.meta.id) throw new PlanuiError('MISSING_REFERENCED_MEDIA'); }
+    const saved = await this.engine.runTransaction([STORE_NAMES.wishes, STORE_NAMES.wishlistCategories, STORE_NAMES.settings, STORE_NAMES.projects, STORE_NAMES.mediaMeta, STORE_NAMES.mediaBlobs, STORE_NAMES.inspirationItems, STORE_NAMES.recoverySnapshots], 'readwrite', async tx => {
+      const existing = await tx.get<WishItem>(STORE_NAMES.wishes, wish.id);
+      if (!existing && expectedRevision !== undefined) throw new PlanuiError('STALE_WRITE_CONFLICT');
+      const revision = this.assertRevisionMatch(existing, expectedRevision);
+      if (existing?.estimatedPrice && wish.estimatedPrice && existing.estimatedPrice.currency !== wish.estimatedPrice.currency && !options.confirmCurrencyChange) throw new PlanuiError('WISHLIST_CURRENCY_CHANGE_CONFIRMATION');
+      if (options.media) {
+        if (await tx.get(STORE_NAMES.mediaMeta, options.media.meta.id)) throw new PlanuiError('STALE_WRITE_CONFLICT');
+        await tx.put(STORE_NAMES.mediaMeta, options.media.meta);
+        await tx.put(STORE_NAMES.mediaBlobs, {id:options.media.meta.id,mimeType:options.media.meta.mimeType,bytes:new Uint8Array(options.media.bytes)});
       }
-    );
-
-    this.tabSync.broadcast({
-      type: 'ENTITY_MUTATED',
-      stores: [STORE_NAMES.wishes],
-      dbGeneration: saved.dbGeneration,
-      timestamp: saved.record.updatedAt,
+      const record = {...wish,revision};
+      validateWishItemRecord(record, new Set((await tx.getAll<WishlistCategory>(STORE_NAMES.wishlistCategories)).map(c=>c.id)),new Set((await tx.getAll<MediaAssetMeta>(STORE_NAMES.mediaMeta)).map(m=>m.id)),new Set((await tx.getAll<Project>(STORE_NAMES.projects)).map(p=>p.id)));
+      await tx.put(STORE_NAMES.wishes,record);
+      if (existing?.mediaId && existing.mediaId !== record.mediaId) await this.collectUnusedWishMedia(tx,existing.mediaId);
+      const settings = await this.ensureSettingsInTx(tx,record.updatedAt);
+      return {record,dbGeneration:settings.dbGeneration};
     });
+    this.tabSync.broadcast({type:'ENTITY_MUTATED',stores:[STORE_NAMES.wishes,STORE_NAMES.mediaMeta],dbGeneration:saved.dbGeneration,timestamp:saved.record.updatedAt});
     return saved.record;
   }
 
-  public async deleteWishItemTransactionally(
-    wishId: EntityId,
-    nowIso: IsoInstantString = new Date().toISOString()
-  ): Promise<void> {
+  public async deleteWishItemTransactionally(wishId: EntityId, nowIso: IsoInstantString = new Date().toISOString()): Promise<void> {
     this.tabSync.assertNoRemoteImportInProgress();
-    const res = await this.engine.runTransaction(
-      [STORE_NAMES.wishes, STORE_NAMES.settings],
-      'readwrite',
-      async (tx) => {
-        const existing = await tx.get<WishItem>(STORE_NAMES.wishes, wishId);
-        if (!existing) {
-          throw new PlanuiError('ENTITY_NOT_FOUND', wishId);
-        }
-        await tx.delete(STORE_NAMES.wishes, wishId);
-        const settings = await this.ensureSettingsInTx(tx, nowIso);
-        return { dbGeneration: settings.dbGeneration };
-      }
-    );
-
-    this.tabSync.broadcast({
-      type: 'ENTITY_MUTATED',
-      stores: [STORE_NAMES.wishes],
-      dbGeneration: res.dbGeneration,
-      timestamp: nowIso,
+    const res = await this.engine.runTransaction([STORE_NAMES.wishes,STORE_NAMES.settings,STORE_NAMES.inspirationItems,STORE_NAMES.recoverySnapshots,STORE_NAMES.mediaMeta,STORE_NAMES.mediaBlobs], 'readwrite', async tx => {
+      const existing = await tx.get<WishItem>(STORE_NAMES.wishes,wishId);
+      if (!existing) throw new PlanuiError('ENTITY_NOT_FOUND',wishId);
+      await tx.delete(STORE_NAMES.wishes,wishId);
+      if (existing.mediaId) await this.collectUnusedWishMedia(tx,existing.mediaId);
+      return {dbGeneration:(await this.ensureSettingsInTx(tx,nowIso)).dbGeneration};
     });
+    this.tabSync.broadcast({type:'ENTITY_MUTATED',stores:[STORE_NAMES.wishes,STORE_NAMES.mediaMeta],dbGeneration:res.dbGeneration,timestamp:nowIso});
   }
 
   public async deleteWishlistCategoryTransactionally(
@@ -3587,119 +3660,129 @@ export class PlanuiRepositories {
       await this.getOrInitSettings(nowIso);
     }
 
-    return this.engine.runTransaction(
-      ALL_STORE_NAMES,
-      'readonly',
-      async (tx) => {
-        const [
-          folders,
-          goals,
-          projects,
-          stages,
-          tasks,
-          reservations,
-          events,
-          shiftTemplates,
-          dayOffAnnotations,
-          habits,
-          habitEntries,
-          personalRecords,
-          lifeAreaQuestions,
-          lifeAreaAssessments,
-          inspirationItems,
-          mediaMeta,
-          mediaBlobRecords,
-          wishlistCategories,
-          wishes,
-          settingsRec,
-        ] = await Promise.all([
-          tx.getAll<Folder>(STORE_NAMES.folders),
-          tx.getAll<Goal>(STORE_NAMES.goals),
-          tx.getAll<Project>(STORE_NAMES.projects),
-          tx.getAll<ProjectStage>(STORE_NAMES.stages),
-          tx.getAll<Task>(STORE_NAMES.tasks),
-          tx.getAll<TaskReservation>(STORE_NAMES.reservations),
-          tx.getAll<CalendarEvent>(STORE_NAMES.events),
-          tx.getAll<ShiftTemplate>(STORE_NAMES.shiftTemplates),
-          tx.getAll<DayOffAnnotation>(STORE_NAMES.dayOffAnnotations),
-          tx.getAll<Habit>(STORE_NAMES.habits),
-          tx.getAll<HabitEntry>(STORE_NAMES.habitEntries),
-          tx.getAll<PersonalRecord>(STORE_NAMES.personalRecords),
-          tx.getAll<LifeAreaQuestion>(STORE_NAMES.lifeAreaQuestions),
-          tx.getAll<LifeAreaAssessment>(STORE_NAMES.lifeAreaAssessments),
-          tx.getAll<InspirationItem>(STORE_NAMES.inspirationItems),
-          tx.getAll<MediaAssetMeta>(STORE_NAMES.mediaMeta),
-          tx.getAll<MediaBlobRecord>(STORE_NAMES.mediaBlobs),
-          tx.getAll<WishlistCategory>(STORE_NAMES.wishlistCategories),
-          tx.getAll<WishItem>(STORE_NAMES.wishes),
-          tx.get<PlanuiSettings>(STORE_NAMES.settings, 'singleton'),
-        ]);
-
-        const mediaBlobs = new Map<string, Uint8Array>();
-        for (const mb of mediaBlobRecords) {
-          const bytes =
-            mb.bytes instanceof Uint8Array
-              ? mb.bytes
-              : new Uint8Array(Object.values(mb.bytes as unknown as Record<string, number>));
-          mediaBlobs.set(mb.id, bytes);
-        }
-
-        const baseSettings = settingsRec ?? createDefaultSettings(nowIso);
-        let resolvedModules: OptionalModulesSettings;
-        if (!baseSettings.modules) {
-          resolvedModules = {
-            habitsEnabled: habits.length > 0,
-            stateCheckInsEnabled:
-              personalRecords.length > 0,
-            desiredLifeEnabled: inspirationItems.length > 0,
-            wishlistEnabled:
-              wishes.length > 0 || wishlistCategories.length > 0,
-          };
-        } else if (baseSettings.modules.userConfigured) {
-          resolvedModules = { ...baseSettings.modules };
-        } else {
-          resolvedModules = {
-            habitsEnabled: baseSettings.modules.habitsEnabled || habits.length > 0,
-            stateCheckInsEnabled:
-              baseSettings.modules.stateCheckInsEnabled ||
-              personalRecords.length > 0,
-            desiredLifeEnabled:
-              baseSettings.modules.desiredLifeEnabled ||
-              inspirationItems.length > 0,
-            wishlistEnabled:
-              baseSettings.modules.wishlistEnabled ||
-              wishes.length > 0 ||
-              wishlistCategories.length > 0,
-          };
-        }
-        const snapshot: PlanuiDomainSnapshot = {
-          folders,
-          goals,
-          projects,
-          stages,
-          tasks,
-          reservations,
-          events,
-          shiftTemplates,
-          dayOffAnnotations,
-          habits,
-          habitEntries,
-          personalRecords,
-          lifeAreaQuestions,
-          lifeAreaAssessments,
-          inspirationItems,
-          mediaMeta,
-          wishlistCategories,
-          wishes,
-          settings: {
-            ...baseSettings,
-            modules: resolvedModules,
-          },
-        };
-
-        return { snapshot, mediaBlobs };
-      }
+    return this.engine.runTransaction(ALL_STORE_NAMES, 'readonly', tx =>
+      this.captureSnapshotInTransaction(tx, nowIso)
     );
+  }
+
+  /** Caller must include every store. No non-IDB awaits inside the transaction. */
+  public async captureSnapshotInTransaction(
+    tx: StorageTransactionContext,
+    nowIso: IsoInstantString
+  ): Promise<{ snapshot: PlanuiDomainSnapshot; mediaBlobs: Map<string, Uint8Array> }> {
+    const [
+      folders,
+      goals,
+      projects,
+      stages,
+      tasks,
+      reservations,
+      events,
+      shiftTemplates,
+      dayOffAnnotations,
+      habits,
+      habitEntries,
+      personalRecords,
+      lifeAreaQuestions,
+      lifeAreaAssessments,
+      inspirationItems,
+      mediaMeta,
+      mediaBlobRecords,
+      wishlistCategories,
+      wishes,
+      settingsRec,
+    ] = await Promise.all([
+      tx.getAll<Folder>(STORE_NAMES.folders),
+      tx.getAll<Goal>(STORE_NAMES.goals),
+      tx.getAll<Project>(STORE_NAMES.projects),
+      tx.getAll<ProjectStage>(STORE_NAMES.stages),
+      tx.getAll<Task>(STORE_NAMES.tasks),
+      tx.getAll<TaskReservation>(STORE_NAMES.reservations),
+      tx.getAll<CalendarEvent>(STORE_NAMES.events),
+      tx.getAll<ShiftTemplate>(STORE_NAMES.shiftTemplates),
+      tx.getAll<DayOffAnnotation>(STORE_NAMES.dayOffAnnotations),
+      tx.getAll<Habit>(STORE_NAMES.habits),
+      tx.getAll<HabitEntry>(STORE_NAMES.habitEntries),
+      tx.getAll<PersonalRecord>(STORE_NAMES.personalRecords),
+      tx.getAll<LifeAreaQuestion>(STORE_NAMES.lifeAreaQuestions),
+      tx.getAll<LifeAreaAssessment>(STORE_NAMES.lifeAreaAssessments),
+      tx.getAll<InspirationItem>(STORE_NAMES.inspirationItems),
+      tx.getAll<MediaAssetMeta>(STORE_NAMES.mediaMeta),
+      tx.getAll<MediaBlobRecord>(STORE_NAMES.mediaBlobs),
+      tx.getAll<WishlistCategory>(STORE_NAMES.wishlistCategories),
+      tx.getAll<WishItem>(STORE_NAMES.wishes),
+      tx.get<PlanuiSettings>(STORE_NAMES.settings, 'singleton'),
+    ]);
+
+    const mediaBlobs = new Map<string, Uint8Array>();
+    for (const mb of mediaBlobRecords) {
+      const bytes =
+        mb.bytes instanceof Uint8Array
+          ? mb.bytes
+          : new Uint8Array(Object.values(mb.bytes as unknown as Record<string, number>));
+      mediaBlobs.set(mb.id, bytes);
+    }
+
+    const baseSettings = settingsRec ?? createDefaultSettings(nowIso);
+    let resolvedModules: OptionalModulesSettings;
+    if (!baseSettings.modules) {
+      resolvedModules = {
+        habitsEnabled: habits.length > 0,
+        stateCheckInsEnabled:
+          personalRecords.length > 0,
+        desiredLifeEnabled: inspirationItems.length > 0,
+        wishlistEnabled:
+          wishes.length > 0 || wishlistCategories.length > 0,
+      };
+    } else if (baseSettings.modules.userConfigured) {
+      resolvedModules = { ...baseSettings.modules };
+    } else {
+      resolvedModules = {
+        habitsEnabled: baseSettings.modules.habitsEnabled || habits.length > 0,
+        stateCheckInsEnabled:
+          baseSettings.modules.stateCheckInsEnabled ||
+          personalRecords.length > 0,
+        desiredLifeEnabled:
+          baseSettings.modules.desiredLifeEnabled ||
+          inspirationItems.length > 0,
+        wishlistEnabled:
+          baseSettings.modules.wishlistEnabled ||
+          wishes.length > 0 ||
+          wishlistCategories.length > 0,
+      };
+    }
+    const snapshot: PlanuiDomainSnapshot = {
+      folders,
+      goals,
+      projects,
+      stages,
+      tasks,
+      reservations,
+      events,
+      shiftTemplates,
+      dayOffAnnotations,
+      habits,
+      habitEntries,
+      personalRecords,
+      lifeAreaQuestions,
+      lifeAreaAssessments,
+      inspirationItems,
+      mediaMeta,
+      wishlistCategories,
+      wishes,
+      settings: {
+        ...baseSettings,
+        modules: resolvedModules,
+      },
+    };
+
+    if (snapshot.settings.dbSchemaVersion > PLANUI_DB_SCHEMA_VERSION) {
+      throw new PlanuiError('INCOMPATIBLE_NEWER_SCHEMA_WRITE_BLOCKED');
+    }
+    if (this.knownDbGeneration !== null && snapshot.settings.dbGeneration !== this.knownDbGeneration) {
+      throw new PlanuiError('STALE_DB_GENERATION_CONFLICT');
+    }
+    return { snapshot, mediaBlobs };
   }
 
   public async listRecoverySnapshots(): Promise<RecoverySnapshotRecord[]> {

@@ -1,3 +1,7 @@
+import { WishExtrasFields, WishLocalImage, emptyWishExtras, resolveWishExtras } from '../components/wishlist/WishExtrasFields';
+import { getWishPurchaseStatus, setWishPurchaseStatus, WISH_STATUS_LABELS_UK } from '../domain/wishlist';
+import type { WishPurchaseStatus } from '../domain/types';
+import { StateCheckInsView } from './StateCheckInsView';
 import { LifeAreasReviewView } from './LifeAreasReviewView';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -73,8 +77,6 @@ import {
   computeWishlistCategoryDeleteImpact,
   filterAndGroupWishes,
   formatExactPriceUk,
-  fulfillWishItem,
-  reopenWishItem,
   setWishArchivedState,
   sortWishlistCategories,
 } from '../domain/wishlist';
@@ -124,6 +126,7 @@ export interface MeWorkspaceViewProps {
   onNavigateToWorkRoster: () => void;
   onNavigateToHabits: () => void;
   onModalStateChange?: (isOpen: boolean) => void;
+  onSettingsConfirmationChange?: (isOpen: boolean) => void;
 }
 
 export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
@@ -151,7 +154,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
   onDataChanged,
   onNavigateToWorkRoster,
   onNavigateToHabits,
-  onModalStateChange,
+  onModalStateChange, onSettingsConfirmationChange,
 }) => {
   const [initialPlanningReview, setInitialPlanningReview] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -159,22 +162,6 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
   // ---------------------------------------------------------------------------
   // 10.2 Personal Records State
   // ---------------------------------------------------------------------------
-  const [recordFilterTag, setRecordFilterTag] = useState<string>('');
-  const [recordSearchQuery, setRecordSearchQuery] = useState<string>('');
-  const [quickRecordText, setQuickRecordText] = useState<string>('');
-  const [quickRecordMood, setQuickRecordMood] = useState<string>('');
-  const [quickRecordEnergy, setQuickRecordEnergy] = useState<string>('');
-  const [quickRecordStress, setQuickRecordStress] = useState<string>('');
-  const [quickRecordTags, setQuickRecordTags] = useState<string>('');
-  const [editingRecord, setEditingRecord] = useState<PersonalRecord | null>(
-    null
-  );
-  const [editRecordText, setEditRecordText] = useState<string>('');
-  const [editRecordMood, setEditRecordMood] = useState<string>('');
-  const [editRecordEnergy, setEditRecordEnergy] = useState<string>('');
-  const [editRecordStress, setEditRecordStress] = useState<string>('');
-  const [editRecordTags, setEditRecordTags] = useState<string>('');
-
   // ---------------------------------------------------------------------------
   // 10.3 Life Areas State
   // ---------------------------------------------------------------------------
@@ -198,6 +185,9 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
   const [inspFilterProjectId, setInspFilterProjectId] = useState<string>('');
   const [isInspModalOpen, setIsInspModalOpen] = useState<boolean>(false);
   const [inspKind, setInspKind] = useState<InspirationItemKind>('text');
+  const [inspCollection, setInspCollection] = useState<'preferred_life' | 'saved'>('preferred_life');
+  const [inspArea, setInspArea] = useState('');
+  const [inspGoal, setInspGoal] = useState('');
   const [inspTitle, setInspTitle] = useState<string>('');
   const [inspText, setInspText] = useState<string>('');
   const [inspUrl, setInspUrl] = useState<string>('');
@@ -237,6 +227,9 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
     useState<WishlistViewScope>('active');
 
   // Inline fast wish creation with progressive disclosure (10.6)
+  const [quickWishExtras,setQuickWishExtras] = useState(emptyWishExtras);
+  const [editWishExtras,setEditWishExtras] = useState(emptyWishExtras);
+  const [confirmWishCurrency,setConfirmWishCurrency] = useState(false);
   const [quickWishTitle, setQuickWishTitle] = useState<string>('');
   const [showQuickWishDetails, setShowQuickWishDetails] =
     useState<boolean>(false);
@@ -273,29 +266,23 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
   const [deletingCategory, setDeletingCategory] =
     useState<WishlistCategory | null>(null);
 
-  const [isSettingsModalOpen, setIsSettingsModalOpen] =
-    useState<boolean>(false);
 
   // Sync modal state upward so FloatingShell hides global button during sheet editing (C17)
   useEffect(() => {
     const anyModal =
-      Boolean(editingRecord) ||
       Boolean(editingQuestion) ||
       isInspModalOpen ||
       Boolean(editingWish) ||
       Boolean(deletingWish) ||
-      isCategoryManagerOpen ||
-      isSettingsModalOpen;
+      isCategoryManagerOpen;
     onModalStateChange?.(anyModal);
   }, [
-    editingRecord,
     editingQuestion,
     isInspModalOpen,
     editingWish,
     deletingWish,
     isCategoryManagerOpen,
-    isSettingsModalOpen,
-    onModalStateChange,
+    onModalStateChange, onSettingsConfirmationChange,
   ]);
 
   // Keep category filter in sync with shell context
@@ -314,37 +301,6 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
   }, [wishlistCategoryFilter]);
 
   // Sorted records & categories
-  const sortedPersonalRecords = useMemo(
-    () => sortPersonalRecordsChronologically(personalRecords),
-    [personalRecords]
-  );
-
-  const allRecordTags = useMemo(() => {
-    const set = new Set<string>();
-    for (const r of personalRecords) {
-      for (const t of r.tags) {
-        set.add(t);
-      }
-    }
-    return Array.from(set).sort((a, b) => a.localeCompare(b, 'uk'));
-  }, [personalRecords]);
-
-  const filteredPersonalRecords = useMemo(() => {
-    const q = recordSearchQuery.trim().toLowerCase();
-    return sortedPersonalRecords.filter((rec) => {
-      if (recordFilterTag && !rec.tags.includes(recordFilterTag)) {
-        return false;
-      }
-      if (q) {
-        const textMatch = rec.text?.toLowerCase().includes(q) ?? false;
-        const dateMatch = rec.localDate.includes(q);
-        const tagMatch = rec.tags.some((t) => t.toLowerCase().includes(q));
-        if (!textMatch && !dateMatch && !tagMatch) return false;
-      }
-      return true;
-    });
-  }, [sortedPersonalRecords, recordFilterTag, recordSearchQuery]);
-
   const sortedLifeQuestions = useMemo(
     () => [...lifeAreaQuestions].sort((a, b) => a.order - b.order),
     [lifeAreaQuestions]
@@ -383,11 +339,11 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
   );
 
   const activeWishCount = useMemo(
-    () => wishes.filter((w) => !w.archived && w.state === 'active').length,
+    () => wishes.filter((w) => !w.archived && getWishPurchaseStatus(w) === 'want').length,
     [wishes]
   );
   const fulfilledWishCount = useMemo(
-    () => wishes.filter((w) => !w.archived && w.state === 'fulfilled').length,
+    () => wishes.filter((w) => !w.archived && getWishPurchaseStatus(w) === 'legacy_fulfilled').length,
     [wishes]
   );
   const archivedWishCount = useMemo(
@@ -398,6 +354,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
   const filteredInspirationItems = useMemo(() => {
     return [...inspirationItems]
       .filter((item) => {
+        if ((item.collection ?? 'saved') !== inspCollection) return false;
         if (inspFilterKind === 'favorites' && !item.isFavorite) return false;
         if (
           inspFilterKind !== 'all' &&
@@ -412,7 +369,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
         return true;
       })
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }, [inspirationItems, inspFilterKind, inspFilterProjectId]);
+  }, [inspirationItems, inspFilterKind, inspFilterProjectId, inspCollection]);
 
   const mediaMetaById = useMemo(() => {
     const map = new Map<string, MediaAssetMeta>();
@@ -436,113 +393,6 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
   // ---------------------------------------------------------------------------
   // Handlers: 10.2 Personal Records
   // ---------------------------------------------------------------------------
-  const handleSaveQuickRecord = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLocalError(null);
-    try {
-      const nowIso = new Date().toISOString();
-      const id =
-        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-          ? crypto.randomUUID()
-          : `rec-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
-      const mood = quickRecordMood
-        ? (Number(quickRecordMood) as Scale1To5)
-        : null;
-      const energy = quickRecordEnergy
-        ? (Number(quickRecordEnergy) as Scale1To5)
-        : null;
-      const stress = quickRecordStress
-        ? (Number(quickRecordStress) as Scale1To5)
-        : null;
-      const tags = normalizeSimpleTags(
-        quickRecordTags ? quickRecordTags.split(',') : []
-      );
-
-      await repositories.savePersonalRecord({
-        id,
-        recordedAt: nowIso,
-        localDate: actualTodayDate,
-        zoneId: activeZone,
-        text: quickRecordText.trim() ? quickRecordText.trim() : null,
-        mood,
-        energy,
-        stress,
-        tags,
-        createdAt: nowIso,
-        updatedAt: nowIso,
-        revision: 1,
-      });
-
-      setQuickRecordText('');
-      setQuickRecordMood('');
-      setQuickRecordEnergy('');
-      setQuickRecordStress('');
-      setQuickRecordTags('');
-      await onDataChanged('Особистий запис збережено.');
-    } catch (err) {
-      // 10.8: Handle quota/validation failures without discarding entered text
-      setLocalError(
-        err instanceof Error
-          ? err.message
-          : 'Не вдалося зберегти особистий запис.'
-      );
-    }
-  };
-
-  const handleSaveEditedRecord = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingRecord) return;
-    setLocalError(null);
-    try {
-      const nowIso = new Date().toISOString();
-      const updated = updatePersonalRecordInPlace(
-        editingRecord,
-        {
-          text: editRecordText,
-          mood: editRecordMood ? (Number(editRecordMood) as Scale1To5) : null,
-          energy: editRecordEnergy
-            ? (Number(editRecordEnergy) as Scale1To5)
-            : null,
-          stress: editRecordStress
-            ? (Number(editRecordStress) as Scale1To5)
-            : null,
-          tags: editRecordTags ? editRecordTags.split(',') : [],
-        },
-        nowIso
-      );
-      await repositories.savePersonalRecord(updated, editingRecord.revision);
-      setEditingRecord(null);
-      await onDataChanged('Особистий запис оновлено.');
-    } catch (err) {
-      setLocalError(
-        err instanceof Error
-          ? err.message
-          : 'Не вдалося оновити особистий запис.'
-      );
-    }
-  };
-
-  const handleDeleteRecord = async (rec: PersonalRecord) => {
-    setLocalError(null);
-    try {
-      await repositories.deletePersonalRecordTransactionally(
-        rec.id,
-        new Date().toISOString()
-      );
-      if (editingRecord?.id === rec.id) {
-        setEditingRecord(null);
-      }
-      await onDataChanged('Особистий запис видалено.');
-    } catch (err) {
-      setLocalError(
-        err instanceof Error
-          ? err.message
-          : 'Не вдалося видалити особистий запис.'
-      );
-    }
-  };
-
   // ---------------------------------------------------------------------------
   // Handlers: 10.3 Life Areas
   // ---------------------------------------------------------------------------
@@ -748,7 +598,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
       });
 
       await repositories.saveInspirationWithMediaTransactionally(
-        item,
+        { ...item, collection: inspCollection, lifeAreaId: inspArea || null, goalId: inspGoal || null },
         preparedMedia
       );
       setIsInspModalOpen(false);
@@ -824,6 +674,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
       const built = buildWishItemRecord({
         id,
         title: quickWishTitle,
+        ...resolveWishExtras(quickWishExtras),
         note: quickWishNote,
         categoryId: quickWishCategoryId || null,
         timing: quickWishTiming,
@@ -833,7 +684,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
         nowIso,
       });
 
-      await repositories.saveWishItem(built.wish);
+      await repositories.saveWishItem(built.wish,undefined,{media:quickWishExtras.preparedMedia??undefined});
 
       // 10.7: Persist preferred currency when first chosen
       if (
@@ -846,9 +697,11 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
         onSettingsPatch(updatedSettings);
       }
 
+      setQuickWishExtras(emptyWishExtras());
       setQuickWishTitle('');
       setQuickWishNote('');
       setQuickWishPriceInput('');
+      setQuickWishCurrency('');
       setQuickWishTiming('later');
       setShowQuickWishDetails(false);
       await onDataChanged(`Бажання «${built.wish.title}» додано.`);
@@ -861,6 +714,8 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
   };
 
   const openEditWishModal = (wish: WishItem) => {
+    setLocalError(null);
+    setEditWishExtras({...emptyWishExtras(wish.projectId??''),linkUrl:wish.linkUrl??''}); setConfirmWishCurrency(false);
     setEditingWish(wish);
     setEditWishTitle(wish.title);
     setEditWishNote(wish.note ?? '');
@@ -886,6 +741,8 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
       const built = buildWishItemRecord({
         id: editingWish.id,
         title: editWishTitle,
+        ...resolveWishExtras(editWishExtras,editingWish.mediaId),
+        confirmCurrencyChange:confirmWishCurrency,
         note: editWishNote,
         categoryId: editWishCategoryId || null,
         timing: editWishTiming,
@@ -898,7 +755,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
         existingWish: editingWish,
       });
 
-      await repositories.saveWishItem(built.wish, editingWish.revision);
+      await repositories.saveWishItem(built.wish, editingWish.revision,{media:editWishExtras.preparedMedia??undefined,confirmCurrencyChange:confirmWishCurrency});
 
       if (
         built.explicitCurrencySelected &&
@@ -919,27 +776,10 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
     }
   };
 
-  const handleToggleWishFulfilled = async (wish: WishItem) => {
+  const handleWishPurchaseStatus = async (wish:WishItem,status:WishPurchaseStatus) => {
     setLocalError(null);
-    try {
-      const nowIso = new Date().toISOString();
-      const next =
-        wish.state === 'active'
-          ? fulfillWishItem(wish, nowIso)
-          : reopenWishItem(wish, nowIso);
-      await repositories.saveWishItem(next, wish.revision);
-      await onDataChanged(
-        next.state === 'fulfilled'
-          ? `Бажання «${wish.title}» позначено як здійснене (без запису фінансової витрати).`
-          : `Бажання «${wish.title}» повернуто до активних.`
-      );
-    } catch (err) {
-      setLocalError(
-        err instanceof Error
-          ? err.message
-          : 'Не вдалося змінити стан бажання.'
-      );
-    }
+    try {await repositories.saveWishItem(setWishPurchaseStatus(wish,status,new Date().toISOString()),wish.revision);await onDataChanged();}
+    catch(err){setLocalError(err instanceof Error?err.message:'Не вдалося змінити статус бажання.');}
   };
 
   const handleToggleWishArchived = async (wish: WishItem) => {
@@ -1137,11 +977,11 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
               {subView === 'overview'
                 ? UK_STRINGS.destinations.me.title
                 : subView === 'records'
-                ? 'Особисті записи та стан'
+                ? 'Відмітки стану та архів'
                 : subView === 'life_areas'
                 ? 'Сфери життя'
                 : subView === 'inspiration'
-                ? 'Натхнення та медіа'
+                ? 'Моє бажане життя'
                 : subView === 'wishlist'
                 ? 'Список бажань'
                 : 'Налаштування'}
@@ -1153,7 +993,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
               {subView === 'overview'
                 ? UK_STRINGS.destinations.me.subtitle
                 : subView === 'records'
-                ? 'Єдина хронологія швидких відміток стану та щоденникових записів без примусових ритуалів.'
+                ? 'Добровільні відмітки стану та окремий архів щоденника.'
                 : subView === 'life_areas'
                 ? 'Редаговані сфери життя, часткові огляди 0–10 та незмінна історія попередніх шкал.'
                 : subView === 'inspiration'
@@ -1185,7 +1025,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
           aria-label="Підрозділи особистого простору Я"
         >
           {/* 1. Personal records (State check-ins module) */}
-          {(settings.modules?.stateCheckInsEnabled ?? true) && (
+          {((settings.modules?.stateCheckInsEnabled ?? false) || personalRecords.length > 0) && (
             <button
               type="button"
               role="listitem"
@@ -1211,14 +1051,14 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
                 </div>
                 <div className="min-w-0">
                   <div className="text-[16px] font-semibold">
-                    Особисті записи та стан
+                    Відмітки стану та архів
                   </div>
                   <div
                     className="text-[13px] mt-0.5 leading-snug"
                     style={{ color: 'var(--text-secondary)' }}
                   >
                     {personalRecords.length === 0
-                      ? 'Швидка оцінка самопочуття, енергії, напруги та щоденник'
+                      ? 'Добровільні відмітки настрою, енергії, напруги та сну'
                       : `Записів у хронології: ${personalRecords.length}`}
                   </div>
                 </div>
@@ -1276,7 +1116,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
 
           <Button onClick={() => { setInitialPlanningReview(true); onChangeSubView('life_areas'); }}>Короткий огляд планування</Button>
           {/* 3. Inspiration (Desired Life module) */}
-          {(settings.modules?.desiredLifeEnabled ?? true) && (
+          {((settings.modules?.desiredLifeEnabled ?? false) || inspirationItems.length > 0) && (
             <button
               type="button"
               role="listitem"
@@ -1302,7 +1142,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
                 </div>
                 <div className="min-w-0">
                   <div className="text-[16px] font-semibold">
-                    Моє бажане життя та натхнення
+                    Моє бажане життя
                   </div>
                   <div
                     className="text-[13px] mt-0.5 leading-snug"
@@ -1454,236 +1294,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
       {/* =====================================================================
           10.2 PERSONAL RECORDS SUBVIEW
          ===================================================================== */}
-      {subView === 'records' && (
-        <div className="space-y-4" data-testid="me-records-subview">
-          <Card
-            title="Новий запис стану або щоденника"
-            subtitle="Заповніть лише потрібні шкали або додайте вільний текст — обидва варіанти зберігаються в єдину історію."
-          >
-            <form
-              onSubmit={handleSaveQuickRecord}
-              className="space-y-3.5"
-              data-testid="personal-record-quick-form"
-            >
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <SelectField
-                  label={PERSONAL_STATE_QUESTIONS_UK.mood}
-                  options={moodScaleOptions}
-                  value={quickRecordMood}
-                  onChange={(e) => setQuickRecordMood(e.target.value)}
-                  data-testid="quick-record-mood-select"
-                />
-                <SelectField
-                  label={PERSONAL_STATE_QUESTIONS_UK.energy}
-                  options={energyScaleOptions}
-                  value={quickRecordEnergy}
-                  onChange={(e) => setQuickRecordEnergy(e.target.value)}
-                  data-testid="quick-record-energy-select"
-                />
-                <SelectField
-                  label={PERSONAL_STATE_QUESTIONS_UK.stress}
-                  options={stressScaleOptions}
-                  value={quickRecordStress}
-                  onChange={(e) => setQuickRecordStress(e.target.value)}
-                  data-testid="quick-record-stress-select"
-                />
-              </div>
-
-              <p
-                className="text-[12px] m-0"
-                style={{ color: 'var(--text-secondary)' }}
-              >
-                {PERSONAL_STATE_QUESTIONS_UK.stressDirectionNotice}
-              </p>
-
-              <TextAreaField
-                label="Нотатка або запис у щоденник (необов’язково)"
-                placeholder="Що зараз важливо зафіксувати..."
-                value={quickRecordText}
-                onChange={(e) => setQuickRecordText(e.target.value)}
-                data-testid="quick-record-text-input"
-              />
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
-                <InputField
-                  label="Прості теги (через кому, необов’язково)"
-                  placeholder="Наприклад: зміна, відпочинок, ідеї"
-                  value={quickRecordTags}
-                  onChange={(e) => setQuickRecordTags(e.target.value)}
-                  data-testid="quick-record-tags-input"
-                />
-                <div className="flex justify-end">
-                  <Button
-                    type="submit"
-                    variant="primary"
-                    data-testid="save-quick-record-button"
-                  >
-                    Зберегти запис
-                  </Button>
-                </div>
-              </div>
-            </form>
-          </Card>
-
-          {/* Past browsing filters */}
-          {personalRecords.length > 0 && (
-            <div className="flex flex-col sm:flex-row gap-2.5">
-              <div className="flex-1">
-                <InputField
-                  label="Пошук за текстом, датою або тегом"
-                  placeholder="Введіть слово або дату (РРРР-ММ-ДД)..."
-                  value={recordSearchQuery}
-                  onChange={(e) => setRecordSearchQuery(e.target.value)}
-                  data-testid="personal-records-search-input"
-                />
-              </div>
-              {allRecordTags.length > 0 && (
-                <div className="sm:w-56">
-                  <SelectField
-                    label="Фільтр за тегом"
-                    value={recordFilterTag}
-                    onChange={(e) => setRecordFilterTag(e.target.value)}
-                    options={[
-                      { value: '', label: 'Усі теги' },
-                      ...allRecordTags.map((t) => ({ value: t, label: `#${t}` })),
-                    ]}
-                    data-testid="personal-records-tag-filter"
-                  />
-                </div>
-              )}
-            </div>
-          )}
-
-          {filteredPersonalRecords.length === 0 ? (
-            <EmptyStateCard
-              icon={<HeartHandshake className="w-5 h-5" />}
-              title={UK_STRINGS.destinations.me.recordsEmptyTitle}
-              description={UK_STRINGS.destinations.me.recordsEmptyDescription}
-              actionLabel={UK_STRINGS.creation.actions.personal_record.label}
-              onAction={() => onOpenGlobalCreation('personal_record')}
-            />
-          ) : (
-            <Card title={`Хронологія записів (${filteredPersonalRecords.length})`}>
-              <ul
-                className="space-y-3 m-0 p-0 list-none"
-                data-testid="personal-records-history-list"
-              >
-                {filteredPersonalRecords.map((rec) => (
-                  <li
-                    key={rec.id}
-                    data-testid={`personal-record-item-${rec.id}`}
-                    className="p-3.5 rounded-2xl space-y-2"
-                    style={{
-                      backgroundColor: 'var(--bg-elevated)',
-                      border: '1px solid var(--border-subtle)',
-                    }}
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2 text-[12px]">
-                      <span
-                        className="font-medium"
-                        style={{ color: 'var(--text-secondary)' }}
-                      >
-                        {rec.localDate} •{' '}
-                        {rec.recordedAt.slice(11, 16)} ({rec.zoneId})
-                      </span>
-                      <div className="flex items-center gap-1.5">
-                        <Button
-                          variant="subtle"
-                          size="sm"
-                          onClick={() => {
-                            setEditingRecord(rec);
-                            setEditRecordText(rec.text ?? '');
-                            setEditRecordMood(rec.mood ? String(rec.mood) : '');
-                            setEditRecordEnergy(
-                              rec.energy ? String(rec.energy) : ''
-                            );
-                            setEditRecordStress(
-                              rec.stress ? String(rec.stress) : ''
-                            );
-                            setEditRecordTags(rec.tags.join(', '));
-                          }}
-                          data-testid={`edit-personal-record-${rec.id}`}
-                        >
-                          <Edit3 className="w-3.5 h-3.5" aria-hidden="true" />
-                          <span>
-                            {rec.text ? 'Редагувати' : 'Додати текст / змінити'}
-                          </span>
-                        </Button>
-                        <Button
-                          variant="subtle"
-                          size="sm"
-                          onClick={() => handleDeleteRecord(rec)}
-                          data-testid={`delete-personal-record-${rec.id}`}
-                          aria-label="Видалити особистий запис"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
-                        </Button>
-                      </div>
-                    </div>
-
-                    {(rec.mood !== null ||
-                      rec.energy !== null ||
-                      rec.stress !== null) && (
-                      <div className="flex flex-wrap gap-2 text-[13px]">
-                        {rec.mood !== null && (
-                          <span
-                            className="px-2.5 py-1 rounded-lg"
-                            style={{ backgroundColor: 'var(--bg-surface)' }}
-                          >
-                            Самопочуття:{' '}
-                            <strong>{MOOD_SCALE_LABELS_UK[rec.mood]}</strong>
-                          </span>
-                        )}
-                        {rec.energy !== null && (
-                          <span
-                            className="px-2.5 py-1 rounded-lg"
-                            style={{ backgroundColor: 'var(--bg-surface)' }}
-                          >
-                            Енергія:{' '}
-                            <strong>{ENERGY_SCALE_LABELS_UK[rec.energy]}</strong>
-                          </span>
-                        )}
-                        {rec.stress !== null && (
-                          <span
-                            className="px-2.5 py-1 rounded-lg"
-                            style={{ backgroundColor: 'var(--bg-surface)' }}
-                          >
-                            Напруга:{' '}
-                            <strong>{STRESS_SCALE_LABELS_UK[rec.stress]}</strong>
-                          </span>
-                        )}
-                      </div>
-                    )}
-
-                    {rec.text && (
-                      <p className="text-[15px] m-0 leading-relaxed whitespace-pre-wrap">
-                        {rec.text}
-                      </p>
-                    )}
-
-                    {rec.tags.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 pt-0.5">
-                        {rec.tags.map((tag) => (
-                          <span
-                            key={tag}
-                            className="px-2 py-0.5 rounded-md text-[12px]"
-                            style={{
-                              backgroundColor: 'var(--bg-surface)',
-                              color: 'var(--text-secondary)',
-                            }}
-                          >
-                            #{tag}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </Card>
-          )}
-        </div>
-      )}
+      {subView === 'records' && <StateCheckInsView records={personalRecords} today={actualTodayDate} zone={activeZone} enabled={(settings.modules?.stateCheckInsEnabled ?? false)} repositories={repositories} onChanged={() => onDataChanged()} />}
 
       {/* =====================================================================
           10.3 LIFE AREAS SUBVIEW
@@ -1695,6 +1306,9 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
          ===================================================================== */}
       {subView === 'inspiration' && (
         <div className="space-y-4" data-testid="me-inspiration-subview">
+          <h2>Моє бажане життя</h2><p>Як я бачу своє ідеальне життя</p>
+          <p>За бажанням: мій звичайний день; люди та стосунки; робота й відпочинок; творчість; чого хочеться більше або менше.</p>
+          <SegmentedControl ariaLabel="Колекція матеріалів" value={inspCollection} onChange={setInspCollection} options={[{value: 'preferred_life', label: 'Моє бажане життя'}, {value: 'saved', label: 'Збережене натхнення'}]} />
           <div className="flex flex-wrap items-center justify-between gap-2.5">
             <SegmentedControl<'all' | InspirationItemKind | 'favorites'>
               ariaLabel="Фільтр елементів натхнення"
@@ -1920,6 +1534,8 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
                       )}
                     </div>
 
+                    {item.lifeAreaId && <p>Сфера: {snapshot.lifeAreaQuestions.find(a => a.id === item.lifeAreaId)?.questionTextUk}</p>}
+                    {item.goalId && <p>Ціль: {snapshot.goals.find(g => g.id === item.goalId)?.title}</p>}
                     {linkedProject && (
                       <div className="pt-2">
                         <span
@@ -1974,7 +1590,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
                     onClick={() => setShowQuickWishDetails((prev) => !prev)}
                     data-testid="wishlist-toggle-progressive-disclosure"
                   >
-                    {showQuickWishDetails ? 'Згорнути деталі' : 'Деталі та ціна'}
+                    {showQuickWishDetails ? 'Згорнути деталі' : 'Додаткові відомості'}
                   </Button>
                   <Button
                     type="submit"
@@ -1986,6 +1602,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
                 </div>
               </div>
 
+              {showQuickWishDetails && <>
               {/* Visibly editable default timing ("Пізніше") and category */}
               <div className="flex flex-wrap items-center justify-between gap-2 text-[13px]">
                 <div className="flex flex-wrap items-center gap-2">
@@ -2040,6 +1657,8 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
                 </div>
               </div>
 
+              </>}
+
               {showQuickWishDetails && (
                 <div
                   className="pt-3 border-t space-y-3"
@@ -2079,6 +1698,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
                       data-testid="wishlist-quick-currency-select"
                     />
                   </div>
+                  <WishExtrasFields value={quickWishExtras} onChange={setQuickWishExtras} projects={projects} onError={setLocalError}/>
                   <TextAreaField
                     label="Нотатка (необов’язково)"
                     placeholder="Посилання, характеристики або нотатки..."
@@ -2154,11 +1774,13 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
                 options={[
                   {
                     value: 'active',
-                    label: `Активні (${activeWishCount})`,
+                    label: `Хочу (${activeWishCount})`,
                   },
+                  {value:'purchased',label:`Куплено (${wishes.filter(w=>!w.archived&&getWishPurchaseStatus(w)==='purchased').length})`},
+                  {value:'not_relevant',label:`Більше не актуально (${wishes.filter(w=>!w.archived&&getWishPurchaseStatus(w)==='not_relevant').length})`},
                   {
                     value: 'fulfilled',
-                    label: `Виконані (${fulfilledWishCount})`,
+                    label: `Здійснено раніше (${fulfilledWishCount})`,
                   },
                   {
                     value: 'archived',
@@ -2275,6 +1897,11 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
                                   </div>
                                 )}
 
+                                <p>{WISH_STATUS_LABELS_UK[getWishPurchaseStatus(wish)]}</p>
+                                {wish.linkUrl&&<a href={wish.linkUrl} target="_blank" rel="noopener noreferrer" className="underline break-all">Відкрити посилання</a>}
+                                {wish.projectId&&<p>Проєкт: {projects.find(p=>p.id===wish.projectId)?.title}</p>}
+                                {wish.mediaId&&<WishLocalImage meta={mediaMetaById.get(wish.mediaId)} bytes={mediaBlobs.get(wish.mediaId)} title={wish.title}/>}
+                                {wish.purchasedAt&&<p>Позначено купівлю: {new Intl.DateTimeFormat('uk-UA',{dateStyle:'long',timeStyle:'short',timeZone:activeZone}).format(new Date(wish.purchasedAt))}</p>}
                                 {wish.note && (
                                   <p
                                     className="text-[14px] m-0 leading-relaxed whitespace-pre-wrap"
@@ -2290,38 +1917,14 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
                                       className="text-[12px]"
                                       style={{ color: 'var(--color-day-off)' }}
                                     >
-                                      Здійснено: {wish.fulfilledAt.slice(0, 10)}{' '}
+                                      Здійснено раніше: {new Intl.DateTimeFormat('uk-UA',{dateStyle:'long',timeZone:activeZone}).format(new Date(wish.fulfilledAt))}{' '}
                                       (орієнтовна ціна збережена як довідкова)
                                     </div>
                                   )}
                               </div>
 
                               <div className="flex flex-wrap items-center gap-1.5">
-                                <Button
-                                  variant="secondary"
-                                  size="sm"
-                                  onClick={() => handleToggleWishFulfilled(wish)}
-                                  data-testid={`toggle-fulfill-wish-${wish.id}`}
-                                >
-                                  {wish.state === 'active' ? (
-                                    <>
-                                      <CheckCircle2
-                                        className="w-3.5 h-3.5"
-                                        aria-hidden="true"
-                                      />
-                                      <span>Здійснено</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <RotateCcw
-                                        className="w-3.5 h-3.5"
-                                        aria-hidden="true"
-                                      />
-                                      <span>Повернути в активні</span>
-                                    </>
-                                  )}
-                                </Button>
-
+                                <SelectField label="Статус бажання" value={getWishPurchaseStatus(wish)} onChange={e=>void handleWishPurchaseStatus(wish,e.target.value as WishPurchaseStatus)} options={[...(getWishPurchaseStatus(wish)==='legacy_fulfilled'?[{value:'legacy_fulfilled',label:'Здійснено раніше'}]:[]),{value:'want',label:'Хочу'},{value:'purchased',label:'Куплено'},{value:'not_relevant',label:'Більше не актуально'}]}/>
                                 <Button
                                   variant="subtle"
                                   size="sm"
@@ -2398,79 +2001,13 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
             onChangeSubView('wishlist');
             setIsCategoryManagerOpen(true);
           }}
-          onLocalModalOpenChange={setIsSettingsModalOpen}
+          onLocalModalOpenChange={onSettingsConfirmationChange}
         />
       )}
 
       {/* =====================================================================
           MODALS & SHEETS FOR STAGE 10
          ===================================================================== */}
-
-      {/* 1. Edit Personal Record Sheet (10.2 in-place update without duplication) */}
-      <ModalSheet
-        isOpen={Boolean(editingRecord)}
-        title="Редагування особистого запису"
-        subtitle="Додавання або зміна тексту оновлює цей самий запис без створення дубліката."
-        onClose={() => setEditingRecord(null)}
-      >
-        <form
-          onSubmit={handleSaveEditedRecord}
-          className="space-y-3.5"
-          data-testid="edit-personal-record-form"
-        >
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <SelectField
-              label={PERSONAL_STATE_QUESTIONS_UK.mood}
-              options={moodScaleOptions}
-              value={editRecordMood}
-              onChange={(e) => setEditRecordMood(e.target.value)}
-            />
-            <SelectField
-              label={PERSONAL_STATE_QUESTIONS_UK.energy}
-              options={energyScaleOptions}
-              value={editRecordEnergy}
-              onChange={(e) => setEditRecordEnergy(e.target.value)}
-            />
-            <SelectField
-              label={PERSONAL_STATE_QUESTIONS_UK.stress}
-              options={stressScaleOptions}
-              value={editRecordStress}
-              onChange={(e) => setEditRecordStress(e.target.value)}
-            />
-          </div>
-
-          <TextAreaField
-            label="Текст запису"
-            value={editRecordText}
-            onChange={(e) => setEditRecordText(e.target.value)}
-            data-testid="edit-personal-record-text-input"
-          />
-
-          <InputField
-            label="Прості теги (через кому)"
-            value={editRecordTags}
-            onChange={(e) => setEditRecordTags(e.target.value)}
-            data-testid="edit-personal-record-tags-input"
-          />
-
-          <div className="flex justify-end gap-2 pt-2">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => setEditingRecord(null)}
-            >
-              Скасувати
-            </Button>
-            <Button
-              type="submit"
-              variant="primary"
-              data-testid="confirm-edit-personal-record-button"
-            >
-              Зберегти зміни
-            </Button>
-          </div>
-        </form>
-      </ModalSheet>
 
       {/* 2. Edit Life Area Question Wording Sheet (10.3) */}
       <ModalSheet
@@ -2513,7 +2050,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
       {/* 3. Create Inspiration Item Sheet (10.4) */}
       <ModalSheet
         isOpen={isInspModalOpen}
-        title="Додати елемент натхнення"
+        title={inspCollection === 'preferred_life' ? 'Додати фрагмент бажаного життя' : 'Додати натхнення'}
         subtitle="Підтримуються нотатки, цитати, безпечні HTTP/HTTPS посилання та локальні растрові зображення (JPEG, PNG, WebP)."
         onClose={() => setIsInspModalOpen(false)}
       >
@@ -2547,11 +2084,10 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
               value={inspText}
               onChange={(e) => setInspText(e.target.value)}
               data-testid="insp-modal-text-input"
-              required
             />
           )}
 
-          {inspKind === 'link' && (
+          {true && (
             <div className="space-y-2.5">
               <InputField
                 label="Безпечна адреса (HTTP або HTTPS)"
@@ -2559,7 +2095,6 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
                 value={inspUrl}
                 onChange={(e) => setInspUrl(e.target.value)}
                 data-testid="insp-modal-url-input"
-                required
               />
               <TextAreaField
                 label="Коментар (необов’язково)"
@@ -2599,6 +2134,8 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
             </div>
           )}
 
+          <SelectField label="Сфера життя (необов’язково)" value={inspArea} onChange={e => setInspArea(e.target.value)} options={[{value: '', label: 'Без зв’язку'}, ...snapshot.lifeAreaQuestions.map(a => ({value: a.id, label: a.questionTextUk}))]} />
+          <SelectField label="Ціль (необов’язково)" value={inspGoal} onChange={e => setInspGoal(e.target.value)} options={[{value: '', label: 'Без зв’язку'}, ...snapshot.goals.map(g => ({value: g.id, label: g.title}))]} />
           <SelectField
             label="Пов’язаний проєкт (необов’язково)"
             value={inspProjectId}
@@ -2650,6 +2187,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
           className="space-y-3.5"
           data-testid="edit-wish-modal-form"
         >
+          {localError&&<p role="alert">{localError}</p>}
           <InputField
             label="Назва бажання"
             value={editWishTitle}
@@ -2697,17 +2235,16 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
             <SelectField
               label="Валюта"
               value={editWishCurrency}
-              onChange={(e) =>
-                setEditWishCurrency(
-                  e.target.value as SupportedCurrencyCode | ''
-                )
-              }
+              onChange={(e) => {
+                setConfirmWishCurrency(false);
+                setEditWishCurrency(e.target.value as SupportedCurrencyCode | '');
+              }}
               options={[
                 {
                   value: '',
-                  label: settings.preferredWishlistCurrency
-                    ? `Використати ${settings.preferredWishlistCurrency}`
-                    : '— Оберіть валюту —',
+                  label: editingWish?.estimatedPrice
+                    ? `Зберегти ${editingWish.estimatedPrice.currency}`
+                    : settings.preferredWishlistCurrency ? `Використати ${settings.preferredWishlistCurrency}` : '— Оберіть валюту —',
                 },
                 ...currencySelectOptions,
               ]}
@@ -2715,6 +2252,8 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
             />
           </div>
 
+          <WishExtrasFields value={editWishExtras} onChange={setEditWishExtras} existingMediaId={editingWish?.mediaId} projects={projects} onError={setLocalError}/>
+          {editingWish?.estimatedPrice && editWishPriceInput.trim() && editWishCurrency && editWishCurrency!==editingWish.estimatedPrice.currency && <label><input type="checkbox" checked={confirmWishCurrency} onChange={e=>setConfirmWishCurrency(e.target.checked)}/> Підтверджую зміну валюти: введене число стане ціною в новій валюті. Конвертація не виконується.</label>}
           <TextAreaField
             label="Нотатка"
             value={editWishNote}

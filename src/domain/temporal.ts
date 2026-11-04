@@ -162,11 +162,12 @@ export function assertValidLocalTime(value: string): LocalTimeString {
 }
 
 export function assertValidIsoInstant(value: string): IsoInstantString {
-  if (typeof value !== 'string' || !value.endsWith('Z')) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(value)) {
     throw new PlanuiError('INVALID_INSTANT', String(value));
   }
   const ms = Date.parse(value);
-  if (!Number.isFinite(ms)) {
+  const fraction = value.split('.')[1]?.slice(0, -1) ?? '';
+  if (!Number.isFinite(ms) || new Date(ms).toISOString().slice(0, 19) !== value.slice(0, 19) || /[1-9]/.test(fraction.slice(3))) {
     throw new PlanuiError('INVALID_INSTANT', value);
   }
   return value;

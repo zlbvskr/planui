@@ -3,9 +3,9 @@
  */
 
 export const PLANUI_APP_VERSION = '0.3.0';
-export const PLANUI_DB_SCHEMA_VERSION = 5;
+export const PLANUI_DB_SCHEMA_VERSION = 9;
 export const PLANUI_BACKUP_FORMAT = 'planui-backup-zip' as const;
-export const PLANUI_BACKUP_VERSION = 5;
+export const PLANUI_BACKUP_VERSION = 8;
 
 export type EntityId = string;
 export type IsoInstantString = string;
@@ -184,7 +184,9 @@ export type ReservationReleaseReason =
   | 'task_completed'
   | 'task_canceled'
   | 'manual_unplan'
-  | 'project_archived';
+  | 'project_archived'
+  | 'habit_completed'
+  | 'habit_skipped';
 
 export interface ReservationReleaseMetadata {
   releasedAt: IsoInstantString;
@@ -195,7 +197,8 @@ export interface ReservationReleaseMetadata {
 
 export interface TaskReservation {
   id: EntityId;
-  taskId: EntityId;
+  taskId: EntityId | null;
+  habitOccurrence?: { entryId: EntityId; habitId: EntityId; localDate: LocalDateString } | null;
   interval: ZonedInterval;
   state: ReservationState;
   releaseMetadata: ReservationReleaseMetadata | null;
@@ -271,6 +274,7 @@ export type HabitLifecycleState = 'active' | 'paused' | 'archived';
 
 export type HabitFrequencyRule =
   | { kind: 'daily' }
+  | { kind: 'days_off' }
   | { kind: 'selected_weekdays'; weekdaysIso: number[] }
   | { kind: 'weekly_frequency'; timesPerWeek: number };
 
@@ -287,6 +291,10 @@ export interface HabitRuleRevision {
 }
 
 export interface Habit {
+  minimumVersionUk?: string | null;
+  contextCueUk?: string | null;
+  reminderIntentionUk?: string | null;
+  folderId?: EntityId | null;
   id: EntityId;
   name: string;
   description: string | null;
@@ -300,9 +308,12 @@ export interface Habit {
   revision: number;
 }
 
-export type HabitEntryStatus = 'completed' | 'partial' | 'skipped';
+export type HabitEntryStatus = 'completed' | 'partial' | 'skipped' | 'no_entry';
 
 export interface HabitEntry {
+  ruleSnapshot?: HabitRuleRevision;
+  dayOffSnapshot?: boolean;
+  minimumCompletedUk?: string | null;
   id: EntityId;
   habitId: EntityId;
   localDate: LocalDateString;
@@ -318,6 +329,9 @@ export type Scale1To5 = 1 | 2 | 3 | 4 | 5;
 export type Scale1To10 = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 
 export interface PersonalRecord {
+  scaleVersion?: 1;
+  sleepMinutes?: number | null;
+  sleepQuality?: Scale1To5 | null;
   id: EntityId;
   recordedAt: IsoInstantString;
   localDate: LocalDateString;
@@ -393,6 +407,9 @@ export type InspirationKind = 'text' | 'quote' | 'link' | 'image';
 export type InspirationItemKind = InspirationKind;
 
 export interface InspirationItem {
+  collection?: 'preferred_life' | 'saved';
+  lifeAreaId?: EntityId | null;
+  goalId?: EntityId | null;
   id: EntityId;
   kind: InspirationKind;
   title: string | null;
@@ -438,7 +455,13 @@ export interface WishlistCategory {
   revision: number;
 }
 
+export type WishPurchaseStatus = 'want' | 'purchased' | 'not_relevant';
 export interface WishItem {
+  purchaseStatus?: WishPurchaseStatus;
+  purchasedAt?: IsoInstantString | null;
+  linkUrl?: string | null;
+  mediaId?: EntityId | null;
+  projectId?: EntityId | null;
   id: EntityId;
   title: string;
   note: string | null;

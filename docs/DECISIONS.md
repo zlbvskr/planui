@@ -97,3 +97,41 @@ The active product revision `PLANUI-LIFE-ALIGNMENT-1` supersedes earlier product
 - New reviews use an explicit inclusive date period and 0–10 metadata. Null differs from zero, false or deliberately empty text. Missing legacy scale means 1–10, never conversion to zero-based values. Preserve original identity, wording, version, definitions, periods and answers; normal saved assessments are immutable.
 - Reuse M1 effective inheritance and direct precedence. Add optional direct links only where needed for directions/tasks/events; project habits and reservations dynamically. No duplicate assignments, total score, life ranking or automatic score changes from work completion.
 - Review-to-action steps use ordinary editors or explicit confirmation. Answers themselves have no scheduling effects. Manual planning review requires no report, recurrence, notification permission or journal.
+
+## M7 latest approved scope (2026-11-04)
+
+- The explicit M7 request delivers state check-ins and preferred life together; former M8/M9 feature labels are superseded, without reassigning deferred habits.
+- Extend unified PersonalRecord and InspirationItem; do not split or copy legacy text/scored entries or relabel all inspiration as preferred life.
+- Keep the existing mood/energy/tension 1–5 labels. Version-1 subjective sleep quality rises from very poor to very good. Sleep duration is integer minutes 0–1440; zero and absence differ. Never infer sleep from events.
+- New forms have no diary field. Editing a check-in preserves original text and timestamps; historical text is readable/copyable/exportable and removable only through explicit deletion.
+- Missing inspiration collection means saved inspiration. A new preferred-life fragment never automatically creates a planning entity. HTTP/S links require user opening; no external fetches.
+- Database/ZIP v6 retains all old stores and supports v1–v5 imports. No reset, seed or destructive migration.
+
+## M8 latest approved scope (2026-11-04)
+
+- Explicit M8 supersedes the prior “no timed habit reservations” restriction and delivers the formerly deferred habit alignment. Preserve the completed local M7 baseline separately from the independent Pages PR; implement no later stage here.
+- Reuse the existing full habit editor inside Today and one habit/date history. A session-owned no_entry row is a stable pending occurrence, not a completed log or unrelated task.
+- Minimum wording stays text-only. An explicit minimum action records partial plus the actual minimum wording; it never compares units or automatically satisfies the ordinary target/weekly count. Ordinary completion is counted once per date regardless of session count.
+- Explicit day-off markers are authoritative classification, independent of actual occupied intervals. Overnight carry-in may coexist with a valid day-off marker. Blank dates never imply days off. Logged rule/target/day-off interpretation is pinned; future unlogged opportunities reflect explicit effective revisions and current date markers.
+- Completion and intentional skip release only this occurrence's pending remainder, retaining elapsed occupancy and original timing metadata. Partial/minimum actions retain sessions; manual single-session release leaves completion untouched. Clearing a log retains referenced occurrence identity and never reactivates released sessions.
+- Pause/module disable preserve all definitions, logs, states, intervals and backup coverage. Disabled-module session completion remains an explicit calendar action. No automatic alarms, wake-time inference, repetition, allocations, progression or accumulated debt.
+
+## M9 latest approved scope (2026-11-04)
+
+- M9 now delivers the formerly planned M10 Wishlist extension; do not implement or reassign later stages. Continue on the preserved local M7/M8 baseline, keeping the Pages PR separate.
+- Add optional purchaseStatus rather than repurposing legacy fulfilled. An absent status uses an honest read-time legacy projection; no old completion is automatically a purchase. New purchase actions never rewrite legacy fulfilledAt/state or archive/timing metadata.
+- purchasedAt is the first explicit purchase-marking time. Retain it on subsequent status changes, labelled as the recorded marking, not a newly inferred historical transaction. No expense, budget or planning record is created.
+- Preserve ExactPrice storage and supported per-item currencies. Use BigInt intermediates; reject ambiguous spacing, mixed separators, excess precision and overflow. Keep zero separate from missing. Preserve unchanged historical note/title and decimal-string values when editing other fields.
+- Existing-price currency changes require acknowledgement that the entered number is being expressed in a different currency without conversion. Preferred currency affects new entry defaults only.
+- Reuse bounded local raster validation, browser decoding and media stores. Save attachment and wish atomically, and retain assets referenced by any live wish/inspiration or recovery snapshot. Open only user-entered HTTP/S links on explicit action, without automatic previews.
+
+
+## M10 — Harden existing replacement rather than introduce storage infrastructure
+
+Retain the single IndexedDB database, existing stores, ZIP format 8 and bounded local recovery design. Advance native schema to 9 as a write-protocol compatibility barrier: M9's unguarded replacement code must not stay able to reopen the newer database. The migration updates settings metadata only. No entity splitting, data reset, reseeding or new encryption/access-control layer is introduced.
+
+Validate ZIP/media outside the write transaction and retain a private validation result. Capture the protective live snapshot only after acquiring the replacement write lock. The same persisted schema/generation checks now protect import/restore/reset and ordinary writes; acknowledge generation after commit. Always retain the newly created recovery point despite equal/retrograde clocks. Refuse a conflicting media ID rather than overwrite bytes needed by recovery. Atomicity covers stores in this database only, not browser caches, theme hints or external downloads.
+
+Do not automatically acknowledge another tab's replacement while forms are open. Preserve the visible input, block writes and require an explicit reload that warns about unsaved input. Broadcast notices are advisory expiring leases; IndexedDB serialization and persisted guards are authoritative. This keeps interruption and missed-message handling safe without adding cross-database locks.
+
+Use the existing conservative runtime security limits as the documented limits (100 MiB archive, 120 MiB expansion, 20 MiB data JSON, 2 MiB manifest, 500 entries, ratio 50 for >64 KiB entries, 15 MiB image and 25 million pixels). Correct the previous document mismatch without increasing limits. Repetitive text uses ZIP store when deflate would violate the reader's ratio limit.

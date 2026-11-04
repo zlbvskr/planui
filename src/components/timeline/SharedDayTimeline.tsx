@@ -34,6 +34,7 @@ export interface SharedDayTimelineProps {
   onEmptyCreateAction?: () => void;
   emptyActionLabel?: string;
   compactMode?: boolean;
+  onInspectHabitSession?: (reservation: TaskReservation) => void;
   onInspectTask?: (task: Task, reservationId?: string) => void;
 }
 
@@ -99,7 +100,7 @@ export function SharedDayTimeline({
   onEmptyCreateAction,
   emptyActionLabel,
   compactMode = false,
-  onInspectTask,
+  onInspectTask, onInspectHabitSession,
 }: SharedDayTimelineProps) {
   const [showReleasedHistory, setShowReleasedHistory] = useState(false);
   const [activeClusterModal, setActiveClusterModal] =
@@ -163,7 +164,10 @@ export function SharedDayTimeline({
   );
 
   const handleTimelineItemPrimaryClick = (item: ProjectedTimelineItem) => {
-    if (item.sourceKind !== 'reservation') {
+    if (item.sourceKind === 'reservation') {
+      const session = reservations.find(r => r.id === item.sourceId);
+      if (session?.habitOccurrence) onInspectHabitSession?.(session);
+    } else {
       const ev = events.find((e) => e.id === item.sourceId);
       if (ev) {
         onInspectEvent(ev);
@@ -679,6 +683,7 @@ export function SharedDayTimeline({
                                   : UK_STRINGS.plansView.completeTaskButton}
                               </Button>
                             )}
+                          {isReservation && onInspectHabitSession && reservations.find(r => r.id === item.sourceId)?.habitOccurrence && <Button size="sm" variant="subtle" onClick={() => onInspectHabitSession(reservations.find(r => r.id === item.sourceId)!)}>Звичка: запис і сеанси</Button>}
                           {isReservation && sourceTask && onInspectTask && <Button size="sm" variant="subtle" aria-label={`Планування справи: ${sourceTask.title}`} onClick={() => onInspectTask(sourceTask, item.sourceId)}>Дата й сеанси</Button>}
                           {!isReservation &&
                             sourceEvent &&
@@ -933,6 +938,7 @@ export function SharedDayTimeline({
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5">
+                    {isReservation && onInspectHabitSession && reservations.find(r => r.id === item.sourceId)?.habitOccurrence && <Button onClick={() => { setActiveClusterModal(null); onInspectHabitSession(reservations.find(r => r.id === item.sourceId)!); }}>Звичка: запис і сеанси</Button>}
                     {isReservation && sourceTask && (
                       <Button
                         variant="secondary"

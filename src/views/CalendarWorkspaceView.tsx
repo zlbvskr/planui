@@ -73,6 +73,7 @@ export interface CalendarWorkspaceViewProps {
   onSelectDate: (nextDate: LocalDateString) => void;
   onToggleTaskState: (taskId: EntityId) => Promise<void> | void;
   onCancelEvent: (eventId: EntityId, revision: number) => Promise<void> | void;
+  onInspectHabitSession?: (reservation: TaskReservation) => void;
   onInspectEvent: (event: CalendarEvent) => void;
   onOpenGapPicker: (gap: UnoccupiedTimeGap) => void;
   onOpenGlobalCreation: (preferredAction?: ImplementedCreationActionKind) => void;
@@ -109,7 +110,7 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
   onSelectDate,
   onToggleTaskState,
   onCancelEvent,
-  onInspectEvent,
+  onInspectEvent, onInspectHabitSession,
   onOpenGapPicker,
   onOpenGlobalCreation,
   onDataChanged,
@@ -800,6 +801,7 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
                       </div>
 
                       <div className="flex shrink-0 items-center gap-1.5">
+                        {isRes && onInspectHabitSession && reservations.find(r => r.id === item.sourceId)?.habitOccurrence && <Button onClick={() => onInspectHabitSession(reservations.find(r => r.id === item.sourceId)!)}>Звичка: запис і сеанси</Button>}
                         {isRes && item.taskId ? (
                           <Button
                             type="button"
@@ -1871,6 +1873,7 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
             reservations={reservations}
             onToggleTaskState={onToggleTaskState}
             onCancelEvent={onCancelEvent}
+            onInspectHabitSession={onInspectHabitSession}
             onInspectEvent={onInspectEvent}
             onOpenGapPicker={onOpenGapPicker}
             onEmptyCreateAction={() => onOpenGlobalCreation('event')}

@@ -1,3 +1,5 @@
+import { PlanuiError } from './i18n/errorsUk';
+import { HabitSessionSheet } from './components/habits/HabitSessionSheet';
 import { usePwaLifecycle } from './pwa/pwaController';
 import { PwaStatusBanner, PwaInstallAndOfflineCard } from './components/pwa/PwaStatusAndInstallCard';
 import { restoreTodayInteraction } from './domain/today';
@@ -91,6 +93,7 @@ export function App() {
     try {
       Object.assign(map.today, restoreTodayInteraction(window.sessionStorage.getItem('planui.today-context.v1'), initialTodayDate));
     } catch { /* Session storage can be unavailable; in-memory context still works. */ }
+    if (typeof window !== 'undefined' && window.location.hash.startsWith('#/habits')) map.today.mode = 'habits';
     return map;
   });
 
@@ -101,8 +104,12 @@ export function App() {
   const [recoverySnapshots, setRecoverySnapshots] = useState<
     RecoverySnapshotRecord[]
   >([]);
+  const [habitFilter, setHabitFilter] = useState<'active' | 'paused' | 'archived'>('active');
+  const [habitOccurrence, setHabitOccurrence] = useState<{habitId: string; date: string} | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
+  useEffect(() => { if (habitOccurrence && snapshot && !snapshot.habits.some(h => h.id === habitOccurrence.habitId)) setHabitOccurrence(null); }, [habitOccurrence, snapshot]);
   const [isLocalModalOpen, setIsLocalModalOpen] = useState(false);
+  const [isSettingsConfirmationOpen, setIsSettingsConfirmationOpen] = useState(false);
   const [editorInitialAction, setEditorInitialAction] = useState<
     ImplementedCreationActionKind | undefined
   >(undefined);
@@ -121,10 +128,12 @@ export function App() {
     string | null
   >(null);
 
+  const [externalReplacement, setExternalReplacement] = useState(false);
+  const [storageError, setStorageError] = useState<string | null>(null);
+
   const hydratedNextDayPrefRef = useRef(false);
 
   const reloadLocalData = useCallback(async () => {
-    repositories.acknowledgeExternalGenerationChange();
     const { snapshot: snap, mediaBlobs: blobs } =
       await repositories.captureCoherentSnapshot();
     const recoveries = await repositories.listRecoverySnapshots();
@@ -149,10 +158,19 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    void reloadLocalData();
+    const reloadSafely = () => reloadLocalData().catch(error => {
+      if (error instanceof PlanuiError && error.code === 'STALE_DB_GENERATION_CONFLICT') setExternalReplacement(true);
+      else setStorageError(error instanceof PlanuiError ? error.message : 'Не вдалося прочитати локальні дані. Перезавантажте застосунок; дані не видалено.');
+    });
+    void reloadSafely();
     const unsubscribe = repositories.tabSync.subscribe((msg) => {
       if (msg.type === 'ENTITY_MUTATED' || msg.type === 'IMPORT_FINISHED') {
-        void reloadLocalData();
+        const known = repositories.getKnownDbGeneration();
+        if (known !== null && msg.dbGeneration !== known) {
+          setExternalReplacement(true);
+          return;
+        }
+        void reloadSafely();
       }
     });
     return unsubscribe;
@@ -272,6 +290,7 @@ export function App() {
       if (hash.startsWith('#/plans')) {
         window.history.replaceState(null, '', '#/directions');
       } else if (hash.startsWith('#/habits')) {
+        setContexts(prev => updateDestinationContext(prev, 'today', {mode: 'habits'}));
         window.history.replaceState(null, '', '#/today');
       } else if (hash.startsWith('#/diary') || hash.startsWith('#/records')) {
         window.history.replaceState(null, '', '#/me');
@@ -487,7 +506,9 @@ export function App() {
 
   const anyModalOpen =
     isEditorOpen ||
+    Boolean(habitOccurrence) ||
     isLocalModalOpen ||
+    isSettingsConfirmationOpen ||
     Boolean(activeGapForPicker) ||
     Boolean(inspectedEvent);
   // Inline personal/review forms are conservatively protected until leaving that view.
@@ -501,9 +522,16 @@ export function App() {
         onSelectDestination={handleSelectDestination}
         onOpenGlobalCreate={() => openGlobalCreation()}
         isModalOpen={anyModalOpen}
-        isBackgroundInert={isEditorOpen || Boolean(activeGapForPicker) || Boolean(inspectedEvent) || (isLocalModalOpen && !(activeDestination === 'me' && contexts.me.subView === 'settings'))}
+        isBackgroundInert={Boolean(habitOccurrence) || isEditorOpen || isLocalModalOpen || Boolean(activeGapForPicker) || Boolean(inspectedEvent)}
       >
         <div className="space-y-6">
+          {storageError && <FeedbackBanner tone="error" message={storageError} />}
+          {externalReplacement && <div role="alert" className="rounded-2xl border border-amber-400 p-4 space-y-3">
+            <p>В іншій вкладці замінено локальні дані. Незбережене введення залишено на екрані, але збереження заблоковано. Скопіюйте потрібний текст перед перезавантаженням.</p>
+            <button type="button" onClick={() => {
+              if (window.confirm('Перезавантажити застосунок? Незбережене введення буде втрачено. Спочатку скопіюйте потрібні дані.')) window.location.reload();
+            }}>Перезавантажити застосунок</button>
+          </div>}
           <PwaStatusBanner pwaState={pwaState} />
           {toastMessage && (
             <FeedbackBanner
@@ -544,6 +572,8 @@ export function App() {
               tasks={tasks}
               projects={projects}
               dayOffAnnotations={dayOffAnnotations}
+              habitsContent={<HabitsWorkspaceView selectedDate={todayCtx.selectedDate} actualTodayDate={actualTodayDate} filter={habitFilter} onChangeFilter={setHabitFilter} habits={habits} habitEntries={habitEntries} projects={projects} folders={folders} lifeAreaQuestions={lifeAreaQuestions} dayOffDates={dayOffAnnotations.map(d => d.localDate)} repositories={repositories} onSelectDate={date => setContexts(prev => updateDestinationContext(prev, 'today', {selectedDate: date, hasInteraction: true}))} onOpenGlobalCreation={openGlobalCreation} onDataChanged={async msg => { await reloadLocalData(); if(msg) setToastMessage(msg); }} onModalStateChange={setIsLocalModalOpen} onPlanHabit={(habitId,date) => setHabitOccurrence({habitId,date})} />}
+              onInspectHabitSession={session => { if(session.habitOccurrence) setHabitOccurrence({habitId: session.habitOccurrence.habitId,date: session.habitOccurrence.localDate}); }}
               habits={habits}
               habitEntries={habitEntries}
               habitsEnabled={snapshot?.settings.modules?.habitsEnabled !== false}
@@ -613,7 +643,8 @@ export function App() {
                 reservations={reservations}
                 tasks={tasks}
                 dayOffAnnotations={dayOffAnnotations}
-                shiftTemplates={shiftTemplates}
+                onInspectHabitSession={session => { if(session.habitOccurrence) setHabitOccurrence({habitId: session.habitOccurrence.habitId,date: session.habitOccurrence.localDate}); }}
+              shiftTemplates={shiftTemplates}
                 repositories={repositories}
                 onChangeMode={(mode) =>
                   setContexts((prev) =>
@@ -679,6 +710,7 @@ export function App() {
           {/* DESTINATION 4: Я (Me — Overview, Personal Records, Life Areas, Inspiration, Wishlist, Settings) */}
           {activeDestination === 'me' && snapshot && (
             <MeWorkspaceView
+              onSettingsConfirmationChange={setIsSettingsConfirmationOpen}
               onOpenPlan={(kind, id) => {
                 const entity = kind === 'goal' ? goals.find(g => g.id === id) : projects.find(p => p.id === id);
                 setContexts(prev => updateDestinationContext(prev, 'directions', { activeFolderId: entity?.folderId ?? null, activeGoalId: kind === 'goal' ? id : projects.find(p => p.id === id)?.goalId ?? null, activeProjectId: kind === 'project' ? id : null }));
@@ -738,6 +770,7 @@ export function App() {
                 handleSelectDestination('calendar');
               }}
               onNavigateToHabits={() => {
+                setContexts(prev => updateDestinationContext(prev, 'today', {mode: 'habits'}));
                 handleSelectDestination('today');
               }}
               onModalStateChange={setIsLocalModalOpen}
@@ -747,6 +780,7 @@ export function App() {
         </div>
       </FloatingShell>
 
+      {habitOccurrence && snapshot && habits.some(h => h.id === habitOccurrence.habitId) && <HabitSessionSheet habit={habits.find(h => h.id === habitOccurrence.habitId)!} date={habitOccurrence.date} zone={activeZone} tasks={tasks} events={events} reservations={reservations} entries={habitEntries} repositories={repositories} allowPlanning={snapshot.settings.modules?.habitsEnabled !== false} onChanged={reloadLocalData} onClose={() => setHabitOccurrence(null)} />}
       <SharedEditorHost
         isOpen={isEditorOpen}
         activeDestination={activeDestination}

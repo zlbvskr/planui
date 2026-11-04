@@ -12,6 +12,7 @@ import {
   validateZonedInterval,
 } from './temporal';
 import {
+  PLANUI_DB_SCHEMA_VERSION,
   CalendarEvent,
   DayOffAnnotation,
   Folder,
@@ -56,7 +57,7 @@ export function assertNonEmptyString(
 }
 
 export function assertPositiveRevision(rev: unknown): number {
-  if (typeof rev !== 'number' || !Number.isInteger(rev) || rev < 1) {
+  if (typeof rev !== 'number' || !Number.isSafeInteger(rev) || rev < 1) {
     throw new PlanuiError('INVALID_REVISION', String(rev));
   }
   return rev;
@@ -337,9 +338,14 @@ export function validateReservationRecord(
   taskIds?: ReadonlySet<string>
 ): TaskReservation {
   assertNonEmptyString(reservation.id, 'INVALID_ID');
-  assertNonEmptyString(reservation.taskId, 'INVALID_ID');
-  if (taskIds && !taskIds.has(reservation.taskId)) {
-    throw new PlanuiError('RESERVATION_TASK_NOT_FOUND', reservation.taskId);
+  if (reservation.habitOccurrence != null) {
+    if (reservation.taskId !== null) throw new PlanuiError('VALIDATION_FAILED');
+    assertNonEmptyString(reservation.habitOccurrence.entryId, 'INVALID_ID');
+    assertNonEmptyString(reservation.habitOccurrence.habitId, 'INVALID_ID');
+    assertValidLocalDate(reservation.habitOccurrence.localDate);
+  } else {
+    assertNonEmptyString(reservation.taskId, 'INVALID_ID');
+    if (taskIds && !taskIds.has(reservation.taskId!)) throw new PlanuiError('RESERVATION_TASK_NOT_FOUND');
   }
   validateZonedInterval(reservation.interval);
   if (
@@ -368,6 +374,14 @@ export function validateCalendarEventRecord(
   assertNonEmptyString(event.id, 'INVALID_ID');
   assertNonEmptyString(event.title, 'REQUIRED_TITLE');
 
+  if (!['personal','work_shift','rest','sleep','travel'].includes(event.type) ||
+      !['brand','work','dayoff','personal','reservation','rest'].includes(event.color) ||
+      !['active','canceled'].includes(event.state) || typeof event.isBlocking !== 'boolean') throw new PlanuiError('VALIDATION_FAILED');
+  if (event.workProperties !== null) {
+    assertNonEmptyString(event.workProperties.shiftName);
+    if (event.workProperties.shiftCode !== null && typeof event.workProperties.shiftCode !== 'string') throw new PlanuiError('VALIDATION_FAILED');
+    if (event.workProperties.sourceTemplateId !== null) assertNonEmptyString(event.workProperties.sourceTemplateId, 'INVALID_ID');
+  }
   if (event.schedule.kind === 'timed') {
     validateZonedInterval(event.schedule.interval);
     if (
@@ -440,20 +454,8 @@ export function validateDayOffAnnotationRecord(
   return ann;
 }
 
-export function validateHabitRecord(habit: Habit): Habit {
-  assertNonEmptyString(habit.id, 'INVALID_ID');
-  assertNonEmptyString(habit.name, 'REQUIRED_TITLE');
-  if (
-    habit.state !== 'active' &&
-    habit.state !== 'paused' &&
-    habit.state !== 'archived'
-  ) {
-    throw new PlanuiError('VALIDATION_FAILED', 'habit.state');
-  }
-  if (habit.ruleRevisions.length === 0) {
-    throw new PlanuiError('HABIT_INVALID_RULE', habit.id);
-  }
-  for (const rev of habit.ruleRevisions) {
+function validateHabitRuleSnapshot(rev: import('./types').HabitRuleRevision): void {
+  if (!rev || typeof rev !== 'object' || !rev.rule || typeof rev.rule !== 'object' || !rev.target || typeof rev.target !== 'object') throw new PlanuiError('HABIT_INVALID_RULE');
     assertNonEmptyString(rev.id, 'INVALID_ID');
     assertValidLocalDate(rev.effectiveFromLocalDate);
     assertValidIsoInstant(rev.createdAt);
@@ -475,7 +477,7 @@ export function validateHabitRecord(habit: Habit): Habit {
       ) {
         throw new PlanuiError('HABIT_INVALID_RULE', rev.id);
       }
-    } else if (rev.rule.kind !== 'daily') {
+    } else if (rev.rule.kind !== 'daily' && rev.rule.kind !== 'days_off') {
       throw new PlanuiError('HABIT_INVALID_RULE', rev.id);
     }
 
@@ -492,7 +494,25 @@ export function validateHabitRecord(habit: Habit): Habit {
     } else if (rev.target.kind !== 'binary') {
       throw new PlanuiError('HABIT_INVALID_RULE', rev.id);
     }
+}
+
+export function validateHabitRecord(habit: Habit): Habit {
+  assertNonEmptyString(habit.id, 'INVALID_ID');
+  assertNonEmptyString(habit.name, 'REQUIRED_TITLE');
+  for (const text of [habit.minimumVersionUk, habit.contextCueUk, habit.reminderIntentionUk]) if (text != null && typeof text !== 'string') throw new PlanuiError('VALIDATION_FAILED');
+  if (habit.folderId != null) { assertNonEmptyString(habit.folderId, 'INVALID_ID'); if (habit.projectId) throw new PlanuiError('VALIDATION_FAILED'); }
+  if (new Set(habit.ruleRevisions.map(r => r.id)).size !== habit.ruleRevisions.length) throw new PlanuiError('HABIT_INVALID_RULE');
+  if (
+    habit.state !== 'active' &&
+    habit.state !== 'paused' &&
+    habit.state !== 'archived'
+  ) {
+    throw new PlanuiError('VALIDATION_FAILED', 'habit.state');
   }
+  if (habit.ruleRevisions.length === 0) {
+    throw new PlanuiError('HABIT_INVALID_RULE', habit.id);
+  }
+  for (const rev of habit.ruleRevisions) validateHabitRuleSnapshot(rev);
   assertValidIsoInstant(habit.createdAt);
   assertValidIsoInstant(habit.updatedAt);
   assertPositiveRevision(habit.revision);
@@ -509,10 +529,15 @@ export function validateHabitEntryRecord(
     throw new PlanuiError('HABIT_NOT_FOUND', entry.habitId);
   }
   assertValidLocalDate(entry.localDate);
+  if (entry.ruleSnapshot !== undefined) validateHabitRuleSnapshot(entry.ruleSnapshot);
+  if (entry.dayOffSnapshot !== undefined && typeof entry.dayOffSnapshot !== 'boolean') throw new PlanuiError('VALIDATION_FAILED');
+  if (entry.minimumCompletedUk != null && (typeof entry.minimumCompletedUk !== 'string' || !entry.minimumCompletedUk.trim() || entry.status !== 'partial')) throw new PlanuiError('VALIDATION_FAILED');
+  if (entry.status === 'no_entry' && entry.numericValue != null) throw new PlanuiError('VALIDATION_FAILED');
   if (
     entry.status !== 'completed' &&
     entry.status !== 'partial' &&
-    entry.status !== 'skipped'
+    entry.status !== 'skipped' &&
+    entry.status !== 'no_entry'
   ) {
     throw new PlanuiError('VALIDATION_FAILED', 'habitEntry.status');
   }
@@ -546,6 +571,9 @@ export function validatePersonalRecord(rec: PersonalRecord): PersonalRecord {
   assertOptionalScale1To5(rec.mood);
   assertOptionalScale1To5(rec.energy);
   assertOptionalScale1To5(rec.stress);
+  assertOptionalScale1To5(rec.sleepQuality);
+  if (rec.scaleVersion !== undefined && rec.scaleVersion !== 1) throw new PlanuiError('VALIDATION_FAILED');
+  if (rec.sleepMinutes != null && (!Number.isInteger(rec.sleepMinutes) || rec.sleepMinutes < 0 || rec.sleepMinutes > 1440)) throw new PlanuiError('VALIDATION_FAILED');
   assertValidIsoInstant(rec.createdAt);
   assertValidIsoInstant(rec.updatedAt);
   assertPositiveRevision(rec.revision);
@@ -848,7 +876,8 @@ export function validateInspirationItemRecord(
       throw new PlanuiError('PROJECT_NOT_FOUND', item.projectId);
     }
   }
-  if (item.kind === 'link') {
+  if (item.collection !== undefined && !['preferred_life', 'saved'].includes(item.collection)) throw new PlanuiError('VALIDATION_FAILED');
+  if (item.linkUrl != null || item.kind === 'link') {
     if (!item.linkUrl) {
       throw new PlanuiError('UNSAFE_INSPIRATION_URL');
     }
@@ -861,7 +890,8 @@ export function validateInspirationItemRecord(
       if (err instanceof PlanuiError) throw err;
       throw new PlanuiError('UNSAFE_INSPIRATION_URL', item.linkUrl);
     }
-  } else if (item.kind === 'image') {
+  }
+  if (item.mediaId != null || item.kind === 'image') {
     if (!item.mediaId) {
       throw new PlanuiError('MISSING_REFERENCED_MEDIA', item.id);
     }
@@ -895,10 +925,22 @@ export function validateWishlistCategoryRecord(
 
 export function validateWishItemRecord(
   wish: WishItem,
-  categoryIds?: ReadonlySet<string>
+  categoryIds?: ReadonlySet<string>,
+  mediaIds?: ReadonlySet<string>,
+  projectIds?: ReadonlySet<string>
 ): WishItem {
   assertNonEmptyString(wish.id, 'INVALID_ID');
   assertNonEmptyString(wish.title, 'REQUIRED_TITLE');
+  if (wish.purchaseStatus !== undefined && !['want','purchased','not_relevant'].includes(wish.purchaseStatus)) throw new PlanuiError('WISHLIST_INVALID_STATE');
+  if (wish.purchasedAt != null) assertValidIsoInstant(wish.purchasedAt);
+  if (wish.purchaseStatus === 'purchased' && !wish.purchasedAt) throw new PlanuiError('VALIDATION_FAILED');
+  if (wish.linkUrl != null) {
+    try { const url = new URL(wish.linkUrl); if (!['http:','https:'].includes(url.protocol)) throw new Error(); }
+    catch { throw new PlanuiError('UNSAFE_INSPIRATION_URL'); }
+  }
+  if (wish.mediaId != null) { assertNonEmptyString(wish.mediaId,'INVALID_ID'); if (mediaIds && !mediaIds.has(wish.mediaId)) throw new PlanuiError('MISSING_REFERENCED_MEDIA'); }
+  if (wish.projectId != null) { assertNonEmptyString(wish.projectId,'INVALID_ID'); if (projectIds && !projectIds.has(wish.projectId)) throw new PlanuiError('PROJECT_NOT_FOUND'); }
+
 
   if (wish.categoryId !== null) {
     assertNonEmptyString(wish.categoryId, 'INVALID_ID');
@@ -934,6 +976,8 @@ export function validateSettingsRecord(
   if (!settings || typeof settings !== 'object') {
     throw new PlanuiError('VALIDATION_FAILED', 'settings');
   }
+  if (!Number.isSafeInteger(settings.dbGeneration) || settings.dbGeneration < 1 || settings.dbGeneration >= Number.MAX_SAFE_INTEGER ||
+      settings.dbSchemaVersion !== PLANUI_DB_SCHEMA_VERSION) throw new PlanuiError('VALIDATION_FAILED');
   if (settings.roadmapLayer !== undefined && !['hidden', 'key_dates', 'periods'].includes(settings.roadmapLayer)) throw new PlanuiError('VALIDATION_FAILED');
   validateDailyPlans(settings.dailyPlans);
   if (settings.id !== 'singleton') {
@@ -992,6 +1036,7 @@ export function validateDomainSnapshot(
 
   const requiredArrayKeys: (keyof Omit<PlanuiDomainSnapshot, 'settings'>)[] = [
     'folders',
+    'goals',
     'projects',
     'stages',
     'tasks',
@@ -1009,9 +1054,25 @@ export function validateDomainSnapshot(
     'wishlistCategories',
     'wishes',
   ];
+  if (Object.keys(snapshot).some(key => key !== 'settings' && !requiredArrayKeys.includes(key as keyof Omit<PlanuiDomainSnapshot, 'settings'>))) throw new PlanuiError('VALIDATION_FAILED');
   for (const key of requiredArrayKeys) {
-    if (!Array.isArray(snapshot[key])) {
+    if (!Array.isArray(snapshot[key]) || snapshot[key].some(record => !record || typeof record !== 'object' || Array.isArray(record))) {
       throw new PlanuiError('VALIDATION_FAILED', `snapshot.${key}`);
+    }
+  }
+
+  // Reject malformed scalar payloads before they reach editors or React rendering.
+  // Optional historical fields remain optional; authored strings are never coerced.
+  for (const key of requiredArrayKeys) {
+    for (const record of snapshot[key]) {
+      const fields = record as unknown as Record<string, unknown>;
+      for (const name of ['description','note','text','contentText','icon','desiredOutcome','completionCriteria','expectedOutcome','purposeUk','completionCriteriaUk','implementationIntentionUk','collaboratorText']) {
+        if (fields[name] !== undefined && fields[name] !== null && typeof fields[name] !== 'string') throw new PlanuiError('VALIDATION_FAILED');
+      }
+      for (const name of ['archived','isFavorite','wasOptimized','isBlocking']) {
+        if (fields[name] !== undefined && typeof fields[name] !== 'boolean') throw new PlanuiError('VALIDATION_FAILED');
+      }
+      if (fields.order !== undefined && (typeof fields.order !== 'number' || !Number.isFinite(fields.order))) throw new PlanuiError('VALIDATION_FAILED');
     }
   }
 
@@ -1038,8 +1099,7 @@ export function validateDomainSnapshot(
       validateGoalRecord(g, { folderIds });
       if (
         g.lifeAreaId !== null &&
-        lifeAreaQuestionIds.size > 0 &&
-        !lifeAreaQuestionIds.has(g.lifeAreaId)
+          !lifeAreaQuestionIds.has(g.lifeAreaId)
       ) {
         throw new PlanuiError('VALIDATION_FAILED', `goal.lifeAreaId:${g.lifeAreaId}`);
       }
@@ -1061,7 +1121,6 @@ export function validateDomainSnapshot(
     validateProjectRecord(p, { folderIds, goalIds });
     if (
       p.lifeAreaId !== null &&
-      lifeAreaQuestionIds.size > 0 &&
       !lifeAreaQuestionIds.has(p.lifeAreaId)
     ) {
       throw new PlanuiError('VALIDATION_FAILED', `project.lifeAreaId:${p.lifeAreaId}`);
@@ -1071,9 +1130,11 @@ export function validateDomainSnapshot(
   }
 
   const stageProjectMap = new Map<string, string>();
+  const stageIds = new Set<string>();
   for (const s of snapshot.stages) {
     validateStageRecord(s, projectIds, goalIds);
-    if (stageProjectMap.has(s.id)) throw new PlanuiError('INVALID_ID', s.id);
+    if (stageIds.has(s.id)) throw new PlanuiError('INVALID_ID', s.id);
+    stageIds.add(s.id);
     if (s.projectId) stageProjectMap.set(s.id, s.projectId);
   }
 
@@ -1082,7 +1143,7 @@ export function validateDomainSnapshot(
   for (const r of snapshot.reservations) {
     if (reservationIds.has(r.id)) throw new PlanuiError('INVALID_ID', r.id);
     reservationIds.add(r.id);
-    if (r.state === 'active') {
+    if (r.state === 'active' && r.taskId !== null) {
       activeReservationsByTaskId.set(
         r.taskId,
         (activeReservationsByTaskId.get(r.taskId) ?? 0) + 1
@@ -1145,12 +1206,12 @@ export function validateDomainSnapshot(
   const habitIds = new Set<string>();
   for (const h of snapshot.habits) {
     validateHabitRecord(h);
+    if (h.folderId != null && !folderIds.has(h.folderId)) throw new PlanuiError('ENTITY_NOT_FOUND');
     if (h.projectId !== null && !projectIds.has(h.projectId)) {
       throw new PlanuiError('PROJECT_NOT_FOUND', h.projectId);
     }
     if (
       h.lifeAreaId !== null &&
-      lifeAreaQuestionIds.size > 0 &&
       !lifeAreaQuestionIds.has(h.lifeAreaId)
     ) {
       throw new PlanuiError('VALIDATION_FAILED', `habit.lifeAreaId:${h.lifeAreaId}`);
@@ -1172,8 +1233,16 @@ export function validateDomainSnapshot(
     habitDatePairs.add(key);
   }
 
+  for (const session of snapshot.reservations) {
+    const occurrence = session.habitOccurrence;
+    if (!occurrence) continue;
+    const entry = snapshot.habitEntries.find(e => e.id === occurrence.entryId);
+    if (!entry || entry.habitId !== occurrence.habitId || entry.localDate !== occurrence.localDate) throw new PlanuiError('VALIDATION_FAILED');
+  }
+
   const personalRecordIds = new Set<string>();
   for (const pr of snapshot.personalRecords) {
+    if ((pr.text !== null && typeof pr.text !== 'string') || !Array.isArray(pr.tags) || pr.tags.some(tag => typeof tag !== 'string')) throw new PlanuiError('VALIDATION_FAILED');
     validatePersonalRecord(pr);
     if (personalRecordIds.has(pr.id)) {
       throw new PlanuiError('INVALID_ID', pr.id);
@@ -1210,6 +1279,8 @@ export function validateDomainSnapshot(
   const inspirationIds = new Set<string>();
   for (const ins of snapshot.inspirationItems) {
     validateInspirationItemRecord(ins, mediaIds, projectIds);
+    if (ins.goalId != null && !snapshot.goals.some(g => g.id === ins.goalId)) throw new PlanuiError('VALIDATION_FAILED');
+    if (ins.lifeAreaId != null && !snapshot.lifeAreaQuestions.some(a => a.id === ins.lifeAreaId)) throw new PlanuiError('VALIDATION_FAILED');
     if (inspirationIds.has(ins.id)) {
       throw new PlanuiError('INVALID_ID', ins.id);
     }
@@ -1227,7 +1298,7 @@ export function validateDomainSnapshot(
 
   const wishIds = new Set<string>();
   for (const w of snapshot.wishes) {
-    validateWishItemRecord(w, wishlistCategoryIds);
+    validateWishItemRecord(w, wishlistCategoryIds, mediaIds, projectIds);
     if (wishIds.has(w.id)) {
       throw new PlanuiError('INVALID_ID', w.id);
     }

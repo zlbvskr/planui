@@ -126,3 +126,27 @@ Area merge is a single transaction over areas and the live relationship stores. 
 Review answers alone write only a review record. Planning effects route through explicit linking/task editors, project pause confirmation, normal scope editors, the shared roadmap, or the M5 exact reservation/assignment preview. Manual planning review uses canonical events including non-blocking recovery, reservations and date/deadline tasks with origin-zone interval semantics and union occupancy. It never assumes free time implies usable energy.
 
 This user-approved M6 scope supersedes the earlier habit-stage numbering only for the requested work; habit rule enhancements remain deferred. Native browser/device verification remains outstanding.
+
+## M7 state and preferred-life integration
+
+`StateCheckInsView` replaces new diary forms with optional scales, explicit calendar date and user-entered sleep; edits preserve original text/timestamps. Secondary archive provides reading/copying, selected JSON export and confirmed deletion. Existing data stays accessible from Я when modules are disabled. Global creation also has no new diary-text field. `stateCheckIns.ts` centralizes scale metadata, history classification and personal export.
+
+Preferred-life fragments use the existing transactional inspiration/media repository and object-URL lifecycle. Existing inspiration is a separate saved collection; no external previews. New references are checked transactionally and during ZIP import. Life-area projections/merge signatures include inspiration; goal deletion unlinks its fragments. Migration v6 changes metadata only.
+
+## M8 Today habit integration and shared reservations
+
+Today embeds the existing HabitsWorkspaceView as the Звички mode. It shares the selected-date context, canonical repository and history with session controls. Existing weekday, numeric, week/month history, explicit date/yesterday-after-shift, pause/archive and editing UI are reused. Streak presentation is secondary. No primary navigation destination is added; disabling habits removes their Today mode but leaves occupied reservations in Calendar.
+
+HabitSessionSheet performs explicit manual interval planning through sessionFromDuration, detectScheduleConflicts and the same reservation store used by tasks. Context labels do not allocate time. The transaction rechecks habit revision, ownership, occurrence state and overlaps before creating a session and its canonical entry atomically. Failure rolls back both. Task-only mutation APIs reject habit-owned reservations. Shared timeline, dense-cluster and Calendar detail controls inspect the canonical habit occurrence, including while disabled.
+
+All completion/numeric/skip entry APIs use a shared transactional habit-session release policy. Existing views and the session never create parallel logs. Future sessions release; ongoing sessions retain the elapsed slice; ended sessions and different dates remain untouched. Reopening does not restore pending time. Individual session release never changes completion. Schedule edits pin older interpretation metadata before appending a new immutable revision. The live schema migration is metadata-only.
+
+## M9 Wishlist / purchase integration
+
+Keep the existing Me Wishlist workspace, flat-category manager and shared creation editor. Add a read-only effective-status projection over optional purchaseStatus plus legacy state. UI status changes preserve original fulfillment/archive/timing data; the legacy presentation is separate from purchases. Optional creation fields are progressively disclosed in both inline and global creation. The same WishExtrasFields handles safe links, canonical project selection and bounded local image preparation, including decoding, pending/error state and protection against stale asynchronous file results. WishLocalImage reuses the object-URL registry with cleanup and local failure text.
+
+saveWishItem remains the canonical write API, adding optional atomic media and explicit currency-change confirmation. Validate all relationships in its transaction. Images are shared with inspiration and recovery snapshots; wish removal/replacement and inspiration removal use the same reference protection. Project/folder deletion unlinks affected wishes; moves preserve IDs. No task/event/financial APIs are invoked by a wish write.
+
+Exact-price parsing and formatting use BigInt integer intermediates while retaining the original safe-integer/decimal-string JSON model. Ambiguous new input is rejected; existing records are not reparsed into new amounts during migration. Default-currency changes affect new defaults only, and edits preserve unchanged authored note/title/price values. The v8 migration is metadata-only.
+
+M9 browser backup verification also reuses the focused ZIP backpressure correction from the separate Pages work: consume compression output concurrently with writes/close. This changes no ZIP format. Inline Settings confirmations now have a separate UI-state signal from portaled modals; floating controls remain hidden and modal backgrounds stay inert, while the inline import confirmation remains interactive. The Pages hosting configuration/PR is not merged or modified.

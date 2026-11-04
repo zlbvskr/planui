@@ -256,3 +256,56 @@ This document defines stable requirement identifiers (`REQ-C01-*` through `REQ-C
 
 
 M6 numbering note: legacy AT-M06-01/02/03 references in habit rows retain their former scope and are not claimed as completed here. The latest life-area M6 request uses AT-M06-LA-01 through AT-M06-LA-05 to avoid reusing those identifiers with a different meaning.
+
+## M7 coverage (latest explicit stage scope)
+
+| Requirement | Implementation / verification |
+|---|---|
+| Voluntary optional state and sleep; versioned 1–5 scales; explicit dates, multiple entries, edits/deletion | StateCheckInsView, global editor, stateCheckIns.ts, validatePersonalRecord; M7 unit and Chromium smoke checks |
+| Preserve unified diary text/IDs/timestamps/scores; secondary read/copy/export/delete archive | Existing PersonalRecord store and ZIP arrays unchanged; legacy classification, selected JSON export; unit ZIP and native v5→v6 Chromium checks |
+| Preferred-life framing/prompts, independent fragments and local media/links/relationships | Existing inspiration form/store/media pipeline plus collections, lifeAreaId/goalId; M7 reference/merge/deletion and link tests; Stage 10 media tests |
+| Legacy inspiration and disabled-module export | Saved collection fallback; module preferences retained; real ZIP replacement tests and disabled-history browser check |
+| No inferred sleep, causal/medical claims or automatic planning | Explicit user fields and neutral UI only; no scheduling-engine changes |
+
+## M8 coverage
+
+| Requirement | Implementation / verification |
+|---|---|
+| Optional embedded Today habits; no primary destination; disabled preservation | App/Today reuse HabitsWorkspaceView; 4-destination Chromium check; disabled session/calendar/ZIP tests |
+| Preserve daily/weekdays/weekly and binary/numeric, states, history and night-shift logging | Existing habit engine plus optional snapshots; original Stage 9 and M8 tests; explicit-date/yesterday UI retained |
+| Minimum text, cue, reminder intention, area/direction/project links | Existing creation/edit forms, reference validation and safe unlinking; Chromium metadata round-trip and M8 direction test |
+| Explicit days off with overnight carry-in and no inferred sleep | days_off rule + actual markers; 480-minute carry-in test and frozen-log/future-marker-change test |
+| Immutable effective revisions and historic target/unit interpretation | append-only revisions, transactional legacy-log pinning, future revision display; M8 legacy numeric snapshot and equal-time revision tests |
+| Canonical sessions and once-only completion/shared lifecycle | Existing reservation store/projection + habitOccurrence pointers; multi-session, truncation, cancellation, clear/reopen, failure rollback and calendar completion tests |
+| Migration and backups | Metadata-only schema v7; v1–v7 import; exact native v6→v7 preservation and real ZIP replacement with disabled habits |
+
+## M9 coverage
+
+| Requirement | Implementation / verification |
+|---|---|
+| Minimal optional Wishlist with note/price/category/link/image/project | Existing inline/global forms plus shared progressive extras; real Chromium creation in both paths |
+| Three purchase statuses, separate legacy fulfillment and archive | Optional purchaseStatus + read-time projection; filter/status/archive tests and native legacy-history view |
+| IDs/notes/amounts/currencies/timing/fulfillment preserved | Metadata-only DB v8 and v1–v7 migration tests; native upgrade and exact ZIP replacement; unchanged-price/note edit preservation |
+| Flat arbitrary categories independent from timing | Existing manager, complete-ID reorder validation, category named Зараз with later timing, rename/reorder/delete tests and UI deletion |
+| Exact localized money, zero/missing/ambiguity, default and explicit currency changes | BigInt parser/formatter, safe-integer boundaries, comma/dot/grouping rejection tests, actual zero/error and currency-confirmation UI |
+| Canonical project links, no generated tasks/events/transactions | Stable-ID move/unlink tests and browser checks confirming no task/event/session writes |
+| Safe local media/links and storage failure handling | Bounded raster helper, local browser decoding, atomic media/wish writes, shared/recovery retention, rollback tests and no external preview requests |
+| Disabled-module backup and archive compatibility | Real v8 ZIP replacement with disabled Wishlist, all statuses, legacy archive and exact local image bytes |
+
+
+## M10 coverage — integration/recovery (current scope)
+
+The latest approved mapping is **M9 = Wishlist**, **M10 = integration and recovery hardening**. Earlier M10 Wishlist references in historical rows are superseded by the M9/M10 checkpoint sections.
+
+| Requirement | Implementation / executed verification |
+|---|---|
+| C20 complete coherent ZIP, all M1–M9 history/associations/preferences and disabled modules | Existing 18-array serializer retained; Stage 11/M1–M9 full regressions and M10 canonical-projection/restore/re-export fixtures |
+| C20 validate container, limits, checksums, records/IDs/references/ownership/cycles/statuses/time/exact money/media | Bounded ZIP reader and strengthened domain/manifest validation; adversarial Stage 11/M10 tests and browser raster decode |
+| C20 controlled replacement and actual atomicity | Existing single IndexedDB transaction retained; snapshot captured under write lock; trusted private preview; native quota and simulated late-commit rollback |
+| C20 recovery ≤3 / quota / shared media / no recursive snapshots | Atomic retention and GC; clock-skew retention; immutable media identities; failed operations preserve existing points; old local snapshots migrate on export/restore |
+| C19/C20 stale tabs, open forms, unsupported schema, interruption | Schema 9 compatibility barrier; post-commit generation update; sticky stale UI; expiring per-tab advisory leases; native v1–v8 upgrade/restart/failure and two-tab browser checks |
+| C05/C08/C10/C12/C13 canonical completion/date/status/module integration | M3/M4/M5/M8 and combined M10 regression: shared records, zero roadmap occupancy, independent status changes, no module-driven data/session erasure |
+| Bounded work roster and non-retroactive templates | Existing Stage 8 generation/preview/range/copy and rollback suite rerun; infrastructure reused |
+| C20/C22 privacy, actual protection and explicit local deletion | Runtime source review found no analytics/remote previews/sensitive logging; existing local export and explicit reset/recovery deletion preserved; unencrypted/browser-origin/device and eviction limitations documented |
+
+Evidence: AT-M10-R01–R10 and RELEASE_CHECKLIST. Final PWA/deployment and physical-device release checks remain pending.

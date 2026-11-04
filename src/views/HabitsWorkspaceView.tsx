@@ -24,6 +24,7 @@ import {
   LifeAreaQuestion,
   LocalDateString,
   Project,
+  Folder,
 } from '../domain/types';
 import {
   addDaysToLocalDate,
@@ -70,6 +71,9 @@ export interface HabitsWorkspaceViewProps {
   habits: readonly Habit[];
   habitEntries: readonly HabitEntry[];
   projects: readonly Project[];
+  folders?: readonly Folder[];
+  dayOffDates?: readonly string[];
+  onPlanHabit?: (habitId: string, date: string) => void;
   lifeAreaQuestions: readonly LifeAreaQuestion[];
   repositories: PlanuiRepositories;
   onSelectDate: (nextDate: LocalDateString) => void;
@@ -105,7 +109,7 @@ export function HabitsWorkspaceView({
   filter,
   habits,
   habitEntries,
-  projects,
+  projects, folders = [], dayOffDates = [], onPlanHabit,
   lifeAreaQuestions,
   repositories,
   onSelectDate,
@@ -123,6 +127,10 @@ export function HabitsWorkspaceView({
 
   // Edit / New Rule Revision Modal State
   const [editingHabit, setEditingHabit] = useState<Habit | null>(null);
+  const [editMinimum, setEditMinimum] = useState('');
+  const [editCue, setEditCue] = useState('');
+  const [editReminder, setEditReminder] = useState('');
+  const [editFolder, setEditFolder] = useState('');
   const [editName, setEditName] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [editIcon, setEditIcon] = useState('repeat');
@@ -130,7 +138,7 @@ export function HabitsWorkspaceView({
   const [editLifeAreaId, setEditLifeAreaId] = useState('');
   const [editEffectiveDate, setEditEffectiveDate] = useState(selectedDate);
   const [editRuleKind, setEditRuleKind] = useState<
-    'daily' | 'selected_weekdays' | 'weekly_frequency'
+    'daily' | 'days_off' | 'selected_weekdays' | 'weekly_frequency'
   >('daily');
   const [editWeekdaysIso, setEditWeekdaysIso] = useState<number[]>([1, 3, 5]);
   const [editTimesPerWeek, setEditTimesPerWeek] = useState<string>('3');
@@ -177,6 +185,7 @@ export function HabitsWorkspaceView({
   }, [habitEntries]);
 
   const openEditModal = (habit: Habit) => {
+    setEditMinimum(habit.minimumVersionUk ?? ''); setEditCue(habit.contextCueUk ?? ''); setEditReminder(habit.reminderIntentionUk ?? ''); setEditFolder(habit.folderId ?? '');
     const currentRev =
       getEffectiveHabitRuleRevisionForDate(habit, selectedDate) ??
       sortHabitRuleRevisions(habit.ruleRevisions).at(-1);
@@ -230,7 +239,9 @@ export function HabitsWorkspaceView({
     try {
       const nowIso = new Date().toISOString();
       let rule: HabitFrequencyRule;
-      if (editRuleKind === 'daily') {
+      if (editRuleKind === 'days_off') {
+        rule = {kind: 'days_off'};
+      } else if (editRuleKind === 'daily') {
         rule = { kind: 'daily' };
       } else if (editRuleKind === 'selected_weekdays') {
         rule = {
@@ -273,6 +284,7 @@ export function HabitsWorkspaceView({
         {
           ...editingHabit,
           name: editName.trim(),
+          minimumVersionUk: editMinimum.trim() || null, contextCueUk: editCue.trim() || null, reminderIntentionUk: editReminder.trim() || null, folderId: editProjectId ? null : editFolder || null,
           description: editDescription.trim() ? editDescription.trim() : null,
           icon: editIcon.trim() ? editIcon.trim() : null,
           projectId: editProjectId ? editProjectId : null,
@@ -331,7 +343,7 @@ export function HabitsWorkspaceView({
       setDeletingHabit(null);
       onModalStateChange?.(false);
       await onDataChanged(
-        `Звичку «${targetName}» видалено разом із записами історії (${deletedEntriesCount}).`
+        `Звичку «${targetName}» видалено разом із її сеансами та записами історії (${deletedEntriesCount}).`
       );
     } catch (err) {
       setDeletingHabit(null);
@@ -358,6 +370,7 @@ export function HabitsWorkspaceView({
 
   return (
     <div className="space-y-4" data-testid="destination-view-habits">
+      <p>«Після пробудження» — контекст, а не час. Вихідний потребує явної позначки; зміна, що закінчується вранці, зберігає свою зайнятість. Немає накопиченого боргу за невідмічені дні.</p>
       {/* 1. Header & Date Navigation with Easy Previous-Date Night-Shift Recording (9.2) */}
       <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="space-y-1">
@@ -525,17 +538,17 @@ export function HabitsWorkspaceView({
             const dayEval = evaluateHabitOnDate({
               habit,
               entriesForHabit,
-              localDate: selectedDate,
+              localDate: selectedDate, daysOff: dayOffDates,
             });
             const weekProgress = computeHabitWeekProgress(
               habit,
               entriesForHabit,
-              selectedDate
+              selectedDate, dayOffDates
             );
             const streakSummary = computeHabitStreakSummary(
               habit,
               entriesForHabit,
-              selectedDate
+              selectedDate, dayOffDates
             );
             const isMonthExpanded = Boolean(expandedMonthHabitIds[habit.id]);
             const monthProgress = isMonthExpanded
@@ -543,7 +556,7 @@ export function HabitsWorkspaceView({
                   habit,
                   entriesForHabit,
                   activeYearMonthObj.year,
-                  activeYearMonthObj.month
+                  activeYearMonthObj.month, dayOffDates
                 )
               : null;
 
@@ -585,12 +598,22 @@ export function HabitsWorkspaceView({
                       data-testid={`habit-streak-badge-${habit.id}`}
                       title={streakSummary.explanationUk}
                     >
-                      {streakBadgeText}
+                      <details><summary>Серія (за бажанням)</summary>{streakBadgeText}</details>
                     </span>
                   </div>
                 }
               >
                 <div className="space-y-4">
+                  {habit.folderId && <p>Напрям: {folders.find(f => f.id === habit.folderId)?.name}</p>}
+                  {habit.contextCueUk && <p>Контекст: {habit.contextCueUk}</p>}
+                  {habit.reminderIntentionUk && <p>Мій намір нагадати собі: {habit.reminderIntentionUk}</p>}
+                  {habit.minimumVersionUk && <p>Мінімальна версія: {habit.minimumVersionUk}</p>}
+                  {dayEval.entry?.minimumCompletedUk && <p>Мінімальну версію виконано: {dayEval.entry.minimumCompletedUk}. Звичайна ціль окрема.</p>}
+                  <div className="flex flex-wrap gap-2">
+                    {habit.state === 'active' && habit.minimumVersionUk && <Button onClick={async () => { await repositories.recordHabitEntryForDateTransactionally({habitId: habit.id, localDate: selectedDate, input: {kind: 'minimum'}}); await onDataChanged(); }}>Зроблено мінімум</Button>}
+                    <Button onClick={() => onPlanHabit?.(habit.id, selectedDate)}>Дата й сеанси звички</Button>
+                  </div>
+                  {sortedRevs.filter(r => r.effectiveFromLocalDate > selectedDate).map(r => <p key={r.id}>З {formatUkrainianDateHeading(r.effectiveFromLocalDate)}: {formatHabitRuleSummaryUk(r.rule,r.target)}</p>)}
                   {/* Optional Description & Context Badges */}
                   {(habit.description || linkedProject || linkedLifeArea) && (
                     <div className="space-y-1.5">
@@ -1272,6 +1295,10 @@ export function HabitsWorkspaceView({
               />
             </div>
 
+            <InputField label="Мінімальна версія (текст, необов’язково)" value={editMinimum} onChange={e => setEditMinimum(e.target.value)} />
+            <InputField label="Контекст / підказка (необов’язково)" value={editCue} onChange={e => setEditCue(e.target.value)} />
+            <InputField label="Мій намір нагадати собі (без будильника)" value={editReminder} onChange={e => setEditReminder(e.target.value)} />
+            <SelectField label="Напрям (без проєкту)" value={editProjectId ? '' : editFolder} disabled={Boolean(editProjectId)} onChange={e => setEditFolder(e.target.value)} options={[{value: '', label: 'Без напряму'}, ...folders.map(f => ({value:f.id,label:f.name}))]} />
             <InputField
               label="Нова ревізія правила діє з дати"
               type="date"
@@ -1287,13 +1314,14 @@ export function HabitsWorkspaceView({
                 Правило повторення з цієї дати
               </span>
               <SegmentedControl<
-                'daily' | 'selected_weekdays' | 'weekly_frequency'
+                'daily' | 'days_off' | 'selected_weekdays' | 'weekly_frequency'
               >
                 ariaLabel="Правило повторення"
                 value={editRuleKind}
                 onChange={setEditRuleKind}
                 options={[
                   { value: 'daily', label: 'Щодня' },
+                  { value: 'days_off', label: 'Позначені вихідні' },
                   { value: 'selected_weekdays', label: 'Обрані дні' },
                   { value: 'weekly_frequency', label: 'Разів на тиждень' },
                 ]}
@@ -1414,7 +1442,7 @@ export function HabitsWorkspaceView({
       {/* Modal 2: Delete Habit with History Impact Explanation (9.3) */}
       <ModalSheet
         isOpen={Boolean(deletingHabit)}
-        title="Видалення звички та історії"
+        title="Видалення звички, історії та її сеансів"
         subtitle="Перевірте вплив на збережену історію перед остаточним видаленням"
         onClose={() => {
           setDeletingHabit(null);

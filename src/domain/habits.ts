@@ -147,19 +147,19 @@ export function getEffectiveHabitRuleRevisionForDate(
 }
 
 /**
- * 9.3 / C14: Appends a new effective-dated rule revision (or updates an existing revision with the exact same effectiveFromLocalDate)
+ * 9.3 / C14: Appends an immutable effective-dated rule revision (later appended revisions win equal-date/equal-time ties)
  * without mutating earlier revisions that govern historical dates.
  */
 export function appendEffectiveHabitRuleRevision(
   existingRevisions: readonly HabitRuleRevision[],
   nextRevision: HabitRuleRevision
 ): HabitRuleRevision[] {
-  const filtered = existingRevisions.filter(
-    (rev) =>
-      rev.id !== nextRevision.id &&
-      rev.effectiveFromLocalDate !== nextRevision.effectiveFromLocalDate
-  );
-  return sortHabitRuleRevisions([...filtered, nextRevision]);
+  const existing = existingRevisions.find(rev => rev.id === nextRevision.id);
+  if (existing) {
+    if (JSON.stringify(existing) !== JSON.stringify(nextRevision)) throw new PlanuiError('HABIT_INVALID_RULE');
+    return sortHabitRuleRevisions(existingRevisions);
+  }
+  return sortHabitRuleRevisions([...existingRevisions, nextRevision]);
 }
 
 /**
@@ -184,8 +184,10 @@ export function getPreviousLocalDateForNightShift(
  */
 export function isRuleScheduledOnWeekday(
   rule: HabitFrequencyRule,
-  localDate: LocalDateString
+  localDate: LocalDateString,
+  daysOff: readonly LocalDateString[] = []
 ): boolean {
+  if (rule.kind === 'days_off') return daysOff.includes(localDate);
   if (rule.kind === 'daily') {
     return true;
   }
@@ -205,7 +207,9 @@ export function formatHabitRuleSummaryUk(
   target: HabitTargetSpec
 ): string {
   let rulePart: string;
-  if (rule.kind === 'daily') {
+  if (rule.kind === 'days_off') {
+    rulePart = 'У явно позначені вихідні';
+  } else if (rule.kind === 'daily') {
     rulePart = 'Щодня';
   } else if (rule.kind === 'selected_weekdays') {
     const sortedDays = Array.from(new Set(rule.weekdaysIso)).sort(
@@ -252,6 +256,7 @@ export function evaluateHabitOnDate(params: {
   habit: Habit;
   entriesForHabit: ReadonlyMap<LocalDateString, HabitEntry> | readonly HabitEntry[];
   localDate: LocalDateString;
+  daysOff?: readonly LocalDateString[];
 }): HabitDayEvaluation {
   const { habit, localDate } = params;
   const entryMap =
@@ -262,7 +267,7 @@ export function evaluateHabitOnDate(params: {
           habit.id
         );
 
-  const effectiveRevision = getEffectiveHabitRuleRevisionForDate(
+  const effectiveRevision = (entryMap.get(localDate)?.status !== 'no_entry' ? entryMap.get(localDate)?.ruleSnapshot : undefined) ?? getEffectiveHabitRuleRevisionForDate(
     habit,
     localDate
   );
@@ -275,9 +280,9 @@ export function evaluateHabitOnDate(params: {
   const numericValue = entry?.numericValue ?? null;
 
   // Determine whether this date is a scheduled opportunity
-  let isScheduledOpportunity = isRuleScheduledOnWeekday(rule, localDate);
+  let isScheduledOpportunity = isRuleScheduledOnWeekday(rule, localDate, entry?.status !== 'no_entry' && entry?.dayOffSnapshot !== undefined ? (entry.dayOffSnapshot ? [localDate] : []) : params.daysOff);
 
-  if (rule.kind === 'weekly_frequency' && !entry) {
+  if (rule.kind === 'weekly_frequency' && (!entry || entry.status === 'no_entry')) {
     // Check if the weekly quota (rule.timesPerWeek) is already satisfied by completed entries in the same Monday-Sunday week
     const weekDates = buildWeekDates(localDate);
     let completedInWeek = 0;
@@ -293,7 +298,7 @@ export function evaluateHabitOnDate(params: {
   }
 
   let cellStatus: HabitDateCellStatus;
-  if (entry) {
+  if (entry && entry.status !== 'no_entry') {
     // 9.3: Pause/archive preserve entries
     cellStatus = entry.status;
   } else if (habit.state === 'paused') {
@@ -396,7 +401,8 @@ export function evaluateHabitOnDate(params: {
 export function computeHabitWeekProgress(
   habit: Habit,
   entries: readonly HabitEntry[],
-  referenceDate: LocalDateString
+  referenceDate: LocalDateString,
+  daysOff: readonly LocalDateString[] = []
 ): HabitWeekProgressSummary {
   const entryMap = indexHabitEntriesByDate(entries, habit.id);
   const weekDates = buildWeekDates(referenceDate);
@@ -404,7 +410,7 @@ export function computeHabitWeekProgress(
   const weekEndSunday = weekDates[6];
 
   const days = weekDates.map((d) =>
-    evaluateHabitOnDate({ habit, entriesForHabit: entryMap, localDate: d })
+    evaluateHabitOnDate({ habit, entriesForHabit: entryMap, localDate: d, daysOff })
   );
 
   let completedCount = 0;
@@ -423,7 +429,7 @@ export function computeHabitWeekProgress(
     scheduledTargetCount = refRev.rule.timesPerWeek;
   } else {
     scheduledTargetCount = days.filter((d) =>
-      isRuleScheduledOnWeekday(d.effectiveRevision.rule, d.localDate)
+      d.isScheduledOpportunity
     ).length;
   }
 
@@ -461,7 +467,8 @@ export function computeHabitMonthProgress(
   habit: Habit,
   entries: readonly HabitEntry[],
   year: number,
-  month: number
+  month: number,
+  daysOff: readonly LocalDateString[] = []
 ): HabitMonthProgressSummary {
   const entryMap = indexHabitEntriesByDate(entries, habit.id);
   const daysInMonth = getDaysInMonth(year, month);
@@ -475,7 +482,7 @@ export function computeHabitMonthProgress(
       evaluateHabitOnDate({
         habit,
         entriesForHabit: entryMap,
-        localDate,
+        localDate, daysOff,
       })
     );
   }
@@ -490,7 +497,7 @@ export function computeHabitMonthProgress(
     else if (day.cellStatus === 'partial') partialCount++;
     else if (day.cellStatus === 'skipped') skippedCount++;
 
-    if (isRuleScheduledOnWeekday(day.effectiveRevision.rule, day.localDate)) {
+    if (day.isScheduledOpportunity) {
       scheduledOpportunitiesCount++;
     }
   }
@@ -525,7 +532,8 @@ export function computeHabitMonthProgress(
 export function computeHabitStreakSummary(
   habit: Habit,
   entries: readonly HabitEntry[],
-  referenceDate: LocalDateString
+  referenceDate: LocalDateString,
+  daysOff: readonly LocalDateString[] = []
 ): HabitStreakSummary {
   const entryMap = indexHabitEntriesByDate(entries, habit.id);
   const currentRevision = getEffectiveHabitRuleRevisionForDate(
@@ -540,7 +548,7 @@ export function computeHabitStreakSummary(
     // Check up to 52 weeks backward
     for (let w = 0; w < 52; w++) {
       const weekMonday = addDaysToLocalDate(currentWeekMonday, -7 * w);
-      const weekProgress = computeHabitWeekProgress(habit, entries, weekMonday);
+      const weekProgress = computeHabitWeekProgress(habit, entries, weekMonday, daysOff);
 
       if (weekProgress.isWeeklyTargetMet) {
         consecutiveWeeks++;
@@ -592,7 +600,7 @@ export function computeHabitStreakSummary(
     const evalDay = evaluateHabitOnDate({
       habit,
       entriesForHabit: entryMap,
-      localDate: d,
+      localDate: d, daysOff,
     });
 
     if (evalDay.cellStatus === 'completed') {
@@ -642,7 +650,8 @@ export function computeHabitStreakSummary(
 export function selectHabitsForTodayBlock(
   habits: readonly Habit[],
   entries: readonly HabitEntry[],
-  selectedDate: LocalDateString
+  selectedDate: LocalDateString,
+  daysOff: readonly LocalDateString[] = []
 ): HabitDayEvaluation[] {
   const results: HabitDayEvaluation[] = [];
   for (const habit of habits) {
@@ -652,7 +661,7 @@ export function selectHabitsForTodayBlock(
     const evaluated = evaluateHabitOnDate({
       habit,
       entriesForHabit: entries,
-      localDate: selectedDate,
+      localDate: selectedDate, daysOff,
     });
     if (evaluated.isScheduledOpportunity || evaluated.entry !== null) {
       results.push(evaluated);
@@ -668,6 +677,7 @@ export function selectHabitsForTodayBlock(
 export type HabitRecordingInput =
   | { kind: 'toggle_complete' }
   | { kind: 'complete' }
+  | { kind: 'minimum' }
   | { kind: 'skip' }
   | { kind: 'clear' }
   | { kind: 'set_numeric'; numericValue: number; note?: string | null }
@@ -685,7 +695,7 @@ export function resolveHabitEntryMutation(params: {
   | { action: 'delete'; entryId: EntityId }
   | { action: 'noop' } {
   const { habit, existingEntry, localDate, input, nowIso } = params;
-  const effectiveRevision = getEffectiveHabitRuleRevisionForDate(
+  const effectiveRevision = (existingEntry?.status !== 'no_entry' ? existingEntry?.ruleSnapshot : undefined) ?? getEffectiveHabitRuleRevisionForDate(
     habit,
     localDate
   );
@@ -703,6 +713,10 @@ export function resolveHabitEntryMutation(params: {
     return { action: 'delete', entryId: existingEntry.id };
   }
 
+  if (input.kind === 'minimum') {
+    if (!habit.minimumVersionUk?.trim()) throw new PlanuiError('VALIDATION_FAILED');
+    return { action: 'upsert', entry: { id: entryId, habitId: habit.id, localDate, status: 'partial', numericValue: existingEntry?.numericValue ?? null, note: existingEntry?.note ?? null, minimumCompletedUk: habit.minimumVersionUk, recordedAt, updatedAt: nowIso, revision: nextRevision } };
+  }
   if (input.kind === 'skip') {
     const skippedEntry: HabitEntry = {
       id: entryId,

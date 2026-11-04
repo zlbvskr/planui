@@ -2,10 +2,10 @@
 
 ## 1. Version Separation & Database Identity
 
-- **Application Version**: `1.0.0` (semver string tracking application build).
-- **Database Name**: `planui_db` (isolated test runs use `planui_test_<uuid>`).
-- **Database Schema Version**: `2` (integer passed to `indexedDB.open('planui_db', 2)`).
-- **Backup Format Identifier & Version**: `format: "planui-backup-zip"`, `backupVersion: 2` (v1 supported via backwards-compatible migration).
+- **Application Version**: `0.3.0` (semver string tracking application build).
+- **Database Name**: `planui_local_db` (isolated test runs use `planui_test_<uuid>`).
+- **Database Schema Version**: `9` (integer passed to `indexedDB.open('planui_local_db', 9)`).
+- **Backup Format Identifier & Version**: `format: "planui-backup-zip"`, `backupVersion: 8` (backup v1–v8 and DB schemas v1–v9 supported via migration).
 - **Bootstrap Theme Cache**: `localStorage.getItem('planui_theme_bootstrap')` (`"system" | "light" | "dark"`) is the only permitted `localStorage` entry to prevent initial paint flash before IndexedDB opens. All canonical settings live in the `settings` object store.
 
 ---
@@ -563,3 +563,42 @@ The live migration adds an empty dictionary. Daily focus does not create task co
 Minimal-day filtering keeps focus tasks, tasks with deadlines and tasks with retained sessions. It never changes source records or availability. Released future placeholders do not qualify as current dated work. Historical sessions remain inspectable. Effort is manually selected only.
 
 Today selected date/mode/scroll is optional sessionStorage interaction context (planui.today-context.v1), excluded from domain backups. The existing persisted next-day collapse preference remains authoritative. The session fallback validates dates/modes/scroll and ignores corrupt context safely.
+
+## M7 additive model, schema v6
+
+`PersonalRecord` remains the single canonical record: optional `scaleVersion: 1`, `sleepMinutes: number | null` (integer 0–1440), `sleepQuality: Scale1To5 | null`. Absent fields on historical entries remain absent; existing mood/energy/stress values and text are never rewritten. `scaleVersion` points to the Ukrainian mood, energy, tension and sleep-quality labels in `STATE_SCALE_V1`. Missing historical scale metadata uses the original version-1 1–5 meanings. New explicit check-ins with no answers remain identifiable by scaleVersion; text-only legacy entries remain archive material.
+
+`InspirationItem` adds optional `collection: 'preferred_life' | 'saved'`, `lifeAreaId`, `goalId`; existing `projectId`, favorites, kind, text, links and media remain canonical. Missing collection means saved inspiration, without rewriting stored records. A fragment can contain an image and safe link together. Goal deletion unlinks fragments transactionally; area merge includes fragments in the reviewed revision signature and transfers direct references. No new object stores or duplicated historical records.
+
+## M8 additive habit/occurrence model (schema v7)
+
+Habit adds optional text-only minimumVersionUk, contextCueUk, reminderIntentionUk and folderId. A direct folder and a project are alternative ownership links; lifeAreaId remains optional. Direct folder removal rehomes/unlinks the habit without deleting its definition/history/sessions. Existing project deletion continues to unlink habit associations.
+
+HabitFrequencyRule adds `{ kind: 'days_off' }`, resolved exclusively against explicit dated DayOffAnnotation records. Existing rules and target units are preserved. Rule revisions are immutable, append-only; for an equal effective date/time, the latest appended revision wins. New and legacy logs are interpreted with an optional ruleSnapshot; existing unsnapshotted logs are pinned transactionally using their old habit definition before any schedule edit. This adds interpretation metadata without changing original log IDs, date, value, note, timestamps or revision. Actual logging captures dayOffSnapshot. Pending no_entry occurrences continue to reflect current rules/markers until logged.
+
+HabitEntry retains one row per habit/localDate. New optional ruleSnapshot, dayOffSnapshot and minimumCompletedUk preserve interpretation. Minimum text uses status partial and does not imply the ordinary numeric/binary target. A manually planned, unlogged occurrence has status no_entry and numericValue null. Planning creates/reuses its canonical entry ID; clearing/deleting a session-linked log retains that identity as no_entry to prevent dangling references. A pending identity is not a fabricated completion and creates no debt. Date logging keeps the original recordedAt when editing an existing occurrence.
+
+TaskReservation keeps its legacy name/store and task form unchanged, and adds alternative habitOccurrence `{ entryId, habitId, localDate }` with taskId null. Exactly one task or habit owner is allowed. Snapshot validation checks the reference against the canonical entry and date. No duplicate task or habit is created. No new object stores or indexes are required; null taskId is simply absent from the task index. Occupancy uses the same active/released interval policy and overlap engine as task sessions. Release reasons add habit_completed and habit_skipped; individual manual release uses manual_unplan.
+
+## M9 additive Wishlist model (schema v8)
+
+WishItem retains all legacy fields and adds optional purchaseStatus (`want` | `purchased` | `not_relevant`), purchasedAt, linkUrl, mediaId and projectId. An absent purchaseStatus is projected as legacy_fulfilled when state is fulfilled, otherwise want. That projection never writes data. Legacy state/fulfilledAt and archived remain distinct and unchanged by new purchase-status operations. purchasedAt records the first explicit purchase marking and remains historical information after subsequent status changes. It is never synthesized for a legacy record.
+
+The existing timing scalar remains required by the saved format and defaults to later; choosing it is optional in the UI. Categories are flat, arbitrary names with stable IDs and explicit ordering. No category name is interpreted as a timing value. Project relationships use canonical IDs; moves require no wish rewrite, deletion only unlinks. Name/notes and existing ExactPrice objects are retained verbatim when not edited, including historical decimal-string spelling.
+
+ExactPrice remains `{ amountMinor: safe integer number, amountDecimal: string, currency: SupportedCurrencyCode }`, with no representation or currency-list migration. BigInt is used only transiently for exact parsing/formatting and is never persisted. Accept supported currency precision exactly, including zero-decimal JPY; reject excess precision/ambiguity instead of rounding. No monetary totals/conversions are introduced.
+
+Images reference existing mediaMeta/mediaBlobs by ID. The same asset may be referenced by wishes, inspiration and recovery snapshots. Validate references and write new media plus its wish atomically; replacement/deletion removes only unreferenced live media. Missing media never becomes an external request. There are no new object stores or financial entities.
+
+
+## M10 persistence protocol and recovery (current)
+
+The actual serialized model is `PlanuiDomainSnapshot` in `src/domain/types.ts`; store names are `STORE_NAMES` in `src/storage/db.ts`. Database/schema and backup versions are independent. M10 advances only the native schema to 9 so older running v8 code cannot bypass the hardened replacement protocol. Existing data/IDs/revisions, authored strings, exact money and all M1–M9 fields remain unchanged. The ZIP format stays at 8. Settings are the only records modified by the v8→v9 versionchange migration. No reseeding occurs for an existing database.
+
+All 18 domain collections and settings are captured together with media bytes in one readonly transaction. Nested checkpoints, rule revisions, occurrence target/day-off snapshots, historical area questions/scales and lifecycle metadata are not separate or duplicated collections. Today, Directions, Calendar, Roadmap and Habits derive from the same records; roadmap metadata never becomes occupancy. Provenance `workProperties.sourceTemplateId` may outlive a deleted template: generated shifts are independent records, not mutable template instances. Historical area answers retain their question snapshots independently of live questions.
+
+Replacement uses the same stored schema and generation guard as ordinary writes. Protective live snapshot, retained recovery metadata, canonical records, blobs and new settings generation commit in one transaction in the same database. The client learns the new generation only after completion; failed commits cannot acknowledge it. Recovery captures the current state under the write lock, preserving intervening committed edits. At most three recovery points remain, with the new point retained even after a clock rollback. Shared media are collected only after checking live and retained recovery references. A conflicting incoming media ID/byte identity aborts replacement.
+
+Validation rejects duplicate goal-owned stages as well as project-owned stages, dangling area links even with no live areas, malformed collection members, future/unsupported schema metadata and unknown top-level collections. UTC instants preserve their authored strings, require real dates/times and representable millisecond precision (trailing fractional zeros remain allowed); no timestamp normalization or inference occurs. Revisions/generations use safe integer semantics. Exact decimal price validation is unchanged.
+
+A tab's generation remains fixed until its own successful replacement or an explicit reload/acknowledgement. Remote replacement notices preserve open form input and expose an explicit reload action. A failed stale save retains the input. The advisory per-tab import lease expires after 30 seconds; serialization and persisted guards enforce correctness. Native older-version opens fail closed; versionchange closes old connections. See BACKUP_FORMAT for the exact transaction boundary and protection limitations.

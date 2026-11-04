@@ -25,9 +25,9 @@ export function buildLifeReview(id: string, areas: readonly LifeAreaQuestion[], 
     answers: areas.filter(a => !a.archived && !a.mergedIntoId).map(a => ({ questionId: a.id, questionTextSnapshotUk: a.questionTextUk, questionVersionSnapshot: a.version, score: drafts[a.id]?.score ?? null, note: null, attentionNow: drafts[a.id]?.attentionNow ?? null, usefulChangeUk: drafts[a.id]?.usefulChangeUk ?? null, definitionSnapshotUk: a.goodEnoughUk ?? null, satisfactionQuestionSnapshotUk: SATISFACTION_QUESTION_UK })), createdAt: now, updatedAt: now, revision: 1 };
 }
 
-export type LifeLinkKind = 'folder' | 'goal' | 'project' | 'task' | 'habit' | 'event' | 'reservation';
+export type LifeLinkKind = 'folder' | 'goal' | 'project' | 'task' | 'habit' | 'event' | 'reservation' | 'inspiration';
 export interface LifeAreaLink { kind: LifeLinkKind; id: string; title: string; revision: number; effectiveId: string | null; directId: string | null; inheritedId: string | null; taskId?: string; projectId?: string }
-export type LifeLinkSource = Pick<PlanuiDomainSnapshot, 'folders' | 'goals' | 'projects' | 'tasks' | 'habits' | 'events' | 'reservations'>;
+export type LifeLinkSource = Pick<PlanuiDomainSnapshot, 'folders' | 'goals' | 'projects' | 'tasks' | 'habits' | 'events' | 'reservations'> & Partial<Pick<PlanuiDomainSnapshot, 'inspirationItems'>>;
 export function projectLifeAreaLinks(snapshot: LifeLinkSource): LifeAreaLink[] {
   const context = { goalsById: new Map(snapshot.goals.map(g => [g.id, g])), projectsById: new Map(snapshot.projects.map(p => [p.id, p])) };
   const result = new Map<string, LifeAreaLink>();
@@ -40,11 +40,12 @@ export function projectLifeAreaLinks(snapshot: LifeLinkSource): LifeAreaLink[] {
   for (const p of snapshot.projects) add('project', p, p.title, { goalId: p.goalId });
   for (const t of snapshot.tasks) add('task', t, t.title, { ownership: t.ownership });
   for (const h of snapshot.habits) add('habit', h, h.name, h.projectId ? { ownership: { kind: 'project', projectId: h.projectId, stageId: null } } : undefined);
+  for (const i of snapshot.inspirationItems ?? []) add('inspiration', i, i.title ?? i.contentText ?? 'Матеріал');
   for (const e of snapshot.events) add('event', e, e.title);
   for (const r of snapshot.reservations) {
     const task = snapshot.tasks.find(t => t.id === r.taskId);
-    const parent = task && result.get(`task:${task.id}`);
-    result.set(`reservation:${r.id}`, { kind: 'reservation', id: r.id, title: task?.title ?? 'Запланована дія', revision: r.revision, effectiveId: parent?.effectiveId ?? null, directId: null, inheritedId: parent?.effectiveId ?? null, taskId: r.taskId });
+    const parent = task ? result.get(`task:${task.id}`) : (r.habitOccurrence ? result.get(`habit:${r.habitOccurrence.habitId}`) : undefined);
+    result.set(`reservation:${r.id}`, { kind: 'reservation', id: r.id, title: task?.title ?? 'Запланована дія', revision: r.revision, effectiveId: parent?.effectiveId ?? null, directId: null, inheritedId: parent?.effectiveId ?? null, taskId: r.taskId ?? undefined });
   }
   return [...result.values()];
 }

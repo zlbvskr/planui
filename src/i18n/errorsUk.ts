@@ -2,6 +2,8 @@
  * Application-owned error messages in natural Ukrainian (C03).
  */
 export const ERRORS_UK = {
+  STORAGE_QUOTA_EXCEEDED: 'Недостатньо місця в локальному сховищі. Операцію скасовано; поточні дані збережено. Експортуйте ZIP і перегляньте локальні знімки відновлення.',
+  DB_TRANSACTION_FAILED: 'Не вдалося завершити операцію зі сховищем. Зміни цієї операції не збережено. Повторіть спробу або експортуйте локальні дані.',
   VALIDATION_FAILED: 'Помилка перевірки даних.',
   INVALID_ID: 'Некоректний ідентифікатор запису.',
   REQUIRED_TITLE: 'Назва є обов’язковою і не може бути порожньою.',
@@ -85,6 +87,7 @@ export const ERRORS_UK = {
   WISHLIST_INVALID_STATE: 'Некоректний стан виконання бажання.',
   WISHLIST_FULFILLED_TIMESTAMP_MISMATCH:
     'Виконане бажання повинно мати час виконання, а активне — не може мати часу виконання.',
+  WISHLIST_CURRENCY_CHANGE_CONFIRMATION: 'Підтвердьте зміну валюти. Це не конвертація: введене число буде ціною в новій валюті.',
   WISHLIST_PRICE_MISSING_CURRENCY:
     'Для орієнтовної вартості бажання необхідно вказати код валюти (наприклад, UAH, EUR, USD).',
   WISHLIST_PRICE_UNSUPPORTED_CURRENCY: 'Вказаний код валюти не підтримується.',

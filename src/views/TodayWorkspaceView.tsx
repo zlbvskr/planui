@@ -34,11 +34,6 @@ import {
   projectScheduleForDate,
 } from '../domain/scheduling';
 import {
-  formatHabitRuleSummaryUk,
-  getPreviousLocalDateForNightShift,
-  selectHabitsForTodayBlock,
-} from '../domain/habits';
-import {
   PlanuiRepositories,
   TaskLifecycleUndoToken,
 } from '../storage/repositories';
@@ -71,6 +66,8 @@ export interface TodayWorkspaceViewProps {
   habits: readonly Habit[];
   habitEntries: readonly HabitEntry[];
   habitsEnabled?: boolean;
+  habitsContent?: React.ReactNode;
+  onInspectHabitSession?: (reservation: TaskReservation) => void;
   repositories: PlanuiRepositories;
   onSelectDate: (nextDate: LocalDateString) => void;
   onToggleUntimedCollapsed: () => void;
@@ -103,7 +100,7 @@ export function TodayWorkspaceView({
   dayOffAnnotations,
   habits,
   habitEntries,
-  habitsEnabled = true,
+  habitsEnabled = true, habitsContent, onInspectHabitSession,
   repositories,
   onSelectDate,
   onToggleUntimedCollapsed,
@@ -128,8 +125,6 @@ export function TodayWorkspaceView({
     const frame = requestAnimationFrame(() => { revealCurrentTime(); onInteraction(); });
     return () => cancelAnimationFrame(frame);
   }, [selectedDate, actualTodayDate, effectiveMode, hasInteraction]);
-  const [recordHabitForPreviousDate, setRecordHabitForPreviousDate] =
-    useState(false);
 
   const todayProjection = useMemo(
     () =>
@@ -205,31 +200,6 @@ export function TodayWorkspaceView({
   const collapsedNextDaySummary = useMemo(
     () => computeCollapsedNextDaySummary(nextDayProjection),
     [nextDayProjection]
-  );
-
-  // 6.2 & 9.4 Compact habits when real active habits exist, filtered by selected-date relevance
-  const activeRealHabits = useMemo(
-    () => habits.filter((h) => h.state === 'active'),
-    [habits]
-  );
-
-  const previousLocalDateForHabits = useMemo(
-    () => getPreviousLocalDateForNightShift(selectedDate),
-    [selectedDate]
-  );
-
-  const effectiveHabitRecordingDate = recordHabitForPreviousDate
-    ? previousLocalDateForHabits
-    : selectedDate;
-
-  const relevantTodayHabits = useMemo(
-    () =>
-      selectHabitsForTodayBlock(
-        habits,
-        habitEntries,
-        effectiveHabitRecordingDate
-      ),
-    [habits, habitEntries, effectiveHabitRecordingDate]
   );
 
   return (
@@ -398,255 +368,12 @@ export function TodayWorkspaceView({
       </Card>
 
       </>}
-      {/* 3. Compact Habits ONLY when real data exists and module is enabled (6.2 & 9.4) */}
-      {effectiveMode === 'habits' && habitsEnabled && activeRealHabits.length > 0 && (
-        <Card
-          title={UK_STRINGS.destinations.today.compactHabitsSection}
-          data-testid="today-compact-habits-card"
-          headerRight={
-            <div className="flex flex-wrap items-center gap-1.5">
-              <Button
-                type="button"
-                variant={recordHabitForPreviousDate ? 'primary' : 'secondary'}
-                size="sm"
-                data-testid="today-habits-prev-date-toggle"
-                onClick={() => setRecordHabitForPreviousDate((prev) => !prev)}
-              >
-                {recordHabitForPreviousDate
-                  ? `За вчора (${previousLocalDateForHabits})`
-                  : `За вчора після нічної зміни (${previousLocalDateForHabits})`}
-              </Button>
-            </div>
-          }
-        >
-          <div className="space-y-2.5">
-            <div
-              className="text-[12px] flex items-center justify-between gap-2"
-              style={{ color: 'var(--text-secondary)' }}
-            >
-              <span data-testid="today-habits-active-date-label">
-                Дата відмітки:{' '}
-                <strong style={{ color: 'var(--text-primary)' }}>
-                  {effectiveHabitRecordingDate}
-                </strong>
-                {recordHabitForPreviousDate
-                  ? ' (попередня доба після нічної зміни)'
-                  : ''}
-              </span>
-              <span>Не займають час у календарі</span>
-            </div>
-
-            {relevantTodayHabits.length === 0 ? (
-              <p
-                className="text-[14px] m-0"
-                style={{ color: 'var(--text-secondary)' }}
-                data-testid="today-habits-none-scheduled"
-              >
-                На дату {effectiveHabitRecordingDate} немає запланованих
-                активних звичок (або тижневу норму вже виконано).
-              </p>
-            ) : (
-              <ul className="space-y-2 m-0 p-0 list-none">
-                {relevantTodayHabits.map((evaluation) => {
-                  const habit = habits.find(
-                    (h) => h.id === evaluation.habitId
-                  );
-                  if (!habit) return null;
-                  const rev = evaluation.effectiveRevision;
-                  const isNumeric = rev.target.kind === 'numeric';
-                  const targetVal =
-                    rev.target.kind === 'numeric' ? rev.target.targetValue : 1;
-                  const unitUk =
-                    rev.target.kind === 'numeric' ? rev.target.unitUk : '';
-                  const currentVal = evaluation.numericValue ?? 0;
-
-                  const statusLabelUk =
-                    evaluation.cellStatus === 'completed'
-                      ? isNumeric
-                        ? `Виконано (${currentVal}/${targetVal} ${unitUk})`
-                        : '✓ Виконано'
-                      : evaluation.cellStatus === 'partial'
-                      ? `◐ Частково (${currentVal}/${targetVal} ${unitUk})`
-                      : evaluation.cellStatus === 'skipped'
-                      ? '↷ Пропущено'
-                      : isNumeric
-                      ? `0 / ${targetVal} ${unitUk}`
-                      : 'Без відмітки';
-
-                  return (
-                    <li
-                      key={habit.id}
-                      data-testid={`today-habit-row-${habit.id}`}
-                      className="p-3 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-[14px]"
-                      style={{ backgroundColor: 'var(--bg-elevated)' }}
-                    >
-                      <div className="space-y-0.5">
-                        <div className="flex items-center gap-2 font-semibold">
-                          <Repeat className="w-4 h-4 shrink-0" aria-hidden="true" />
-                          <span>{habit.name}</span>
-                        </div>
-                        <div
-                          className="text-[12px]"
-                          style={{ color: 'var(--text-secondary)' }}
-                        >
-                          {formatHabitRuleSummaryUk(rev.rule, rev.target)} ·{' '}
-                          <strong
-                            style={{
-                              color:
-                                evaluation.cellStatus === 'completed'
-                                  ? 'var(--color-dayoff-text)'
-                                  : 'var(--text-primary)',
-                            }}
-                            data-testid={`today-habit-status-${habit.id}`}
-                          >
-                            {statusLabelUk}
-                          </strong>
-                        </div>
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        {isNumeric && evaluation.cellStatus !== 'completed' && (
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            size="sm"
-                            data-testid={`today-habit-partial-btn-${habit.id}`}
-                            onClick={async () => {
-                              const step = Math.max(
-                                1,
-                                Math.round(targetVal / 2)
-                              );
-                              const nextVal = currentVal + step;
-                              await repositories.recordHabitEntryForDateTransactionally(
-                                {
-                                  habitId: habit.id,
-                                  localDate: effectiveHabitRecordingDate,
-                                  input: {
-                                    kind: 'set_numeric',
-                                    numericValue: nextVal,
-                                  },
-                                  nowIso: new Date().toISOString(),
-                                }
-                              );
-                              await onDataChanged(
-                                `Оновлено прогрес «${habit.name}» на ${effectiveHabitRecordingDate}: ${nextVal} ${unitUk}.`
-                              );
-                            }}
-                          >
-                            +{Math.max(1, Math.round(targetVal / 2))} {unitUk}
-                          </Button>
-                        )}
-
-                        {evaluation.cellStatus !== 'completed' ? (
-                          <Button
-                            type="button"
-                            variant="primary"
-                            size="sm"
-                            data-testid={`today-habit-complete-btn-${habit.id}`}
-                            onClick={async () => {
-                              await repositories.recordHabitEntryForDateTransactionally(
-                                {
-                                  habitId: habit.id,
-                                  localDate: effectiveHabitRecordingDate,
-                                  input: { kind: 'complete' },
-                                  nowIso: new Date().toISOString(),
-                                }
-                              );
-                              await onDataChanged(
-                                `Звичку «${habit.name}» відмічено виконаною за ${effectiveHabitRecordingDate}.`
-                              );
-                            }}
-                          >
-                            Виконано
-                          </Button>
-                        ) : (
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            size="sm"
-                            data-testid={`today-habit-clear-btn-${habit.id}`}
-                            onClick={async () => {
-                              await repositories.recordHabitEntryForDateTransactionally(
-                                {
-                                  habitId: habit.id,
-                                  localDate: effectiveHabitRecordingDate,
-                                  input: { kind: 'clear' },
-                                  nowIso: new Date().toISOString(),
-                                }
-                              );
-                              await onDataChanged(
-                                `Відмітку звички «${habit.name}» за ${effectiveHabitRecordingDate} знято.`
-                              );
-                            }}
-                          >
-                            Зняти
-                          </Button>
-                        )}
-
-                        {evaluation.cellStatus !== 'skipped' &&
-                          evaluation.cellStatus !== 'completed' && (
-                            <Button
-                              type="button"
-                              variant="subtle"
-                              size="sm"
-                              data-testid={`today-habit-skip-btn-${habit.id}`}
-                              onClick={async () => {
-                                await repositories.recordHabitEntryForDateTransactionally(
-                                  {
-                                    habitId: habit.id,
-                                    localDate: effectiveHabitRecordingDate,
-                                    input: { kind: 'skip' },
-                                    nowIso: new Date().toISOString(),
-                                  }
-                                );
-                                await onDataChanged(
-                                  `Звичку «${habit.name}» позначено як свідомо пропущену за ${effectiveHabitRecordingDate}.`
-                                );
-                              }}
-                            >
-                              Пропустити
-                            </Button>
-                          )}
-
-                        {(evaluation.cellStatus === 'partial' ||
-                          evaluation.cellStatus === 'skipped') && (
-                          <Button
-                            type="button"
-                            variant="subtle"
-                            size="sm"
-                            data-testid={`today-habit-reset-btn-${habit.id}`}
-                            onClick={async () => {
-                              await repositories.recordHabitEntryForDateTransactionally(
-                                {
-                                  habitId: habit.id,
-                                  localDate: effectiveHabitRecordingDate,
-                                  input: { kind: 'clear' },
-                                  nowIso: new Date().toISOString(),
-                                }
-                              );
-                              await onDataChanged(
-                                `Відмітку «${habit.name}» за ${effectiveHabitRecordingDate} очищено.`
-                              );
-                            }}
-                          >
-                            Очистити
-                          </Button>
-                        )}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
-        </Card>
-      )}
-
-      {effectiveMode === 'habits' && habitsEnabled && activeRealHabits.length === 0 && <Card><p>Активних звичок поки немає.</p><Button onClick={() => onOpenGlobalCreation('habit')}>Додати звичку</Button></Card>}
+      {effectiveMode === 'habits' && habitsEnabled && habitsContent}
       {effectiveMode === 'tasks' && <TodayTasksPanel actualTodayDate={actualTodayDate} nowMs={nowMs} date={selectedDate} zone={activeZone} plan={dailyPlan} tasks={tasks} reservations={reservations} repositories={repositories} onChanged={() => onDataChanged()} onToggle={onToggleTaskState} onPlan={task => setPlanningTask({ task })} />}
       {effectiveMode === 'day' && <>
       {/* 5. Main Proportional Timeline for Selected Date (6.1 / 6.5) */}
       <SharedDayTimeline
+        onInspectHabitSession={onInspectHabitSession}
         testIdPrefix="today"
         projection={todayProjection}
         projectionWithReleased={todayProjectionWithReleased}
@@ -736,6 +463,7 @@ export function TodayWorkspaceView({
             >
               {/* Next Day Shared Proportional Timeline (same scale and scroll flow) */}
               <SharedDayTimeline
+                onInspectHabitSession={onInspectHabitSession}
                 testIdPrefix="today-next-day"
                 projection={nextDayProjection}
                 projectionWithReleased={nextDayProjectionWithReleased}

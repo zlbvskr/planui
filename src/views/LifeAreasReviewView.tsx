@@ -30,6 +30,7 @@ export function LifeAreasReviewView({ snapshot, zone, today, repositories, onCha
   const areas = [...snapshot.lifeAreaQuestions].sort((a, b) => a.order - b.order);
   const active = areas.filter(a => !a.archived && !a.mergedIntoId);
   const [start, setStart] = useState(today), [end, setEnd] = useState(today);
+  const [reviewRhythm,setReviewRhythm]=useState('14');
   const [reviewDirty, setReviewDirty] = useState(false);
   const [leavePlan, setLeavePlan] = useState<{ kind: 'goal' | 'project'; id: string } | null>(null);
   const [drafts, setDrafts] = useState<Record<string, ReviewAnswerDraft>>({});
@@ -77,6 +78,8 @@ export function LifeAreasReviewView({ snapshot, zone, today, repositories, onCha
       </div>}
     </details></Card>
     <Button onClick={()=>setLifeReviewOpen(true)}>Новий огляд сфер життя</Button><ModalSheet isOpen={lifeReviewOpen} title="Огляд сфер життя" isDirty={reviewDirty} onClose={()=>setLifeReviewOpen(false)}>
+      <SelectField label="Ритм огляду (днів)" value={reviewRhythm} options={[7,14,30].map(days=>({value:String(days),label:`Кожні ${days} днів`}))} onChange={event=>{setReviewRhythm(event.target.value);setStart(today);setEnd(addDaysToLocalDate(today,Number(event.target.value)-1));setReviewDirty(true);}} />
+      <p>Ритм задає період поточного огляду; нагадування не створюються.</p>
       <form className="space-y-4" onSubmit={e => { e.preventDefault(); void act(() => repositories.saveLifeAreaAssessment(buildLifeReview(crypto.randomUUID(), active, drafts, start, end, new Date().toISOString())), () => { setDrafts({}); setReviewDirty(false); }); }}>
         <fieldset disabled={busy} className="space-y-4">
         <div className="grid sm:grid-cols-2 gap-2"><InputField label="Початок періоду" type="date" required value={start} onChange={e => { setStart(e.target.value); setReviewDirty(true); }} /><InputField label="Кінець періоду (включно)" type="date" required value={end} onChange={e => { setEnd(e.target.value); setReviewDirty(true); }} /></div>

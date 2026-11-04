@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Folder, PlanningEntityState, RoadmapCheckpoint, RoadmapPeriod, RoadmapOwner, Task } from '../domain/types';
-import { RoadmapItem, RoadmapSource, projectRoadmap, periodLabelUk, dateLabelUk, roadmapWarnings, periodInterval } from '../domain/roadmap';
+import { RoadmapItem, RoadmapSource, projectRoadmap, periodLabelUk, dateLabelUk, roadmapWarnings, periodInterval, requiresStageDateReview } from '../domain/roadmap';
 import { addDaysToLocalDate } from '../domain/temporal';
 import { PlanuiRepositories } from '../storage/repositories';
 import { Button, Card, InputField, SelectField } from '../components/ui/primitives';
@@ -39,7 +39,7 @@ export function RoadmapItemEditor({ item, repositories, onChanged, onCancel, rel
     try {
       const roadmapPeriod = draftPeriod();
       if (roadmapPeriod) periodInterval(roadmapPeriod);
-      if (!keepSubsequent && item.owner.kind === 'stage' && JSON.stringify(roadmapPeriod) !== JSON.stringify(item.record.roadmapPeriod ?? null) && relatedItems.some(other => other.owner.kind === 'stage' && other.owner.id !== item.owner.id && other.parent?.id === item.parent?.id)) { setReviewSubsequent(true); return; }
+      if (!keepSubsequent && requiresStageDateReview(item, relatedItems, roadmapPeriod)) { setReviewSubsequent(true); return; }
       await repositories.updateRoadmapItem(item.owner, { roadmapPeriod, deadline: deadline || null, checkpoints: points.map((c, order) => ({ ...c, order })) }, item.record.revision);
       await onChanged(); onCancel();
     } catch { setError('Не вдалося зберегти. Перевірте дати, порядок меж і назви контрольних точок. Якщо запис змінився, закрийте форму та відкрийте знову.'); }

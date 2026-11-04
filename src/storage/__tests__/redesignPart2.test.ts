@@ -25,3 +25,11 @@ it('minimum day keeps a deadline and at most one small optional focus task witho
  const result=projectTodayTasks(tasks,[],'2026-11-04','UTC',{minimalDay:true,focusTaskIds:['a','b','large'],focusNoteUk:null});
  assert.deepEqual(result.visible.map(t=>t.id),['a','due']);assert.deepEqual(tasks,before);
 });
+it('changed stage periods require review when siblings exist and never mutate siblings',async()=>{
+ const {requiresStageDateReview}=await import('../../domain/roadmap');
+ const item:import('../../domain/roadmap').RoadmapItem={owner:{kind:'stage',id:'a'},title:'A',state:'active',folderId:null,deadline:null,parent:{kind:'project',id:'p'},record:{id:'a',projectId:'p',title:'A',expectedOutcome:null,targetDate:null,order:0,createdAt:'2026-11-01T00:00:00Z',updatedAt:'2026-11-01T00:00:00Z',revision:1,roadmapPeriod:{precision:'month',month:'2026-11'}}};
+ const next={...item,owner:{kind:'stage' as const,id:'b'}};const original=structuredClone(next);
+ assert.equal(requiresStageDateReview(item,[item,next],{precision:'month',month:'2026-12'}),true);
+ assert.equal(requiresStageDateReview(item,[item,next],{precision:'month',month:'2026-11'}),false);
+ assert.deepEqual(next,original);
+});

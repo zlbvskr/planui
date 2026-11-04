@@ -235,3 +235,17 @@ button:active { filter: brightness(1.08); }
   :root { --border-subtle: currentColor; --glass-border: currentColor; }
   .planui-floating-capsule { border: 2px solid; }
 }
+
+:root {
+  --radius-card: 24px;
+  --color-night-shift: #595eaa;
+  --color-day-shift: #ad7934;
+  --color-recovery: #42846b;
+  --color-deadline: #b93e4b;
+}
+main { padding-top: max(24px, env(safe-area-inset-top)); }
+button, [role="button"], summary { min-height: 44px; }
+.planui-transition-modal { transform-origin: bottom right; animation: planui-sheet-in var(--dur-modal) var(--ease-out-quart); }
+@keyframes planui-sheet-in { from { opacity: 0; transform: translateY(32px) scale(.96); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .planui-transition-modal { animation: none; } }
+:root[data-reduced-motion="true"] .planui-transition-modal { animation: none; }

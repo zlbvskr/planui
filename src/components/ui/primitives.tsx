@@ -291,9 +291,10 @@ export const Card: React.FC<CardProps> = ({
   return (
     <section
       data-testid={dataTestId}
-      className={`rounded-2xl p-4 sm:p-5 ${className}`}
+      className={`rounded-3xl p-4 sm:p-6 ${className}`}
       style={{
-        backgroundColor: 'var(--bg-surface)',
+        backgroundColor: 'var(--surface-card-elevated)',
+        boxShadow: 'inset 0 0 0 1px var(--border-subtle)',
         border: '1px solid var(--border-subtle)',
       }}
     >
@@ -344,7 +345,8 @@ export const EmptyStateCard: React.FC<EmptyStateCardProps> = ({
     <div
       className="rounded-2xl p-6 text-left flex flex-col items-start gap-3"
       style={{
-        backgroundColor: 'var(--bg-surface)',
+        backgroundColor: 'var(--surface-card-elevated)',
+        boxShadow: 'inset 0 0 0 1px var(--border-subtle)',
         border: '1px solid var(--border-subtle)',
       }}
     >

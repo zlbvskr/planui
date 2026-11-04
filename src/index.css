@@ -321,3 +321,21 @@ input[type="range"]:active, input[type="checkbox"]:active { filter: drop-shadow(
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .planui-floating-capsule { background: var(--glass-bg-fallback) !important; }
 }
+/* Stage A Today: a single glass toolbar and a direct, opaque timeline. */
+.today-date-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-size: 15px; color: var(--text-secondary); }
+.today-focus { padding: 16px; font-size: 16px; }
+.today-focus h2 { font-size: 13px; color: var(--text-secondary); margin-bottom: 8px; }
+.today-next-commitment { padding: 8px 4px; }
+[data-testid="destination-view-today"] > .ui-topbar { margin-top: -8px; }
+[data-testid="destination-view-today"] [data-testid$="schedule-card"] { padding: 0; border: 0 !important; box-shadow: none !important; background: transparent !important; }
+[data-testid="destination-view-today"] [data-testid$="schedule-card"] > header:empty { display: none; }
+[data-testid="destination-view-today"] [data-testid$="schedule-card"] > header { margin-bottom: 8px; }
+[data-testid="destination-view-today"] [data-testid$="schedule-card"] .rounded-xl { border-radius: 12px; }
+[data-testid="destination-view-today"] [data-testid$="current-time-indicator"] > span { color: #16181c !important; font-weight: 700; }
+html:not(.dark) [data-testid="destination-view-today"] [data-testid$="current-time-indicator"] > span { color: #fff !important; }
+[data-testid="mobile-floating-capsule"] { flex: 1; min-width: 0; width: auto; gap: 0; }
+[data-testid="mobile-floating-capsule"] button { padding-inline: 0; min-width: 0; }
+[data-testid="mobile-floating-capsule"] button span { white-space: nowrap; padding-inline: 0; font-size: 10px; }
+[data-testid="destination-view-today"] [data-testid="today-next-day-section"] > section { border: 0 !important; box-shadow: none !important; padding: 0; background: transparent !important; }
+.dark [data-testid="mobile-floating-capsule"] button[data-active="true"] { color: #ffd1d6 !important; }
+[data-testid="destination-view-today"] button[data-testid*="timeline-gap-action"] { opacity: 1; font-size: 13px; border-style: solid !important; color: var(--text-primary) !important; }

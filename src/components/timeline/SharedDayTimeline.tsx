@@ -237,7 +237,7 @@ export function SharedDayTimeline({
       {/* All-Day Events (Blocking & Informational) */}
       {effectiveProjection.allDayItems.length > 0 && (
         <Card
-          title={`Події на весь день (${effectiveProjection.localDate})`}
+          title={testIdPrefix.startsWith('today') ? 'Увесь день' : `Події на весь день (${effectiveProjection.localDate})`}
           data-testid={`${testIdPrefix}-allday-section`}
         >
           <div className="space-y-2">
@@ -322,7 +322,7 @@ export function SharedDayTimeline({
       {effectiveProjection.timelineItems.length === 0 &&
         effectiveProjection.allDayItems.length === 0 &&
         onEmptyCreateAction &&
-        !compactMode && (
+        !testIdPrefix.startsWith('today') && !compactMode && (
           <EmptyStateCard
             icon={<Clock className="w-5 h-5" />}
             title={UK_STRINGS.destinations.today.emptyTimelineTitle}
@@ -336,7 +336,7 @@ export function SharedDayTimeline({
 
       {/* Main Proportional 24h Chronological Timeline Card (6.1 / 6.3 / 6.5) */}
       <Card
-        title={`Розклад на ${effectiveProjection.localDate} (${effectiveProjection.displayZone})`}
+        title={testIdPrefix.startsWith('today') ? undefined : `Розклад на ${effectiveProjection.localDate} (${effectiveProjection.displayZone})`}
         data-testid={`${testIdPrefix}-schedule-card`}
         headerRight={
           hasReleasedItemsOnDate ? (
@@ -483,9 +483,7 @@ export function SharedDayTimeline({
                       <button
                         type="button"
                         onClick={() => onOpenGapPicker(gap)}
-                        aria-label={UK_STRINGS.timeline.planInGapAria(
-                          `${gap.startLocalTime}–${gap.endLocalTime}`
-                        )}
+                        aria-label={testIdPrefix.startsWith('today') ? `${gap.startLocalTime}–${gap.endLocalTime} · ${UK_STRINGS.timeline.planInGapButton}` : UK_STRINGS.timeline.planInGapAria(`${gap.startLocalTime}–${gap.endLocalTime}`)}
                         data-testid={`${testIdPrefix}-timeline-gap-action-${idx}`}
                         className="pointer-events-auto min-h-[44px] px-2.5 py-1 rounded-xl text-[11px] font-medium flex items-center gap-1 cursor-pointer transition-opacity opacity-80 hover:opacity-100"
                         style={{

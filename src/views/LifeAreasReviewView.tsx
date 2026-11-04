@@ -29,7 +29,7 @@ function AreaEditor({ area, repositories, onChanged }: { area: LifeAreaQuestion;
 export function LifeAreasReviewView({ snapshot, zone, today, repositories, onChanged, onOpenPlan, onInspectEvent, onModalStateChange, initialPlanningReview }: { snapshot: PlanuiDomainSnapshot; zone: string; today: string; repositories: PlanuiRepositories; onChanged: () => Promise<void> | void; onOpenPlan: (kind: 'goal' | 'project', id: string) => void; onInspectEvent: (id: string) => void; onModalStateChange?: (open: boolean) => void; initialPlanningReview?: boolean }) {
   const areas = [...snapshot.lifeAreaQuestions].sort((a, b) => a.order - b.order);
   const active = areas.filter(a => !a.archived && !a.mergedIntoId);
-  const [start, setStart] = useState(today), [end, setEnd] = useState(today);
+  const [start, setStart] = useState(addDaysToLocalDate(today,-13)), [end, setEnd] = useState(today);
   const [reviewRhythm,setReviewRhythm]=useState('14');
   const [reviewDirty, setReviewDirty] = useState(false);
   const [leavePlan, setLeavePlan] = useState<{ kind: 'goal' | 'project'; id: string } | null>(null);
@@ -78,7 +78,7 @@ export function LifeAreasReviewView({ snapshot, zone, today, repositories, onCha
       </div>}
     </details></Card>
     <Button onClick={()=>setLifeReviewOpen(true)}>Новий огляд сфер життя</Button><ModalSheet isOpen={lifeReviewOpen} title="Огляд сфер життя" isDirty={reviewDirty} onClose={()=>setLifeReviewOpen(false)}>
-      <SelectField label="Ритм огляду (днів)" value={reviewRhythm} options={[7,14,30].map(days=>({value:String(days),label:`Кожні ${days} днів`}))} onChange={event=>{setReviewRhythm(event.target.value);setStart(today);setEnd(addDaysToLocalDate(today,Number(event.target.value)-1));setReviewDirty(true);}} />
+      <SelectField label="Ритм огляду (днів)" value={reviewRhythm} options={[7,14,30].map(days=>({value:String(days),label:`Кожні ${days} днів`}))} onChange={event=>{setReviewRhythm(event.target.value);setStart(addDaysToLocalDate(today,1-Number(event.target.value)));setEnd(today);setReviewDirty(true);}} />
       <p>Ритм задає період поточного огляду; нагадування не створюються.</p>
       <form className="space-y-4" onSubmit={e => { e.preventDefault(); void act(() => repositories.saveLifeAreaAssessment(buildLifeReview(crypto.randomUUID(), active, drafts, start, end, new Date().toISOString())), () => { setDrafts({}); setReviewDirty(false); }); }}>
         <fieldset disabled={busy} className="space-y-4">

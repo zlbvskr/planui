@@ -32,3 +32,15 @@ export function selectTaskLifeArea(snapshot: PlanuiDomainSnapshot, task: Task): 
 export function selectShiftCount(snapshot: PlanuiDomainSnapshot): number {
   return new Set(snapshot.events.filter(event => event.type === 'work_shift' && event.state !== 'canceled').map(event => event.id)).size;
 }
+
+export function selectAmbientContext(snapshot: Pick<PlanuiDomainSnapshot, 'events'>, nowMs: number, directionName = ''): 'night' | 'creative' | 'neutral' {
+  const quietWindow = snapshot.events.some(event => {
+    if (event.state === 'canceled' || event.schedule.kind !== 'timed') return false;
+    const interval = event.schedule.interval;
+    const night = event.type === 'sleep' || (event.type === 'work_shift' && interval.originStartLocalDate !== interval.originEndLocalDate);
+    return night && Date.parse(interval.startInstant) <= nowMs && nowMs < Date.parse(interval.endInstant);
+  });
+  if (quietWindow) return 'night';
+  // Cosmetic context only; never alters classifications, schedules or stored data.
+  return /творч|мистец|creative|art\b/iu.test(directionName) ? 'creative' : 'neutral';
+}

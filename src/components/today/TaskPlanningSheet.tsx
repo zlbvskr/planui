@@ -4,11 +4,14 @@ import { PlanningChangePreview, previewPlanningChange, sessionFromDuration } fro
 import { formatInstantInZone, formatUkrainianDateHeading } from '../../domain/temporal';
 import { detectScheduleConflicts } from '../../domain/scheduling';
 import { PlanuiRepositories } from '../../storage/repositories';
-import { Button, InputField, ModalSheet } from '../ui/primitives';
+import { Button, InputField, TextAreaField, ModalSheet } from '../ui/primitives';
 
 export function TaskPlanningSheet({ task, date, zone, tasks, events, reservations, repositories, initialReservationId, onClose, onSaved }: { task: Task; date: string; zone: string; tasks: readonly Task[]; events: readonly CalendarEvent[]; reservations: readonly TaskReservation[]; repositories: PlanuiRepositories; initialReservationId?: string; onClose: () => void; onSaved: () => Promise<void> | void }) {
   const original = reservations.find(r => r.id === initialReservationId);
   const initialStart = original ? formatInstantInZone(original.interval.startInstant, zone) : null;
+  const [scope, setScope] = useState(task.title);
+  const [steps, setSteps] = useState('');
+  const [drop, setDrop] = useState(false);
   const [editing, setEditing] = useState<TaskReservation | null>(original ?? null);
   const [startDate, setStartDate] = useState(initialStart?.localDate ?? date);
   const [startTime, setStartTime] = useState(initialStart?.localTime ?? '09:00');
@@ -34,6 +37,19 @@ export function TaskPlanningSheet({ task, date, zone, tasks, events, reservation
     <div className="space-y-4">
       <p>Термін та оцінка тривалості справи не змінюються. Історія сеансів зберігається. Дати й час показано в часовому поясі {zone}.</p>
       {error && <p role="alert">{error}</p>}
+      {task.state === 'open' && <section className="space-y-3" aria-label="Наступний крок справи">
+        <h3 className="font-semibold">Що буде посильним зараз?</h3>
+        <details><summary>Зменшити обсяг / розбити на кроки</summary>
+          <InputField label="Менший наступний крок" value={scope} onChange={e => { setScope(e.target.value); setDirty(true); }} />
+          <TextAreaField label="Додати кроки до списку — кожен з нового рядка" value={steps} onChange={e => { setSteps(e.target.value); setDirty(true); }} />
+          <p>Додані кроки залишаються частиною цієї справи. Наявні кроки й термін зберігаються.</p>
+          <Button disabled={busy || !scope.trim()} onClick={() => void act(() => repositories.saveTask({ ...task, title: scope.trim(), checklist: [...task.checklist, ...steps.split('\n').map(line => line.trim()).filter(Boolean).map((title, index) => ({id: crypto.randomUUID(), title, order: Math.max(-1, ...task.checklist.map(item => item.order)) + index + 1, completed:false}))], updatedAt:new Date().toISOString() }, task.revision))}>Зберегти посильний крок</Button>
+        </details>
+        <Button disabled={busy} onClick={() => { setPreview(previewPlanningChange(task, reservations, null, new Date().toISOString())); setCancel(null); }}>Пауза — переглянути зняття з розкладу</Button>
+        <p>Пауза повертає справу до загального списку без дати. Ви зможете запланувати її знову.</p>
+        <Button disabled={busy} onClick={() => setDrop(true)}>Відмовитися від справи</Button>
+        {drop && <div role="status"><p>Справу буде скасовано, резерви звільнено. Запис та історія залишаться у сховищі.</p><Button disabled={busy} onClick={() => void act(() => repositories.cancelTaskTransactionally(task.id, new Date().toISOString(), task.revision))}>Підтвердити відмову</Button><Button onClick={() => setDrop(false)}>Залишити справу</Button></div>}
+      </section>}
       <section className="space-y-2"><h3 className="font-semibold">Дата без часу / повернення до загального списку</h3>
         <InputField label="Призначити на дату" type="date" value={assignedDate} onChange={e => { setAssignedDate(e.target.value); setPreview(null); setDirty(true); }} />
         <div className="flex flex-wrap gap-2"><Button disabled={!assignedDate || busy} onClick={() => { setPreview(previewPlanningChange(task, reservations, assignedDate, new Date().toISOString())); setCancel(null); }}>Переглянути зміну дати</Button><Button disabled={busy} onClick={() => { setPreview(previewPlanningChange(task, reservations, null, new Date().toISOString())); setCancel(null); }}>Повернути без дати: переглянути зміни</Button></div>

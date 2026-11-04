@@ -52,6 +52,11 @@ try {
  await page.keyboard.press('Shift+Tab');
  assert.equal(await page.getByRole('dialog').evaluate(node=>node.contains(document.activeElement)),true);
  await page.getByTestId('modal-close-button').click();
+ await page.goto(`${base}/#/directions`);
+ await page.getByRole('button',{name:'Глобальна дорожня карта',exact:true}).click();
+ assert.equal(await page.getByRole('heading',{name:'Напрями',exact:true}).isVisible(),false);
+ await page.getByRole('button',{name:'Напрями',exact:true}).click();
+ assert.equal(await page.getByRole('heading',{name:'Напрями',exact:true}).isVisible(),true);
  await page.goto(`${base}/#/life_areas`);
  await page.getByRole('button',{name:'Щотижневий огляд · 4 кроки',exact:true}).click();
  for(let index=0;index<3;index++) await page.getByRole('button',{name:'Далі',exact:true}).click();

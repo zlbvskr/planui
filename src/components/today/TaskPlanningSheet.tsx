@@ -6,18 +6,18 @@ import { detectScheduleConflicts } from '../../domain/scheduling';
 import { PlanuiRepositories } from '../../storage/repositories';
 import { Button, InputField, TextAreaField, ModalSheet } from '../ui/primitives';
 
-export function TaskPlanningSheet({ task, date, zone, tasks, events, reservations, repositories, initialReservationId, onClose, onSaved }: { task: Task; date: string; zone: string; tasks: readonly Task[]; events: readonly CalendarEvent[]; reservations: readonly TaskReservation[]; repositories: PlanuiRepositories; initialReservationId?: string; onClose: () => void; onSaved: () => Promise<void> | void }) {
+export function TaskPlanningSheet({ reviewAction, task, date, zone, tasks, events, reservations, repositories, initialReservationId, onClose, onSaved }: { reviewAction?: string; task: Task; date: string; zone: string; tasks: readonly Task[]; events: readonly CalendarEvent[]; reservations: readonly TaskReservation[]; repositories: PlanuiRepositories; initialReservationId?: string; onClose: () => void; onSaved: () => Promise<void> | void }) {
   const original = reservations.find(r => r.id === initialReservationId);
   const initialStart = original ? formatInstantInZone(original.interval.startInstant, zone) : null;
   const [scope, setScope] = useState(task.title);
   const [steps, setSteps] = useState('');
-  const [drop, setDrop] = useState(false);
+  const [drop, setDrop] = useState(reviewAction === 'Відмовитися');
   const [editing, setEditing] = useState<TaskReservation | null>(original ?? null);
   const [startDate, setStartDate] = useState(initialStart?.localDate ?? date);
   const [startTime, setStartTime] = useState(initialStart?.localTime ?? '09:00');
   const [duration, setDuration] = useState(original ? String((Date.parse(original.interval.endInstant) - Date.parse(original.interval.startInstant)) / 60000) : '30');
   const [assignedDate, setAssignedDate] = useState(task.plannedDate ?? date);
-  const [preview, setPreview] = useState<PlanningChangePreview | null>(null);
+  const [preview, setPreview] = useState<PlanningChangePreview | null>(reviewAction === 'Поставити на паузу' ? previewPlanningChange(task,reservations,null,new Date().toISOString()) : null);
   const [cancel, setCancel] = useState<{ reservation: TaskReservation; nowIso: string } | null>(null);
   const [overlap, setOverlap] = useState(false);
   const [error, setError] = useState('');
@@ -39,7 +39,7 @@ export function TaskPlanningSheet({ task, date, zone, tasks, events, reservation
       {error && <p role="alert">{error}</p>}
       {task.state === 'open' && <section className="space-y-3" aria-label="Наступний крок справи">
         <h3 className="font-semibold">Що буде посильним зараз?</h3>
-        <details><summary>Зменшити обсяг / розбити на кроки</summary>
+        <details open={reviewAction === 'Зменшити обсяг' || reviewAction === 'Розділити'}><summary>Зменшити обсяг / розбити на кроки</summary>
           <InputField label="Менший наступний крок" value={scope} onChange={e => { setScope(e.target.value); setDirty(true); }} />
           <TextAreaField label="Додати кроки до списку — кожен з нового рядка" value={steps} onChange={e => { setSteps(e.target.value); setDirty(true); }} />
           <p>Додані кроки залишаються частиною цієї справи. Наявні кроки й термін зберігаються.</p>

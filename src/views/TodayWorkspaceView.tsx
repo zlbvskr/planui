@@ -118,7 +118,7 @@ export function TodayWorkspaceView({
 }: TodayWorkspaceViewProps) {
   const effectiveMode = mode === 'habits' && !habitsEnabled ? 'day' : mode;
   const rootRef = useRef<HTMLDivElement>(null);
-  const [planningTask, setPlanningTask] = useState<{ task: Task; reservationId?: string } | null>(null);
+  const [planningTask, setPlanningTask] = useState<{ task: Task; reservationId?: string; reviewAction?: string } | null>(null);
   useEffect(() => { onModalStateChange?.(Boolean(planningTask)); return () => onModalStateChange?.(false); }, [Boolean(planningTask)]);
   const revealCurrentTime = () => rootRef.current?.querySelector('[data-testid="today-current-time-indicator"]')?.scrollIntoView({ block: 'center', behavior: 'instant' as ScrollBehavior });
   useEffect(() => {
@@ -271,7 +271,7 @@ export function TodayWorkspaceView({
       {selectedDate === actualTodayDate && tasks.some(task => selectTaskReviewState(task, actualTodayDate, reservations, activeZone) === 'needs_triage') && <details className="rounded-3xl p-4" style={{ background: 'var(--surface-card-elevated)', border: '1px solid var(--border-subtle)' }}>
         <summary className="cursor-pointer">Переглянути попередні плани</summary>
         <p>Ці справи залишилися на попередніх датах. Оберіть наступний крок, коли будете готові.</p>
-        <ul>{tasks.filter(task => selectTaskReviewState(task, actualTodayDate, reservations, activeZone) === 'needs_triage').map(task => <li key={task.id} data-review-state="needs_triage"><Button variant="secondary" onClick={() => setPlanningTask({ task })}>{task.title}</Button></li>)}</ul>
+        <ul>{tasks.filter(task => selectTaskReviewState(task, actualTodayDate, reservations, activeZone) === 'needs_triage').map(task => <li key={task.id} data-review-state="needs_triage"><p>{task.title}</p><div className="flex flex-wrap gap-2">{['Перенести','Зменшити обсяг','Розділити','Поставити на паузу','Відмовитися'].map(reviewAction=><Button key={reviewAction} onClick={()=>setPlanningTask({task,reviewAction})}>{reviewAction}</Button>)}</div></li>)}</ul>
       </details>}
       <DailyFocusPanel key={selectedDate + ':' + JSON.stringify(dailyPlan)} date={selectedDate} zone={activeZone} plan={dailyPlan} tasks={tasks} reservations={reservations} repositories={repositories} onChanged={() => onDataChanged()} />
       {dailyPlan.minimalDay && effectiveMode !== 'day' && <Card className="space-y-2" data-testid="today-minimal-commitments">
@@ -279,7 +279,7 @@ export function TodayWorkspaceView({
         <p>Зайнято: {Math.round(todayProjection.availability.totalOccupiedMinutes)} хв. Це планування, а не облік виконаної роботи.</p>
         <ul>{todayProjection.timelineItems.filter(item => item.isBlocking).map(item => <li key={item.itemKey}>{item.segment.displayStartLocalTime} – {item.segment.displayEndLocalTime}: {item.title}</li>)}{todayProjection.allDayItems.filter(item => item.isBlocking).map(item => <li key={item.eventId}>Увесь день: {item.title}</li>)}{projectTodayTasks(tasks, reservations, selectedDate, activeZone, dailyPlan).relevant.filter(task => task.deadline).map(task => <li key={task.id}>Термін: {task.title}, {formatUkrainianDateHeading(deadlineDate(task, activeZone)!)}</li>)}</ul>
       </Card>}
-      {planningTask && <TaskPlanningSheet key={planningTask.task.id + ':' + (planningTask.reservationId ?? '')} task={planningTask.task} initialReservationId={planningTask.reservationId} date={selectedDate} zone={activeZone} tasks={tasks} events={events} reservations={reservations} repositories={repositories} onClose={() => setPlanningTask(null)} onSaved={() => onDataChanged()} />}
+      {planningTask && <TaskPlanningSheet key={planningTask.task.id + ':' + (planningTask.reservationId ?? '')} reviewAction={planningTask.reviewAction} task={planningTask.task} initialReservationId={planningTask.reservationId} date={selectedDate} zone={activeZone} tasks={tasks} events={events} reservations={reservations} repositories={repositories} onClose={() => setPlanningTask(null)} onSaved={() => onDataChanged()} />}
       {/* Midnight Rollover Notice Banner (6.3 Preserve viewport at midnight and offer actual-today return) */}
       {midnightRolloverDate && (
         <div

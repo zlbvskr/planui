@@ -1,3 +1,4 @@
+import { WeeklyReviewSheet } from '../components/today/WeeklyReviewSheet';
 import { OptionalSlider } from '../components/ui/OptionalSlider';
 import { PlanuiError } from '../i18n/errorsUk';
 import React, { useEffect, useState } from 'react';
@@ -47,7 +48,9 @@ export function LifeAreasReviewView({ snapshot, zone, today, repositories, onCha
   const links = projectLifeAreaLinks(snapshot);
   const related = links.filter(link => link.effectiveId === areaId);
   const missing = STARTER_LIFE_AREAS.filter(([key]) => !areas.some(a => a.starterKeys?.includes(key)));
-  const modalOpen = !!(merge || pause || linkPreview || planning || leavePlan);
+  const [lifeReviewOpen,setLifeReviewOpen]=useState(false);
+  const [weeklyOpen,setWeeklyOpen]=useState(false);
+  const modalOpen = lifeReviewOpen || weeklyOpen || !!(merge || pause || linkPreview || planning || leavePlan);
   useEffect(() => { onModalStateChange?.(modalOpen); return () => onModalStateChange?.(false); }, [modalOpen]);
   async function act(work: () => Promise<unknown>, close?: () => void) {
     setError(''); setBusy(true);
@@ -58,6 +61,8 @@ export function LifeAreasReviewView({ snapshot, zone, today, repositories, onCha
   return <div className="space-y-4" data-testid="life-areas-review">
     <p>Сфери життя є редагованою рамкою для планування, а не валідованим психологічним тестом. Загальний бал життя й рейтинг сфер не обчислюються.</p>
     {error && <p role="alert">{error}</p>}
+    <Button onClick={()=>setWeeklyOpen(true)}>Щотижневий огляд · 4 кроки</Button>
+    {weeklyOpen && <WeeklyReviewSheet snapshot={snapshot} today={today} repositories={repositories} onClose={()=>setWeeklyOpen(false)} onOpenPlan={openPlan} onPause={setPause} onInspectEvent={onInspectEvent} onChanged={onChanged} />}
     <PlanningReviewPanel snapshot={snapshot} zone={zone} today={today} initiallyOpen={initialPlanningReview} onOpenPlan={openPlan} onPause={setPause} onInspectEvent={onInspectEvent} onPlanTask={(id, reservationId) => { const task = snapshot.tasks.find(t => t.id === id); if (task) setPlanning({ task, reservationId }); }} />
     <Card className="space-y-3"><details><summary className="font-semibold min-h-[44px] cursor-pointer">Налаштувати сфери та базову рамку</summary>
       <label className="flex gap-2 items-center min-h-[44px]"><input type="checkbox" checked={showHidden} onChange={e => setShowHidden(e.target.checked)} />Показати приховані й об’єднані сфери</label>
@@ -71,7 +76,7 @@ export function LifeAreasReviewView({ snapshot, zone, today, repositories, onCha
         <Button disabled={!starterKey || busy} onClick={() => void act(() => repositories.addOrMapStarterArea(starterKey, mapping || null), () => { setStarterKey(''); setMapping(''); })}>Підтвердити додавання або зіставлення</Button>
       </div>}
     </details></Card>
-    <Card className="space-y-3"><h2 className="font-semibold">Новий огляд сфер життя</h2>
+    <Button onClick={()=>setLifeReviewOpen(true)}>Новий огляд сфер життя</Button><ModalSheet isOpen={lifeReviewOpen} title="Огляд сфер життя" isDirty={reviewDirty} onClose={()=>setLifeReviewOpen(false)}>
       <form className="space-y-4" onSubmit={e => { e.preventDefault(); void act(() => repositories.saveLifeAreaAssessment(buildLifeReview(crypto.randomUUID(), active, drafts, start, end, new Date().toISOString())), () => { setDrafts({}); setReviewDirty(false); }); }}>
         <fieldset disabled={busy} className="space-y-4">
         <div className="grid sm:grid-cols-2 gap-2"><InputField label="Початок періоду" type="date" required value={start} onChange={e => { setStart(e.target.value); setReviewDirty(true); }} /><InputField label="Кінець періоду (включно)" type="date" required value={end} onChange={e => { setEnd(e.target.value); setReviewDirty(true); }} /></div>
@@ -89,7 +94,7 @@ export function LifeAreasReviewView({ snapshot, zone, today, repositories, onCha
 
         </fieldset>
       </form>
-    </Card>
+    </ModalSheet>
     <Card className="space-y-3"><h2 className="font-semibold">Від огляду до явної дії</h2>
       <SelectField label="Сфера для перегляду зв’язків і наступного кроку" value={selected?.id ?? ''} onChange={e => { setAreaId(e.target.value); setMergeTarget(''); }} options={[{ value: '', label: 'Оберіть сферу' }, ...areas.filter(a => !a.mergedIntoId).map(a => ({ value: a.id, label: a.questionTextUk }))]} />
       {selected && <>

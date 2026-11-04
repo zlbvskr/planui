@@ -21,6 +21,7 @@ export interface FloatingShellProps {
   onSelectDestination: (dest: PrimaryDestinationId) => void;
   onOpenGlobalCreate: () => void;
   isModalOpen: boolean;
+  isBackgroundInert?: boolean;
   children: React.ReactNode;
 }
 
@@ -29,6 +30,7 @@ export const FloatingShell: React.FC<FloatingShellProps> = ({
   onSelectDestination,
   onOpenGlobalCreate,
   isModalOpen,
+  isBackgroundInert = isModalOpen,
   children,
 }) => {
   const [isInputFocusedOnMobile, setIsInputFocusedOnMobile] = useState(false);
@@ -90,8 +92,8 @@ export const FloatingShell: React.FC<FloatingShellProps> = ({
     <div
       className="min-h-[100dvh] flex flex-col lg:flex-row"
       style={{ backgroundColor: 'var(--bg-canvas)', color: 'var(--text-primary)' }}
-      inert={isModalOpen ? true : undefined}
-      aria-hidden={isModalOpen ? 'true' : undefined}
+      inert={isBackgroundInert ? true : undefined}
+      aria-hidden={isBackgroundInert ? 'true' : undefined}
       data-testid="shell-background-root"
     >
       <a

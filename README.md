@@ -1,20 +1,35 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# PLANUI
 
-# Run and deploy your AI Studio app
+Local-first React + TypeScript + Vite planner. Application data stays in IndexedDB;
+preferences also use localStorage. No server, account or API key is required.
 
-This contains everything you need to run your app locally.
+## Development and verification
 
-View your app in AI Studio: https://ai.studio/apps/d02ee850-6b7a-4a08-977c-c6c50a7caa1c
+Use Node.js 24 LTS (minimum 22.12):
 
-## Run Locally
+```sh
+npm ci
+npm run dev
+```
 
-**Prerequisites:**  Node.js
+Development runs at `http://localhost:3000/` with HMR and no service worker.
+Production uses `/planui/`:
 
+```sh
+npm run lint
+npm test
+npm run build
+npm run check:dist
+npm run preview -- --host 127.0.0.1
+```
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+Open the preview at `http://127.0.0.1:4173/planui/`.
+For isolated production browser checks:
+
+```sh
+npx playwright install chromium
+npm run test:pages
+```
+
+Alternatively set `CHROMIUM_PATH` to an installed Chromium executable.
+See [GitHub Pages deployment and verification](docs/GITHUB_PAGES.md).

@@ -4,7 +4,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { defineConfig, Plugin } from 'vite';
+import { defineConfig, Plugin, ResolvedConfig } from 'vite';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,11 +16,13 @@ const __dirname = path.dirname(__filename);
  * bundles are precached atomically.
  */
 function planuiPwaBuildPlugin(): Plugin {
+  let config: ResolvedConfig;
   return {
     name: 'planui-pwa-build-manifest',
     apply: 'build',
+    configResolved(resolved) { config = resolved; },
     closeBundle() {
-      const distDir = path.resolve(__dirname, 'dist');
+      const distDir = path.resolve(config.root, config.build.outDir);
       const swPath = path.join(distDir, 'sw.js');
       if (!fs.existsSync(swPath)) return;
 
@@ -36,25 +38,21 @@ function planuiPwaBuildPlugin(): Plugin {
             rel !== 'sw.js' &&
             /\.(html|js|css|webmanifest|svg|png|ico|woff2?)$/i.test(rel)
           ) {
-            results.push(`/${rel}`);
+            results.push(rel);
           }
         }
         return results.sort();
       };
 
-      const precacheUrls = Array.from(
-        new Set(['/', ...collectFiles(distDir)])
-      );
+      const base = config.base;
+      const files = collectFiles(distDir);
+      const precacheUrls = [base, ...files.map(file => `${base}${file}`)];
       const hash = crypto.createHash('sha256');
-      for (const u of precacheUrls) {
-        hash.update(u);
-        const diskPath =
-          u === '/'
-            ? path.join(distDir, 'index.html')
-            : path.join(distDir, u.slice(1));
-        if (fs.existsSync(diskPath) && fs.statSync(diskPath).isFile()) {
-          hash.update(fs.readFileSync(diskPath));
-        }
+      hash.update(base);
+      hash.update(fs.readFileSync(swPath));
+      for (const file of files) {
+        hash.update(file);
+        hash.update(fs.readFileSync(path.join(distDir, file)));
       }
       const versionHash = `v1-${hash.digest('hex').slice(0, 12)}`;
 
@@ -72,8 +70,9 @@ function planuiPwaBuildPlugin(): Plugin {
   };
 }
 
-export default defineConfig(() => {
+export default defineConfig(({ command, isPreview }) => {
   return {
+    base: command === 'build' || isPreview ? '/planui/' : '/',
     plugins: [react(), tailwindcss(), planuiPwaBuildPlugin()],
     resolve: {
       alias: {

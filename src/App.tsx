@@ -1,3 +1,5 @@
+import { usePwaLifecycle } from './pwa/pwaController';
+import { PwaStatusBanner, PwaInstallAndOfflineCard } from './components/pwa/PwaStatusAndInstallCard';
 import { restoreTodayInteraction } from './domain/today';
 import React, {
   useCallback,
@@ -488,6 +490,9 @@ export function App() {
     isLocalModalOpen ||
     Boolean(activeGapForPicker) ||
     Boolean(inspectedEvent);
+  // Inline personal/review forms are conservatively protected until leaving that view.
+  const inlineEditorView = activeDestination === 'me' && ['records', 'life_areas'].includes(contexts.me.subView);
+  const pwaState = usePwaLifecycle(anyModalOpen || inlineEditorView ? ['shared_modal_editor'] : []);
 
   return (
     <>
@@ -496,8 +501,10 @@ export function App() {
         onSelectDestination={handleSelectDestination}
         onOpenGlobalCreate={() => openGlobalCreation()}
         isModalOpen={anyModalOpen}
+        isBackgroundInert={isEditorOpen || Boolean(activeGapForPicker) || Boolean(inspectedEvent) || (isLocalModalOpen && !(activeDestination === 'me' && contexts.me.subView === 'settings'))}
       >
         <div className="space-y-6">
+          <PwaStatusBanner pwaState={pwaState} />
           {toastMessage && (
             <FeedbackBanner
               tone="success"
@@ -736,6 +743,7 @@ export function App() {
               onModalStateChange={setIsLocalModalOpen}
             />
           )}
+          {activeDestination === 'me' && contexts.me.subView === 'settings' && <PwaInstallAndOfflineCard pwaState={pwaState} />}
         </div>
       </FloatingShell>
 

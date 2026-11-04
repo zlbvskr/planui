@@ -1,10 +1,12 @@
+import { StateHistoryChart } from '../components/today/StateHistoryChart';
+import type { CalendarEvent } from '../domain/types';
 import { OptionalSlider } from '../components/ui/OptionalSlider';
 import React, { useState } from 'react';
 import type { PersonalRecord, Scale1To5 } from '../domain/types';
 import { STATE_SCALE_V1, isCheckIn, downloadPersonalRecordsCsv, printPersonalRecords, downloadPersonalRecords } from '../domain/stateCheckIns';
 import type { PlanuiRepositories } from '../storage/repositories';
 import { Button, Card, InputField, SelectField } from '../components/ui/primitives';
-export function StateCheckInsView({ records, today, zone, enabled, repositories, onChanged }: { records: PersonalRecord[]; today: string; zone: string; enabled: boolean; repositories: PlanuiRepositories; onChanged: () => Promise<unknown> }) {
+export function StateCheckInsView({ records, events = [], today, zone, enabled, repositories, onChanged }: { records: PersonalRecord[]; events?: CalendarEvent[]; today: string; zone: string; enabled: boolean; repositories: PlanuiRepositories; onChanged: () => Promise<unknown> }) {
   const [archive, setArchive] = useState(false), [editing, setEditing] = useState<PersonalRecord | null>(null);
   const [date, setDate] = useState(today), [mood, setMood] = useState(''), [energy, setEnergy] = useState(''), [stress, setStress] = useState(''), [sleep, setSleep] = useState(''), [quality, setQuality] = useState('');
   const [selected, setSelected] = useState<string[]>([]), [error, setError] = useState('');
@@ -30,6 +32,7 @@ export function StateCheckInsView({ records, today, zone, enabled, repositories,
       <Button type="submit">Зберегти</Button>{editing && <Button onClick={reset}>Скасувати</Button>}
     </form></Card>}
     <p>{archive ? 'Історичні тексти збережено разом із початковими оцінками й часом.' : 'Відмітки відображають ваші відповіді, без висновків про причини або здоров’я.'}</p>
+    {!archive && <StateHistoryChart records={records} events={events} zone={zone} />}
     <Button disabled={!selected.length} onClick={() => downloadPersonalRecords(records, selected)}>Експортувати вибрані записи (JSON)</Button>
     <Button disabled={!selected.length} onClick={() => downloadPersonalRecordsCsv(records, selected)}>Експортувати вибрані записи (CSV)</Button>
     <Button disabled={!selected.length} onClick={() => { if (!printPersonalRecords(records, selected)) setError('Дозвольте відкриття вікна друку для експорту PDF.'); }}>Друк / PDF вибраних записів</Button>

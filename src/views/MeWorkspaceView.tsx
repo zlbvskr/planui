@@ -1294,7 +1294,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
       {/* =====================================================================
           10.2 PERSONAL RECORDS SUBVIEW
          ===================================================================== */}
-      {subView === 'records' && <StateCheckInsView records={personalRecords} today={actualTodayDate} zone={activeZone} enabled={(settings.modules?.stateCheckInsEnabled ?? false)} repositories={repositories} onChanged={() => onDataChanged()} />}
+      {subView === 'records' && <StateCheckInsView events={snapshot.events} records={personalRecords} today={actualTodayDate} zone={activeZone} enabled={(settings.modules?.stateCheckInsEnabled ?? false)} repositories={repositories} onChanged={() => onDataChanged()} />}
 
       {/* =====================================================================
           10.3 LIFE AREAS SUBVIEW

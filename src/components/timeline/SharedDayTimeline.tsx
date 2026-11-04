@@ -552,7 +552,7 @@ export function SharedDayTimeline({
                       style={{
                         backgroundColor: 'var(--bg-surface)',
                         border: pos.hasConflict
-                          ? '1.5px solid var(--color-brand)'
+                          ? '1.5px solid #b7791f'
                           : `1px solid ${palette.accentVar}`,
                         opacity:
                           pos.visualState === 'released'

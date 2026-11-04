@@ -332,3 +332,22 @@ Commands run against the unmodified workspace prior to creating documentation:
   - Final checks: npm run lint passed; full regression **168/168 across 19 suites** passed; npm run build and git diff --check passed. Native Chromium migration/interruption/restart, actual preview/confirmation, quota rollback, raster decoding/corruption, two-tab stale-form preservation and newer-schema preservation passed. Reproducible browser script is scripts/check-m10-browser.mjs; detailed evidence is docs/RELEASE_CHECKLIST.md.
   - One existing M8 test depended on the real clock; explicit test timestamps now verify the same pending-session lifecycle deterministically. Database/backup version assertions now reflect independent versions. No tests were disabled or weakened.
   - No M10 blocker remains. Existing >500 kB bundle warning remains. Final PWA/deployment and physical-device verification are outside M10 and remain pending. Stop after M10.
+
+## GitHub Pages adaptation (2026-11-04)
+
+- Separate branch based on actual main (`750666c`); unpublished local M7 changes remain separate.
+- Production `/planui/` base, base-aware HTML and worker registration, relative manifest, resolved-base precache generation, scope-isolated caches and atomic safe update lifecycle.
+- Connected the existing PWA lifecycle/banner/installation UI, previously unused by App. No domain, schema, backup-format or storage-name changes.
+- Added locked dependency installation, Node 24 CI, artifact validation and official GitHub Pages deployment workflow, plus reproducible service-worker and production browser checks.
+- Corrected existing compiler-only issues in roadmap groups and optional legacy manifest deletion, and aligned the existing esbuild peer with Vite. No dependency-resolution bypass is needed.
+- Source-mode inspection: Pages already uses GitHub Actions. Existing public URL returns source HTML rather than a valid Vite build. The PR does not merge or deploy itself.
+- Required browser compatibility corrections: drain ZIP compression output concurrently with writing (fix Chromium export backpressure); keep inline Settings import confirmations interactive while retaining floating-control hiding and PWA reload protection. No ZIP format or domain changes.
+- Clean npm ci succeeds without legacy-peer-deps; npm run lint passes; npm test passes 119/119 tests (114 baseline + four scope/cache worker tests + one compression backpressure regression); npm run build and npm run check:dist pass. Existing >500 kB JavaScript chunk warning remains non-blocking.
+- Production Chromium verification passes under a strict /planui/ static server: all primary destinations, task creation, IndexedDB and localStorage across reload, actual ZIP export/import, offline reload, no installability errors, out-of-scope requests left to network, failed-update rejection, activation blocked during editing, explicit update activation, old same-scope cache cleanup and preservation of sibling caches/local data. Mobile 390×844 and desktop 1440×900 rendering checked. No page exceptions, critical console errors or unexpected resource HTTP errors. Vite preview /planui/ and root development/HMR/source entry also verified. Temporary normal profile/release fixtures only; no user storage cleared.
+- Native OS installation and physical-device behavior remain unverified. Current live URL was requested: HTTP 200 shell references /src/main.tsx, which returns HTTP 404. New workflow deployment awaits PR merge into main; no successful new deployment is claimed. Pages source is already GitHub Actions. See docs/GITHUB_PAGES.md for setup, commands, architecture and limits.
+
+## M10 Pull Request preparation
+
+Merged the current main (including the GitHub Pages adaptation) into migration/m10 before publication. Preserved M7–M10 behavior and the production base/PWA workflow together. The PR includes the unmerged M7–M9 prerequisite commits and M10 hardening; it does not deploy itself. Post-merge verification is recorded in RELEASE_CHECKLIST.
+
+Post-merge validation passed: clean locked install, lint, npm test (173/173), production build, check:dist, strict /planui/ Chromium Pages/PWA scenario and native M10 browser checks. The release checklist records commands/results and remaining device/deployment limits.

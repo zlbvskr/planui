@@ -42,3 +42,14 @@ Resolved findings: recovery capture/write race, unguarded replacement, pre-commi
 Data implications: database schema 9 updates settings schema metadata only and closes older incompatible connections. ZIP format remains 8. Supported older archives and local snapshots migrate deterministically; entities, exact money, authored strings, temporal values and media IDs are preserved. A conflicting imported media ID with different bytes is rejected. Up to three local recovery points remain; failed/quota-limited operations retain existing data and points. No user database was reset or reseeded during implementation.
 
 Pending beyond M10: final PWA install/offline/update/cache verification, GitHub Pages deployment verification and physical Safari/iOS/Android testing. Existing bundle-size warning is non-blocking but unresolved. Persistence approval, external-file retention, encryption and forensic secure deletion are not guaranteed. Local snapshots are not external backups. No access-protection layer was removed or invented. The separate Pages branch/PR is unchanged by M10.
+
+
+## Pull Request preparation against current main
+
+The current main now includes the previously separate GitHub Pages PR. It was merged into migration/m10 before publication, preserving the M7–M10 prerequisites and existing Pages behavior. The actual PR comparison includes M7–M10 because M7–M9 were still local prerequisites. This updates the earlier checkpoint statement that the Pages implementation was separate.
+
+Post-merge checks executed: `npm ci --no-audit --no-fund`, `npm run lint`, `npm test` (**173/173**, including the five existing Pages/ZIP-stream tests), `npm run build`, `npm run check:dist`, and `git diff --check` all passed. The merged main supplies the npm test script and Playwright development dependency; the earlier M10-only command/environment description remains historical evidence.
+
+`CHROMIUM_PATH=/usr/bin/chromium npm run test:pages` passed on the combined source/build under strict `/planui/` hosting, exercising navigation, task creation, storage and ZIP restore, offline/scope boundaries, failed worker install, explicit update activation and cache/data preservation at mobile and desktop viewport sizes. `node scripts/check-m10-browser.mjs` also passed against the restarted development server with locked dependencies: native upgrades/aborts/restart, raster decode, quota rollback, two-tab stale forms and newer-schema protection. A stale dev-server run timed out after reinstalling dependencies; restarting the server resolved it. No failing check remains.
+
+The existing bundle-size warning and physical-device/native OS installation limits remain. Creating this PR does not deploy or merge it, and no new live deployment is claimed.

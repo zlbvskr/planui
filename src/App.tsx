@@ -1,5 +1,7 @@
 import { PlanuiError } from './i18n/errorsUk';
 import { HabitSessionSheet } from './components/habits/HabitSessionSheet';
+import { usePwaLifecycle } from './pwa/pwaController';
+import { PwaStatusBanner, PwaInstallAndOfflineCard } from './components/pwa/PwaStatusAndInstallCard';
 import { restoreTodayInteraction } from './domain/today';
 import React, {
   useCallback,
@@ -509,6 +511,9 @@ export function App() {
     isSettingsConfirmationOpen ||
     Boolean(activeGapForPicker) ||
     Boolean(inspectedEvent);
+  // Inline personal/review forms are conservatively protected until leaving that view.
+  const inlineEditorView = activeDestination === 'me' && ['records', 'life_areas'].includes(contexts.me.subView);
+  const pwaState = usePwaLifecycle(anyModalOpen || inlineEditorView ? ['shared_modal_editor'] : []);
 
   return (
     <>
@@ -527,6 +532,7 @@ export function App() {
               if (window.confirm('Перезавантажити застосунок? Незбережене введення буде втрачено. Спочатку скопіюйте потрібні дані.')) window.location.reload();
             }}>Перезавантажити застосунок</button>
           </div>}
+          <PwaStatusBanner pwaState={pwaState} />
           {toastMessage && (
             <FeedbackBanner
               tone="success"
@@ -770,6 +776,7 @@ export function App() {
               onModalStateChange={setIsLocalModalOpen}
             />
           )}
+          {activeDestination === 'me' && contexts.me.subView === 'settings' && <PwaInstallAndOfflineCard pwaState={pwaState} />}
         </div>
       </FloatingShell>
 

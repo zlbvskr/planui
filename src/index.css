@@ -249,3 +249,12 @@ button, [role="button"], summary { min-height: 44px; }
 @keyframes planui-sheet-in { from { opacity: 0; transform: translateY(32px) scale(.96); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .planui-transition-modal { animation: none; } }
 :root[data-reduced-motion="true"] .planui-transition-modal { animation: none; }
+::view-transition-group(planui-create) { animation-duration: 320ms; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+::view-transition-old(planui-create), ::view-transition-new(planui-create) { height: 100%; overflow: clip; border-radius: 28px; }
+::view-transition-group(root) { animation: none; }
+@media (prefers-reduced-motion: reduce) { ::view-transition-group(*) { animation-duration: 0s; } }
+:root[data-reduced-motion="true"]::view-transition-group(*) { animation-duration: 0s; }
+.planui-canvas { background-image: radial-gradient(ellipse at 15% 0%, rgba(129,143,173,.10), transparent 65%); }
+.planui-canvas[data-ambient="night"] { background-image: radial-gradient(ellipse at 15% 0%, rgba(49,46,129,.20), transparent 70%); }
+.planui-canvas[data-ambient="creative"] { background-image: radial-gradient(ellipse at 15% 0%, rgba(245,158,11,.18), transparent 70%); }
+.dark .planui-canvas[data-ambient="night"] { background-image: radial-gradient(ellipse at 15% 0%, #242052, transparent 80%); }

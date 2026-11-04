@@ -491,6 +491,7 @@ export interface ModalSheetProps {
   isOpen: boolean;
   title: string;
   subtitle?: string;
+  transitionName?: string;
   isDirty?: boolean;
   onClose: () => void;
   children: React.ReactNode;
@@ -500,6 +501,7 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
   isOpen,
   title,
   subtitle,
+  transitionName,
   isDirty = false,
   onClose,
   children,
@@ -561,7 +563,7 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
           dialogRef.current.querySelectorAll<HTMLElement>(
             'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
           )
-        );
+        ).filter(element => element.getClientRects().length > 0);
         if (focusables.length === 0) return;
         const first = focusables[0];
         const last = focusables[focusables.length - 1];
@@ -598,6 +600,7 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
         tabIndex={-1}
         className="planui-floating-capsule w-full sm:max-w-[540px] max-h-[92dvh] flex flex-col rounded-t-3xl sm:rounded-3xl overflow-hidden planui-transition-modal"
         style={{
+          viewTransitionName: transitionName,
           backgroundColor: 'var(--glass-bg)',
           border: '1px solid var(--border-strong)',
           boxShadow: 'var(--glass-shadow)',

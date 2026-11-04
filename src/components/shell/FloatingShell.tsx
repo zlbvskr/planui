@@ -17,6 +17,7 @@ const NAV_ICONS: Record<PrimaryDestinationId, React.FC<{ className?: string }>> 
 };
 
 export interface FloatingShellProps {
+  ambient?: 'night' | 'creative' | 'neutral';
   activeDestination: PrimaryDestinationId;
   onSelectDestination: (dest: PrimaryDestinationId) => void;
   onOpenGlobalCreate: () => void;
@@ -26,6 +27,7 @@ export interface FloatingShellProps {
 }
 
 export const FloatingShell: React.FC<FloatingShellProps> = ({
+  ambient = 'neutral',
   activeDestination,
   onSelectDestination,
   onOpenGlobalCreate,
@@ -100,7 +102,8 @@ export const FloatingShell: React.FC<FloatingShellProps> = ({
 
   return (
     <div
-      className="min-h-[100dvh] flex flex-col lg:flex-row"
+      className="planui-canvas min-h-[100dvh] flex flex-col lg:flex-row"
+      data-ambient={ambient}
       style={{ backgroundColor: 'var(--bg-canvas)', color: 'var(--text-primary)' }}
       inert={isBackgroundInert ? true : undefined}
       aria-hidden={isBackgroundInert ? 'true' : undefined}
@@ -152,8 +155,9 @@ export const FloatingShell: React.FC<FloatingShellProps> = ({
               onClick={onOpenGlobalCreate}
               aria-label={UK_STRINGS.app.globalCreateButtonAria}
               data-testid="desktop-global-create-button"
-              className="w-full min-h-[46px] px-4 py-2.5 rounded-2xl font-medium text-[15px] flex items-center justify-center gap-2 planui-transition-micro cursor-pointer active:scale-[0.98] dark:!text-[#111214]"
+              className="w-full min-h-[46px] px-4 py-2.5 rounded-2xl font-medium text-[15px] flex items-center justify-center gap-2 planui-transition-micro cursor-pointer active:scale-[0.98] "
               style={{
+                viewTransitionName: 'planui-create',
                 backgroundColor: 'var(--glass-bg)',
                 color: 'var(--color-brand)',
               }}
@@ -236,8 +240,9 @@ export const FloatingShell: React.FC<FloatingShellProps> = ({
               onClick={onOpenGlobalCreate}
               aria-label={UK_STRINGS.app.globalCreateButtonAria}
               data-testid="mobile-global-create-button"
-              className="planui-floating-capsule pointer-events-auto w-[56px] h-[56px] min-w-[56px] min-h-[56px] rounded-full flex items-center justify-center planui-transition-micro cursor-pointer active:scale-95 dark:!text-[#111214]"
+              className="planui-floating-capsule pointer-events-auto w-[56px] h-[56px] min-w-[56px] min-h-[56px] rounded-full flex items-center justify-center planui-transition-micro cursor-pointer active:scale-95 "
               style={{
+                viewTransitionName: 'planui-create',
                 backgroundColor: 'var(--glass-bg)',
                 color: 'var(--color-brand)',
                 boxShadow: 'var(--glass-shadow)',

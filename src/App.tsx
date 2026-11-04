@@ -1,3 +1,5 @@
+import { selectAmbientContext } from './domain/projections';
+import { transitionCreation } from './components/shell/creationTransition';
 import { PlanuiError } from './i18n/errorsUk';
 import { HabitSessionSheet } from './components/habits/HabitSessionSheet';
 import { usePwaLifecycle } from './pwa/pwaController';
@@ -520,9 +522,10 @@ export function App() {
   return (
     <>
       <FloatingShell
+        ambient={selectAmbientContext({ events }, nowMs, activeDestination === 'directions' ? folders.find(folder => folder.id === directionsCtx.activeFolderId)?.name : '')}
         activeDestination={activeDestination}
         onSelectDestination={handleSelectDestination}
-        onOpenGlobalCreate={() => { openGlobalCreation('task'); setQuickAdd(true); }}
+        onOpenGlobalCreate={() => transitionCreation(() => { openGlobalCreation('task'); setQuickAdd(true); })}
         isModalOpen={anyModalOpen}
         isBackgroundInert={Boolean(habitOccurrence) || isEditorOpen || isLocalModalOpen || Boolean(activeGapForPicker) || Boolean(inspectedEvent)}
       >
@@ -808,7 +811,7 @@ export function App() {
           snapshot?.settings.preferredWishlistCurrency ?? null
         }
         repositories={repositories}
-        onClose={() => setIsEditorOpen(false)}
+        onClose={() => transitionCreation(() => setIsEditorOpen(false))}
         onEntityCreated={async (msg) => {
           await reloadLocalData();
           setToastMessage(msg);

@@ -1197,6 +1197,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
 
   return (
     <ModalSheet
+      transitionName="planui-create"
       isOpen={isOpen}
       title={UK_STRINGS.creation.sheetTitleChooseAction}
       subtitle={UK_STRINGS.creation.sheetSubtitleContext}

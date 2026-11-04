@@ -29,6 +29,7 @@ jobs:
       - run: npm run check:dist
       - run: npx playwright install --with-deps chromium
       - run: npm run test:pages
+      - run: npm run test:regression
       - uses: actions/upload-pages-artifact@v5
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         with:

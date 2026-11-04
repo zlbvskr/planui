@@ -176,7 +176,9 @@ export function assertValidIsoInstant(value: string): IsoInstantString {
 export function isValidIanaZone(zoneId: string): boolean {
   if (typeof zoneId !== 'string' || zoneId.trim().length === 0) return false;
   try {
-    new Intl.DateTimeFormat('uk-UA', { timeZone: zoneId });
+    // Construction validates the zone; reuse the same formatter for wall clocks.
+    // Invalid zones still throw and are never retained in the cache.
+    getWallClockFormatter(zoneId);
     return true;
   } catch {
     return false;

@@ -1,152 +1,904 @@
-# PLANUI Architecture
+# Architecture and product invariants
 
-## 1. Architectural Principles
+## Runtime boundaries
 
-PLANUI is a local-first, offline-capable, mobile-first personal planner engineered as a static client-side single-page application (SPA) and Progressive Web App (PWA).
+PLANUI is a static React 19 / TypeScript / Vite application. `src/main.tsx` mounts
+`App.tsx`; the shell coordinates destination context, snapshots and explicit editors.
+Views/components render canonical records and invoke repositories; they do not own
+separate databases. `src/state/shellStore.ts` handles navigation, creation context,
+bootstrap theme and accessibility preferences. `src/domain/` contains framework-free
+rules, temporal/scheduling projections, validation, roster, habits, plans, roadmap,
+personal space and exact money. `src/i18n/` owns Ukrainian strings and typed errors.
+`src/storage/db.ts` owns engines/migrations; `repositories.ts` owns validated atomic
+operations, expected revisions and generation guards; `tabSync.ts` carries advisory
+cross-tab notices. `storage/backup/` owns bounded ZIP parsing and atomic replacement.
+See [DATA_MODEL.md](DATA_MODEL.md) for the persistence and security contract.
 
-1. **Zero Mandatory Server Runtime**: All domain logic, persistence, scheduling, roster parsing, exact price validation, media inspection, and ZIP backup/restore execute deterministically in the browser.
-2. **Single Source of Truth**: One transactional IndexedDB database (`planui_db`) holds all domain entities. Views (`Calendar`, `Plans`, `Today`, `Habits`, `Me`) are reactive projections over the same normalized records—never separate per-screen stores.
-3. **Pure Domain & Temporal Core**: Temporal calculations, interval union/gap math, folder cycle detection, roster text parsing, habit streak evaluation, and exact decimal currency utilities are implemented as pure, framework-agnostic TypeScript modules under `src/domain/` and `src/utils/` so they can be verified deterministically with `node:test` (`npx --yes tsx --test`).
-4. **Shared Contextual Creation & Editing**: One persistent global creation button and one shared modal/sheet editor host coordinate creation and editing across all five primary destinations, protecting unsaved input and maintaining accessibility focus.
+Projections are read-only: dates, roadmap markers, load and progress never become
+second copies of tasks/events. Keep business rules out of view handlers and writes
+behind repository operations. Do not silently swallow storage errors, clear damaged
+data, report failed writes as saved, or replace user records with demos. New fields
+must extend runtime validation, migration and ZIP round-trip coverage together.
+
+`temporal.ts` reuses its Intl formatter cache for zone validation and wall clocks.
+Do not cache mutable snapshots or infer occupied time from unrelated metadata.
+App deliberately does not compute calendar projections it never renders. Large view
+files remain; moving code is not itself evidence of a performance improvement.
+
+## Static hosting and PWA
+
+Production base is `/planui/`; development base is `/`. Hash routes need no server
+rewrite. `vite.config.ts` enumerates every emitted core asset and injects its URLs
+and a content hash into `public/sw.js`. Keep HTML, manifest icons, registration and
+any future lazy chunks under the resolved base. The manifest's id/start_url/scope
+are relative. Registration uses BASE_URL and updateViaCache: none.
+
+Install fetches the complete asset set before writing. Failed fetch/cache writes
+must not replace a working release. Updates wait for explicit safe activation;
+modal/inline editors block activation to preserve unsaved input. Keep the installed
+shell paired with its hashed assets until activation. Only same-origin scoped GET
+navigation and enumerated assets are intercepted; unknown/outside/non-GET requests
+pass through. Cleanup removes only obsolete caches in this registration's namespace,
+never IndexedDB, preferences, user media or sibling-app caches. Online/visible-tab
+checks discover updates; no guaranteed background execution is promised.
+
+## UI invariants
+
+The rules below are product constraints, not proof that every historical acceptance
+scenario has been tested on every browser. Later current-domain clarifications take
+precedence over older stage-specific scope statements. Do not change UI during a
+maintenance refactor. CSS and primitives remain the executable visual specification.
+
+## C02. PRODUCT VISION AND SCOPE
+
+PLANUI is a personal planner that connects everyday actions with meaningful directions, goals, life areas, and the user's preferred way of living.
+Its purpose is realistic, personally meaningful planning, not maximizing task completion.
+
+The four primary destinations, in this exact order, are:
+**"Сьогодні"**, **"Календар"**, **"Напрями"**, **"Я"**.
+
+- **Сьогодні**: realistic daily working alignment containing "День" (continuous 24h timeline), "Завдання" (actionable tasks), and optional "Звички" (habits).
+- **Календар**: commitments, work shifts (including irregular/overnight rosters), and planned task time.
+- **Напрями**: meaningful organization of life activities (folders/directions, goals, projects, flat stages, tasks, and roadmap projections).
+- **Я**: self-reflection, state check-ins, "Моє бажане життя", life areas and reviews, wishlist, legacy diary archive, and secondary settings.
+
+Goals, projects, and roadmaps belong inside this structure.
+Habits are optional and have no separate primary navigation destination.
+There is no new standalone diary.
+Settings are secondary within "Я", not a separate fifth primary destination.
+
+Primary usage is iPhone Safari and an installed PWA.
+Support other phones, tablets, and desktop browsers.
+
+The user has an irregular work schedule:
+different dates, start times, durations, daytime and overnight shifts.
+
+Never assume:
+- A repeating work cycle.
+- Saturday and Sunday are days off.
+- An empty date is a confirmed day off.
+- Unoccupied recorded time means available energy.
+- Every gap should be filled with work.
+- A day must be divided into morning, afternoon, evening, or night.
+
+Core loop:
+record commitments, organize directions and goals, inspect recorded availability, choose what to schedule realistically, work with the day, adjust plans without guilt, and back up data locally.
+
+Do not introduce:
+accounts, authentication, cloud synchronization, collaboration, runtime AI, Pomodoro, Focus, life-vision onboarding, OCR roster import, automatic scheduling, automatic rollover, automatic sleep/travel buffers, infinite calendar series, timed recurring habits, arbitrary attachments, automatic backup merging, native widgets, or guaranteed background reminders.
+
+The psychological framing is a product adaptation for realistic living, not a validated clinical assessment or psychological treatment. Do not make diagnostic or therapeutic promises.
+
+Wishlist is an approved subsection inside "Я".
+It is not a budgeting, shopping, expense-tracking, or investment module.
+
+Do not create separate Inbox, Notes, Scheduled, Focus, Life Vision, Wishlist, Habits, or Finance primary destinations.
 
 ---
 
-## 2. Existing Workspace Reuse vs. Unused Starter Packages
 
-### Reused from Starter Scaffold
-- **Build & Runtime**: Vite 8 (`vite`), React 19 (`react`, `react-dom`), TypeScript 7 (`typescript`), `tsx` (for running `node:test` suites).
-- **Styling & Icons**: Tailwind CSS v4 (`tailwindcss`, `@tailwindcss/vite`), Lucide icons (`lucide-react`), Motion (`motion` for restrained, reduced-motion-aware transitions).
+## C03. LANGUAGE CONTRACT
 
-### Present in `package.json` Made Inactive / Unused by Application
-- `@google/genai`, `express`, `dotenv`: Present in the initial AI Studio template scaffold. Per C02 and C21 ("Do not introduce... runtime AI", "Core operation must work from static HTTPS hosting. No mandatory backend, cloud database, API key, paid runtime, or AI service"), PLANUI will **never** import or invoke `@google/genai` or require an Express backend.
+Every application-owned user-facing string must be Ukrainian.
 
----
+This includes:
+navigation, buttons, headings, labels, placeholders, tooltips, notifications, dialogs, confirmations, validation, errors, empty states, accessibility names, installation/update guidance, and date/time display.
 
-## 3. Target Source Structure (Stages 2–12)
+Use natural Ukrainian and Ukrainian locale with 24-hour time.
+Translate English semantic names in these prompts before rendering.
 
-```text
-/
-├── docs/                          # Persistent contract & engineering documentation (Stage 1+)
-├── public/                        # PWA icons, manifest.webmanifest, service worker assets (Stage 12)
-├── src/
-│   ├── i18n/                      # Ukrainian (uk-UA) dictionary, formatters, pluralization (Stage 3+)
-│   ├── domain/                    # Pure domain models, validators, invariants, business logic
-│   │   ├── types.ts               # Canonical TypeScript interfaces & schema version constants
-│   │   ├── validation.ts          # Deterministic runtime schema & invariant validators
-│   │   ├── folders.ts             # Cycle detection, ancestor paths, rehome/recursive delete
-│   │   ├── projects.ts            # Progress math, stage ordering, completion/archive checks
-│   │   ├── tasks.ts               # Task lifecycle, checklist promotion, deadline classification
-│   │   ├── temporal.ts            # IANA zone handling, LocalDate math, DST & half-open intervals
-│   │   ├── availability.ts        # Interval union, occupied totals, unoccupied gap calculation
-│   │   ├── roster.ts              # Shift template instantiation, deterministic text parser, summaries
-│   │   ├── habits.ts              # Effective-dated schedule rules, entry states, transparent streaks
-│   │   ├── me.ts                  # Personal records, life area assessments, inspiration validation
-│   │   ├── wishlist.ts            # Wishes, flat categories, timing groups, exact money arithmetic
-│   │   └── __tests__/             # Fast node:test unit tests for all pure domain modules
-│   ├── storage/                   # IndexedDB persistence, transactions, multi-tab coordination
-│   │   ├── db.ts                  # IndexedDB connection, schema migrations, isolated test DB factory
-│   │   ├── repositories.ts        # Transactional domain repositories with revision checking
-│   │   ├── tabSync.ts             # BroadcastChannel + storage generation & stale-write detection
-│   │   ├── mediaStore.ts          # Image magic-byte verification, dimension/memory checks, blob GC
-│   │   └── backup/                # ZIP archive creation, CRC32/SHA-256 verification, snapshot restore
-│   │       ├── zipCodec.ts        # Pure streaming/bounded ZIP reader & writer (store/deflate)
-│   │       ├── exportBackup.ts    # Coherent snapshot export to manifest.json + data.json + media/
-│   │       ├── validateBackup.ts  # Pre-import security, checksum, reference & domain validation
-│   │       └── restoreBackup.ts   # Pre-replacement recovery snapshot + atomic live replacement
-│   ├── state/                     # Reactive UI store & navigation context preservation
-│   │   ├── appStore.ts            # Subscribable state over IndexedDB + tabSync
-│   │   └── navigationStore.ts     # 5 primary destinations, per-tab scroll/filter/date context
-│   ├── components/
-│   │   ├── shell/                 # Responsive layout shell, FloatingNavCapsule, GlobalCreateButton
-│   │   ├── editors/               # SharedEditorHost, dirty-form guard, contextual creation sheet
-│   │   ├── timeline/              # Shared proportional DayTimeline (used by Today & Calendar Day)
-│   │   └── ui/                    # Semantic accessible primitives (Dialog, Select, SegmentedControl)
-│   └── views/
-│       ├── calendar/              # MonthView (with work strip), WeekView, DayView, WorkScheduleView
-│       ├── plans/                 # FolderBrowser, ProjectDetailView, TaskListView, BatchActionBar
-│       ├── today/                 # TodayWorkspace (header, nearest commitment, habits, timeline, tomorrow)
-│       ├── habits/                # HabitsView, HabitDetailSheet, EffectiveRuleEditor
-│       └── me/                    # MeOverview, JournalAndStateView, LifeAreasView, InspirationView,
-│                                  # WishlistView, SettingsAndBackupView
-```
+Use the natural Ukrainian equivalent of Wishlist ("Список бажань") for that subsection.
+Its timing groups mean Now, Later, and Someday ("Зараз", "Пізніше", "Колись") in natural Ukrainian.
+Its purchase statuses mean Want, Purchased, and No Longer Relevant ("Хочу", "Куплено", "Більше не актуально").
+
+Technical identifiers, code, database fields, filenames, and developer documentation may remain English.
+
+PLANUI branding, user-authored content, currency codes, IANA zone identifiers, and necessary technical values do not require forced translation.
+
+Do not translate user-authored text automatically.
+Do not expose raw untranslated library errors.
+
+Browser-owned permission dialogs, keyboards, and share sheets are outside application localization control.
+Localize application-owned guidance without claiming control over OS text.
+
+Development instructions, technical documents, and reports remain English.
 
 ---
 
-## 4. Core Architectural Subsystems
 
-### 4.1 Temporal Engine (`src/domain/temporal.ts`)
-- **Three Distinct Temporal Types**:
-  1. `InstantISO` (UTC epoch milliseconds / ISO-8601 `Z` string) for exact moments (`createdAt`, `updatedAt`, `completedAt`, timed deadlines).
-  2. `ZonedTimeRecord` (`startInstant`, `endInstant`, `timeZone: IanaZoneId`, `startLocalDate`, `startLocalTime`, `endLocalDate`, `endLocalTime`) for calendar events, work shifts, and task reservations.
-  3. `LocalDateString` (`YYYY-MM-DD`) for date-only task intentions, date-only deadlines, habit entries, day-off markers, and informational all-day dates.
-- **Zero 24-Hour Millisecond Drift**: All calendar date stepping (`addDays`, `daysBetween`, week/month grid construction) uses pure proleptic Gregorian calendar arithmetic (`Intl.DateTimeFormat` parts / `Temporal` polyfill-compatible helpers), never `ms + 86400000`.
-- **Time Zone Governance**: Detects device IANA zone via `Intl.DateTimeFormat().resolvedOptions().timeZone`. If detection returns empty/`UTC` without confirmation or fails, prompts the user explicitly (never silently defaults to `Europe/Kyiv`). Supports manual zone override and foreground zone-change detection in device mode.
+## C04. NAVIGATION AND SHARED CREATION
 
-### 4.2 Transactional Storage & Multi-Tab Coordination (`src/storage/`)
-- **Single IndexedDB Database**: All stores reside in one versioned IndexedDB database so cross-entity mutations (e.g., completing a task and releasing its future reservations, deleting a wishlist category and uncategorizing its wishes, applying a roster batch, or restoring a backup snapshot) execute in a single atomic IndexedDB `readwrite` transaction.
-- **Revision-Guarded Writes**: Every mutable record carries a monotonically increasing integer `revision`. Editors capture the loaded `revision`; before committing, the repository transaction verifies `current.revision === expectedRevision`. If another tab modified the record, the transaction aborts and surfaces a Ukrainian conflict dialog rather than silently overwriting.
-- **Multi-Tab Channel**: `BroadcastChannel('planui_sync')` broadcasts committed transaction summaries (`storeNames`, `generationId`, `revision`) so sibling tabs refresh projections immediately and lock UI during backup replacement.
+Use exactly four primary destinations in this exact order:
+1. **Сьогодні** (Today)
+2. **Календар** (Calendar)
+3. **Напрями** (Directions)
+4. **Я** (Me)
 
-### 4.3 Shared Proportional Timeline & Availability Engine
-- Both `Today` and `Calendar -> Day` render the exact same `DayTimeline` component backed by `availability.ts`.
-- Blocking intervals (work shifts, active task reservations, blocking events, manual blocking sleep/rest/travel) are merged into a canonical disjoint union over the viewing window `[windowStart, windowEnd)` to compute true occupied duration and unoccupied gaps.
-- Overnight shifts are stored as a single event record and projected into day segments (`[shiftStart, midnight)` on Day 1 and `[midnight, shiftEnd)` on Day 2) so editing either segment opens the single underlying shift record.
+Render natural Ukrainian labels.
+Exactly one destination is active.
 
-### 4.4 Wishlist & Exact Money Subsystem (`src/domain/wishlist.ts`)
-- **Strict Isolation from Tasks & Finance**: Wishes and flat wishlist categories live in dedicated object stores (`wishes`, `wishlist_categories`) inside the shared IndexedDB database. Wishes never project onto the calendar, never block availability, and never auto-convert into tasks or expenses.
-- **Exact Decimal Representation**: Prices are stored as `{ amountMinor: number; currency: IsoCurrencyCode; formattedCanonical: string }` (or validated decimal string + integer minor units according to ISO-4217 currency exponent `0`, `2`, or `3`)—never IEEE-754 float math.
+Preserve destination context:
+selected date, calendar mode, open container/direction, filters where appropriate, navigation position, and scroll state.
+
+Work Schedule is inside "Календар".
+Goals, projects, tasks, and "Дорожня карта" are inside "Напрями".
+State check-ins, life areas, "Моє бажане життя", wishlist, legacy diary archive, and settings are inside "Я".
+Habits are an optional module inside "Сьогодні".
+
+Use one persistent global creation button.
+Keep it separate from the floating navigation panel.
+Use one contextual creation mechanism and shared editor host.
+
+Context may prioritize:
+- **Сьогодні**: task, day note/focus, habit entry.
+- **Календар**: event, task reservation, shift, day off.
+- **Напрями**: task, project, goal, direction (folder).
+- **Goal / Project**: stage, task, checkpoint.
+- **Я overview**: state check-in, life area review, wish, desired life item.
+- **Wishlist**: wish, wishlist category.
+
+Do not show all creation types in one oversized menu.
+Only show implemented actions.
+
+Prefilled date, time, direction/folder, goal, project, stage, and wishlist category must be visible and editable.
+
+Creating a task in "Напрями" must not silently schedule it for today.
+Creating a wish must not create a task or calendar entry.
+
+Local actions such as scheduling a task, adding a checklist item, or managing wishlist categories are allowed.
+They must reuse shared operations and editors rather than introduce another persistent global creation button.
+
+---
 
 
-### M4: informational roadmap projection
+## C05. DIRECTIONS, GOALS, PROJECTS, STAGES, AND ROADMAP
 
-src/domain/roadmap.ts projects canonical goals, projects and flat stages, filters planning states, derives calendar-date intervals and markers, validates metadata, and reports clear plan inconsistencies. src/views/RoadmapView.tsx supplies global/detail lists, undated items, explicit stage creation and non-drag ordering. The calendar's RoadmapCalendarLayer.tsx renders an independent informational date lane for the visible month/week/day range with explicit overflow, rather than adding all-day events or timed overlap lanes.
+"Напрями" (Directions) organizes meaningful activity.
+Directions describe active areas of focus and pursuit; life areas describe parts of life. They are not interchangeable entities.
 
-Both surfaces use PlanuiRepositories.updateRoadmapItem with expected revision. It changes only the selected canonical record; deadline edits write existing canonical fields. Period or checkpoint moves never call reservation/event/task planning operations. The existing scheduling engine receives no roadmap metadata and remains the only occupancy authority. Timed sessions continue through the existing task planner with task references; periods never create sessions.
+Folders organize directions, sub-directions, goals, projects, and standalone tasks.
+Folder fields: stable ID, name, optional parent, order, created time, changed time.
+Do not impose an arbitrary folder-depth cap.
+Prevent cycles, self-parenting, and moves into descendants.
+Use depth-safe traversal and bounded rendering.
 
-No dependency graph, dependency controls, plan generator, or automatic scheduling engine is included in M4. Full browser/device verification remains pending the available project dependencies.
+On mobile, show one container at a time.
+Provide an ancestor path with access to the full path when abbreviated.
+Do not render an indefinitely indented tree.
+
+Deleting a nonempty folder defaults to rehoming contents.
+Recursive deletion requires separate confirmation and impact counts.
+
+### Distinct Goals
+Add distinct Goal entities to structure long-term intentions:
+- A direction (folder) can contain goals, projects, and direct tasks.
+- A goal may contain projects or direct tasks.
+- A project does not require a goal.
+- A task may belong to no direction or goal.
+- Do not introduce recursive goal trees or nested projects.
+
+Goals support:
+stable ID, title, description, purpose/meaning ("Навіщо це мені"), completion criteria, optional next action reference, optional timing (target date, quarter, or period), optional direction/folder link, optional life-area relationship, created/updated timestamps, and separate archive state.
+
+Goal planning states:
+- **idea** (Ідея)
+- **active** (В роботі)
+- **paused** (На паузі)
+- **completed** (Досягнуто)
+
+Cancellation and archiving remain separate from achievement state.
+
+### Projects and Stages
+Projects represent concrete outcomes.
+Support:
+stable ID, title, description, purpose, optional completion criteria, optional next action reference, optional target date/period, optional direction/folder, optional goal link, optional life area, stages, tasks, and descriptive collaborator text.
+
+Project planning states:
+- **idea** (Ідея)
+- **active** (В роботі)
+- **paused** (На паузі)
+- **completed** (Завершено)
+
+Stages form one flat ordered level inside a project.
+They support title, expected outcome/description, optional target date, and associated tasks.
+Projects may have no stages.
+
+Project progress:
+completed tasks divided by all non-canceled project tasks.
+Do not count stages or checklist items as extra tasks.
+Hidden completed tasks remain in the calculation.
+Show an honest empty state when there are no countable tasks.
+Describe this as task completion, not certainty that the outcome is achieved.
+Project completion is explicit.
+Show unresolved tasks before completion; do not complete them silently.
+
+Moves preserve IDs and do not change calendar times.
+Archive must not silently remove future reservations.
+Offer explicit retain-planning or remove-planning choices.
+
+### "Дорожня карта" (Roadmap Projection)
+"Дорожня карта" is a projection of canonical goals, projects, flat stages, and checkpoints.
+- Supports approximate month/quarter planning as well as precise date ranges.
+- Allows checkpoints (контрольні точки) representing milestones or review dates.
+- Roadmap periods, horizons, and checkpoints **never reserve working hours or occupy calendar time**.
+- Only explicit task reservations or blocking calendar events occupy time.
+- Changes in the roadmap update the underlying canonical entity without creating duplicate records.
+- global active-by-default direction/goal/project projection and goal/project details; ideas, paused and completed work require explicit filters. Existing flat project stages are reused; a goal-level stage has exactly one goal owner. No recursive stages or generated plans.
+- Planning precision is explicit: undated, month, quarter, or calendar-date range. Stored ranges use [startDate, endDateExclusive); forms show the inclusive last day. Checkpoints use exact calendar dates or remain undated. No UTC-midnight conversion.
+- Deadlines remain separate canonical fields. A deadline marker references the existing goal/project/stage target date; roadmap/calendar editing uses one canonical operation.
+- Calendar layer persists as hidden, key dates only, or key dates plus stage/project periods. Use compact informational lanes and explicit overflow, with readable mobile lists and non-drag editing.
+- Moving a period/checkpoint never moves other stages, task deadlines, reservations, events or shifts. Warn on clear inconsistencies and allow explicit related edits. Timed task sessions remain separate planner operations.
+- Explicit dependency changes require preview/confirmation; no implicit automatic scheduling.
+
+---
 
 
-### M5 Today working space
+## C06. TASKS, PRIORITIES, AND DEADLINES
 
-src/domain/today.ts supplies date-aware task projection, explicit focus suggestions, daily-plan validation, exact planning-change previews, elapsed-duration session construction, and validated interaction restoration/current-time gating. TodayWorkspaceView reuses SharedDayTimeline for both consecutive dates at one scale and separates Day/Tasks/optional Habits presentation. components/today provides focus, task list and planning forms; existing gap selection and lifecycle code remain in use.
+A task is a specific action.
 
-Focus/minimal-day writes update only the selected date in settings. Effort writes update only the canonical task metadata. Planning changes use existing transactional operations, with an optional reviewed reservation revision map for exact preview protection. New session creation can additionally guard the task revision/state. Single ongoing-reservation release retains its elapsed active interval and original bounds, matching lifecycle partial-release semantics.
+Support:
+stable ID, title, optional description, state, priority, optional deadline, optional estimated duration, planning state, ownership, checklist, and created/changed/completed timestamps.
 
-Minimal-day rendering never filters scheduling inputs. Work/blocking records and deadlines remain in the Day timeline and a compact summary in other modes. Availability remains the union of the same blocking sources. Current-time positioning runs after first mount only if saved interaction does not take precedence; clock updates do not trigger it. Internal mode changes preserve separate in-memory scroll positions; session context restores the last selected date/mode/scroll without changing persisted planning.
+States:
+open, completed, canceled.
+
+Priorities:
+high, normal, low.
+Default: normal.
+
+Priority is independent of deadlines and scheduling.
+Do not raise it automatically after missed planning.
+
+A task is either:
+- Standalone, optionally in a folder; or
+- In one project, optionally in a valid stage of that project.
+
+A project task cannot independently belong to another folder.
+Moving between projects clears or explicitly replaces the old stage.
+
+Checklist items have one level, title, order, and completion.
+They have no independent scheduling, priority, or deadline.
+Allow explicit promotion to an ordinary task.
+
+Deadlines may be a date-only value or an exact moment.
+Date-only deadlines must not drift through UTC conversion.
+
+Distinguish:
+overdue deadline, elapsed planning, and an open task assigned to a past date.
+
+Do not label elapsed planning overdue if no deadline exists.
+Do not automatically move past tasks into today.
+
+Provide explicit reschedule, move, remove-planning, cancel, and selected-batch actions without punitive language.
+
+---
 
 
-### M6 latest approved scope: life areas and lightweight reviews
+## C07. TASK RESERVATIONS AND LIFECYCLE
 
-src/domain/lifeAreas.ts defines the exact ten-area framework, immutable new review snapshot builder, canonical effective relationship projection, merge preview signature, and read-only planning-review projection. It reuses resolveEffectiveLifeArea from M1 and the existing union-availability engine. LifeAreasReviewView replaces the old 1–10-only live form while rendering every legacy review using its original scale and stored snapshots. PlanningReviewPanel is a manual entry point inside Я, not a journal or recurrence engine.
+Planning states:
+- No date.
+- Date-only intention.
+- One or more timed reservations.
 
-Fresh initialization seeds only a genuinely new store with the editable ten-area defaults. Existing settings/area stores, including empty ones, do not trigger reseeding. Starter additions or mappings require explicit selection; names are never matched heuristically.
+Do not maintain contradictory current date-only and timed intentions.
+Transitioning to timed planning explicitly replaces the current date-only intention.
 
-Area merge is a single transaction over areas and the live relationship stores. Confirm the reviewed source/target revisions and effective-link signature; reassign direct references only, retain the archived source identity and preserve historical assessments. The transaction does not include the assessment store and cannot rewrite scores or question snapshots. Normal assessment saving is create-only. Related tasks/plans/reservations are projected dynamically; no assignment copies or aggregate life scores exist.
+Historical reservations may remain without becoming another current plan.
 
-Review answers alone write only a review record. Planning effects route through explicit linking/task editors, project pause confirmation, normal scope editors, the shared roadmap, or the M5 exact reservation/assignment preview. Manual planning review uses canonical events including non-blocking recovery, reservations and date/deadline tasks with origin-zone interval semantics and union occupancy. It never assumes free time implies usable energy.
+A reservation references the existing task.
+Do not create independent task copies for Calendar or Today.
 
-This user-approved M6 scope supersedes the earlier habit-stage numbering only for the requested work; habit rule enhancements remain deferred. Native browser/device verification remains outstanding.
+Support:
+reservation ID, task ID, planned start/end, zone context, state, and release metadata preserving original plan history.
 
-## M7 state and preferred-life integration
+Multiple sessions are allowed.
+The primary interface remains a simple one-session flow.
 
-`StateCheckInsView` replaces new diary forms with optional scales, explicit calendar date and user-entered sleep; edits preserve original text/timestamps. Secondary archive provides reading/copying, selected JSON export and confirmed deletion. Existing data stays accessible from Я when modules are disabled. Global creation also has no new diary-text field. `stateCheckIns.ts` centralizes scale metadata, history classification and personal export.
+Moving or resizing a reservation must not change:
+deadline, priority, ownership, or estimated task duration.
 
-Preferred-life fragments use the existing transactional inspiration/media repository and object-URL lifecycle. Existing inspiration is a separate saved collection; no external previews. New references are checked transactionally and during ZIP import. Life-area projections/merge signatures include inspiration; goal deletion unlinks its fragments. Migration v6 changes metadata only.
+Allow:
+change start/end, change date, add session, cancel one reservation, remove current planning, and leave the task undated.
 
-## M8 Today habit integration and shared reservations
+An elapsed block does not complete or reschedule the task.
+No mandatory start button, countdown, or actual-minute tracking is required.
 
-Today embeds the existing HabitsWorkspaceView as the Звички mode. It shares the selected-date context, canonical repository and history with session controls. Existing weekday, numeric, week/month history, explicit date/yesterday-after-shift, pause/archive and editing UI are reused. Streak presentation is secondary. No primary navigation destination is added; disabling habits removes their Today mode but leaves occupied reservations in Calendar.
+Completion:
+- updates the same task everywhere;
+- records when completion was marked;
+- releases unused future reservations;
+- releases the unused remainder of an ongoing reservation;
+- preserves original planning information.
 
-HabitSessionSheet performs explicit manual interval planning through sessionFromDuration, detectScheduleConflicts and the same reservation store used by tasks. Context labels do not allocate time. The transaction rechecks habit revision, ownership, occurrence state and overlaps before creating a session and its canonical entry atomically. Failure rolls back both. Task-only mutation APIs reject habit-owned reservations. Shared timeline, dense-cluster and Calendar detail controls inspect the canonical habit occurrence, including while disabled.
+Never call the preceding planned interval actual tracked work.
 
-All completion/numeric/skip entry APIs use a shared transactional habit-session release policy. Existing views and the session never create parallel logs. Future sessions release; ongoing sessions retain the elapsed slice; ended sessions and different dates remain untouched. Reopening does not restore pending time. Individual session release never changes completion. Schedule edits pin older interpretation metadata before appending a new immutable revision. The live schema migration is metadata-only.
+Completion before a future block releases the whole block.
+Completion marked later does not reveal when work actually ended.
 
-## M9 Wishlist / purchase integration
+Cancellation releases unused future time.
+Reopening does not silently restore old reservations.
 
-Keep the existing Me Wishlist workspace, flat-category manager and shared creation editor. Add a read-only effective-status projection over optional purchaseStatus plus legacy state. UI status changes preserve original fulfillment/archive/timing data; the legacy presentation is separate from purchases. Optional creation fields are progressively disclosed in both inline and global creation. The same WishExtrasFields handles safe links, canonical project selection and bounded local image preparation, including decoding, pending/error state and protection against stale asynchronous file results. WishLocalImage reuses the object-URL registry with cleanup and local failure text.
+A bounded immediate undo may restore previous state only when revision checks prevent overwriting subsequent changes.
+Restored overlaps are reported, not auto-resolved.
 
-saveWishItem remains the canonical write API, adding optional atomic media and explicit currency-change confirmation. Validate all relationships in its transaction. Images are shared with inspiration and recovery snapshots; wish removal/replacement and inspiration removal use the same reference protection. Project/folder deletion unlinks affected wishes; moves preserve IDs. No task/event/financial APIs are invoked by a wish write.
+Use one transactional lifecycle operation.
+Do not expose status-only completion that leaves future time blocked.
 
-Exact-price parsing and formatting use BigInt integer intermediates while retaining the original safe-integer/decimal-string JSON model. Ambiguous new input is rejected; existing records are not reparsed into new amounts during migration. Default-currency changes affect new defaults only, and edits preserve unchanged authored note/title/price values. The v8 migration is metadata-only.
+---
 
-M9 browser backup verification also reuses the focused ZIP backpressure correction from the separate Pages work: consume compression output concurrently with writes/close. This changes no ZIP format. Inline Settings confirmations now have a separate UI-state signal from portaled modals; floating controls remain hidden and modal backgrounds stay inert, while the inline import confirmation remains interactive. The Pages hosting configuration/PR is not merged or modified.
+
+## C08. TIME ZONES AND TEMPORAL REPRESENTATION
+
+Separate:
+exact instants, local clock values with IANA-zone context, and date-only values.
+
+Initial zone mode follows the device.
+Detect the device IANA zone.
+If detection fails, request a choice; do not silently default to Kyiv.
+
+Support a persisted manual override.
+
+In device mode, recheck after foregrounding and explain zone changes.
+In manual mode, device changes do not replace the selected zone.
+
+Display-zone changes do not rewrite stored instants.
+Rescheduling in another zone is a separate explicit operation.
+
+Retain timed-record zone context.
+Expose original local event time in details when useful.
+Never silently rewrite an open editor after a zone change.
+
+Date-only task intentions, deadlines, habit entries, and informational all-day dates retain their calendar meaning.
+
+Blocking all-day events reserve their own record-zone date boundaries.
+Their occupied interval may span different displayed dates during travel.
+Explain that in details.
+
+Day-off annotations retain source-zone context.
+Do not relabel unrelated travel-zone dates as wholly off.
+
+Use half-open intervals:
+start inclusive, end exclusive.
+End must be after start.
+
+Use calendar arithmetic for local dates.
+Never calculate tomorrow using fixed 24-hour milliseconds.
+
+Use a reliable zone-aware temporal implementation.
+The current implementation uses Intl with explicit DST resolution; no Temporal dependency is installed.
+
+Handle:
+midnight, month/year boundaries, leap dates, DST gaps and repetition, ambiguous/nonexistent local input, multiple shifts, and overlaps.
+
+Resolve ambiguity explicitly.
+Distinguish clock labels from actual elapsed duration.
+
+---
+
+
+## C09. CALENDAR EVENTS AND WORK SHIFTS
+
+Events are calendar records, not tasks.
+
+Support:
+ID, title, optional note, type, palette color, timed interval or all-day dates, blocking choice, active/canceled state, and temporal context.
+
+Past does not prove attendance.
+Ordinary events do not receive task-completion checkboxes.
+
+A work shift is a specialized event with:
+shift name/type, color, optional source template, and note.
+
+Use the same:
+time representation, display, conflicts, occupancy, edits, moves, persistence, and backup mechanisms.
+
+Crossing midnight is derived from dates and zone.
+Do not maintain a contradictory independent overnight flag.
+
+One overnight shift is one record with projected day segments.
+Editing any segment edits the same record.
+
+Show start/end dates visibly.
+Earlier end clock may visibly suggest next day.
+Equal clocks require clarification; do not infer 24 hours silently.
+
+Sleep, travel, and rest may be manually created events.
+Do not generate them automatically.
+
+---
+
+
+## C10. AVAILABILITY AND LOAD
+
+Calculate gaps by subtracting the union of effective blocking intervals from the viewing window.
+
+Blocking:
+work, active task reservations, explicitly blocking events, manually entered blocking rest/sleep/travel.
+
+Non-blocking:
+deadlines, priorities, date-only intentions, day-off markers, untimed habits, personal records, assessments, inspiration, and wishes.
+
+Canceled and released future intervals do not block.
+Overlaps do not double total occupancy.
+
+Separate category totals from union-based total occupied time.
+
+Describe gaps as unoccupied according to recorded data.
+Do not infer missing shifts, energy, sleep, or a duty to fill them.
+
+A gap action opens an existing-task picker in context.
+Allow search and project filtering.
+Show start and editable session length.
+Confirm before creating a reservation.
+
+Ask for duration when no estimate exists.
+Allow a partial session if the estimate exceeds the gap.
+Do not silently extend the gap or move other commitments.
+
+Warn about overlaps but allow consciously confirmed conflicts.
+Invalid intervals remain invalid.
+
+Do not show invented productivity percentages or failure scores.
+
+---
+
+
+## C11. CALENDAR REPRESENTATIONS
+
+Modes:
+month, week, day.
+
+All share one projection and selected-date context.
+Use Ukrainian locale, Monday-first weeks, and 24-hour time.
+
+Month:
+- seven equal columns;
+- six stable rows;
+- adjacent-month dates and their events;
+- distinct current and selected date;
+- one-action actual-today return.
+
+Selecting an adjacent date changes active month and opens its details.
+
+Mobile cells show:
+date number, compact meaningful times, type markers, work coverage, bounded overflow.
+
+Do not show personal-event titles or long descriptions.
+Provide full accessible descriptions and day details.
+
+Use a thin local-clock work strip:
+00:00 at left, 12:00 at center, local date end at right.
+
+Overnight work shows the corresponding portion on both dates.
+The strip is an overview; exact elapsed duration is in details.
+
+Keep personal-event/task markers separate from work coverage.
+Unknown dates remain neutral.
+Day-off marking does not erase overnight carryover.
+
+Phone week mode must remain readable.
+Do not squeeze seven illegible hourly columns onto a phone.
+Wide screens may use timeline columns.
+
+Calendar Day reuses the same timeline as Today.
+
+---
+
+
+## C12. TODAY WORKSPACE ("СЬОГОДНІ")
+
+"Сьогодні" is a working view of shared records connecting daily actions with personal alignment, not another calendar database.
+
+It integrates three cohesive tabs/views:
+1. **День** (Day): continuous 24h proportional timeline with nearest commitment, unoccupied gaps, clear divider, and next calendar day.
+2. **Завдання** (Tasks): actionable tasks for the selected date, untimed intentions, and clear prioritization.
+3. **Звички** (Habits): optional embedded daily habits module (when habits are enabled in settings).
+
+### Day View Structure:
+- selected date/weekday;
+- date navigation;
+- actual-today return;
+- optional daily focus note ("Фокус дня" / головний намір);
+- manual minimal-day mode toggle ("Режим мінімального дня") to protect energy during exhaustion or overload without guilt;
+- compact nearest commitment;
+- main proportional timeline;
+- clear divider;
+- next calendar date (continues in same scroll flow, collapsible to summary with overnight carryover).
+
+Tasks support optional manually selected effort labels: "Невеликі", "Середні", "Значні". Never infer effort, energy suitability or focus from state check-ins.
+
+Daily planning rules:
+- Daily focus stores canonical task references and an optional note for the explicitly selected calendar date. Offer up to three dated-task suggestions without automatic selection or a selection limit.
+- Manual "Мінімальний день" filters optional tasks outside focus. Keep deadlines, sessions, work, blocking events and occupied time visible; priority never implies a mandatory obligation. Enabling it changes preferences only.
+- Postponing, returning without a date, or removing optional planning requires an exact preview and explicit confirmation. Preserve historical intervals and original reservation bounds; never change deadlines, complete tasks, or move everything to tomorrow.
+- Today retains selected date/mode/scroll interaction context. Reveal now only on first actual-day entry without saved interaction; provide explicit return-to-today/current-time controls. The next date follows at the same timeline scale and preserves the collapse preference.
+- Task session date/time/duration edits and explicit overlap confirmation remain separate from date-only assignment, deadline and estimate. Planned duration is never actual tracked work.
+No automatic rescheduling, postponement, or decisions based on mood or missed planning.
+Never infer energy or availability automatically.
+
+Proportional timeline with readable time rail; no compressed event list.
+Render overlaps in distinguishable lanes.
+Touch hit areas must not change stored duration.
+Represent skipped/repeated DST hours honestly.
+
+Show current-time indicator only in the date containing now.
+Update roughly once per minute and on foregrounding.
+Do not animate the entire schedule or force scroll jumps.
+
+Initial entry to actual today may position near now.
+Afterward preserve user scroll.
+At midnight update context without ejecting the user from the view.
+
+Past/completed items remain readable.
+Released planning is not occupied time.
+Do not inject all undated or yesterday's incomplete tasks.
+
+---
+
+
+## C13. WORK ROSTER
+
+Work Schedule is a specialized editor over work events.
+
+Templates:
+name, user code, local start/end, explicit end-date offset, palette color, optional note.
+
+Applied shifts copy values.
+Template changes/deletion do not rewrite existing shifts.
+
+Support:
+custom shifts, nonconsecutive dates, explicit day-off marking, preview, transactional batch apply, revision-safe bounded undo.
+
+Support finite generation:
+selected dates/weekdays inside an explicit period.
+Preview results and zone before commit.
+Generated shifts are independent events.
+
+Provide deterministic local text parsing:
+- day plus template code;
+- day plus manual range;
+- explicit next-day offset;
+- day-off code.
+
+Preview resolved date, start/end dates and times, elapsed duration, and warnings.
+
+Flag invalid dates, unknown codes, duplicates, ambiguous time, overlaps, unexpected durations, contradictory annotations.
+
+Do not save invalid rows silently.
+Carryover from a previous night on an off-day date is a mixed state, not automatically invalid.
+
+Month summaries use duration intersecting month boundaries.
+Do not count display segments as separate shifts.
+
+---
+
+
+## C14. HABITS (OPTIONAL EMBEDDED MODULE)
+
+Habits are an optional supportive module embedded inside "Сьогодні" (no standalone primary navigation tab).
+
+Support:
+name, optional description/icon, optional life area/direction/goal context, daily/selected-weekday/weekly-frequency/work-day-based rules, minimum viable version ("мінімальна версія" for low-energy days), execution context (e.g. "після пробудження", "після зміни"), binary or numeric target and units, active/paused/archived states.
+
+"After waking" or "after shift" is a context, not an inferred clock time.
+Work-day rules support explicit shifts vs. days off.
+
+Entries use explicit local dates.
+Allow previous-date recording after night work.
+Zone changes do not shift stored entry dates.
+
+Distinguish:
+completed, minimum version completed, partial, intentionally skipped, no entry, not scheduled, paused.
+Skip is not completion.
+Prevent duplicate binary habit/date entries.
+Update numeric totals consistently.
+
+Use effective-dated schedule revisions.
+Do not rewrite history under a new rule.
+
+Use a compact list and restrained weekly/monthly history.
+Streaks are secondary, transparent, and appropriate to the rule.
+Do not invent daily streaks for weekly-frequency habits.
+No punitive streaks or productivity guilt.
+
+Habits can be disabled in Settings without deleting records, without dropping them from backups, and without affecting other views.
+Manually planned habit sessions reference canonical occurrences under the lifecycle policy below.
+
+---
+
+
+## C15. PERSONAL SPACE, LIFE AREAS, WISHLIST, AND SETTINGS ("Я")
+
+"Я" contains personal alignment, self-reflection, life areas, wishlist, legacy archives, and secondary settings:
+1. **Короткі звірки стану** (State Check-ins)
+2. **Архів щоденника** (Legacy Diary Archive)
+3. **Моє бажане життя** (Desired Life)
+4. **Сфери життя та огляди** (Life Areas & Reviews)
+5. **Список бажань** (Wishlist)
+6. **Налаштування** (Settings — secondary destination)
+
+### 1. State Check-ins & Legacy Diary
+Short optional state check-ins replace new open-ended diary writing:
+- timestamp;
+- optional mood (1–5);
+- optional energy (1–5);
+- optional tension (1–5, where high tension is negative);
+- optional sleep information (e.g. sufficiency, hours, or quality);
+- optional brief note / context.
+
+All historical diary and journal records are preserved immutably in an accessible Legacy Diary Archive.
+No compulsory morning/evening rituals.
+No psychological diagnostics, therapy promises, or life scores.
+
+### 2. "Моє бажане життя" (Desired Life)
+A dedicated, inspiring section for the user's preferred way of living:
+- optional descriptions and notes;
+- safe local raster images (JPEG, PNG, WebP) with verified dimensions;
+- guiding prompts;
+- links to life areas and goals.
+Reuses existing inspiration and media infrastructure.
+All existing inspiration items that do not fit the new framing remain fully preserved.
+
+### 3. Life Areas & Reviews
+Editable Ukrainian starter framework for genuinely fresh installations:
+1. **Фізичне здоров’я**
+2. **Психічний стан**
+3. **Відновлення та особистий час**
+4. **Стосунки та близькість**
+5. **Творчість і самовираження**
+6. **Робота та професійний шлях**
+7. **Фінанси та матеріальна стабільність**
+8. **Навчання та розвиток**
+9. **Дім, побут і середовище**
+10. **Сенс, цінності та свобода вибору**
+
+This is a product framework, not a validated psychological test. Existing area IDs, names, customization and eight-area histories are preserved. Missing starter items can be added or explicitly mapped; never infer a merge from similar names. Support rename, hide/archive, manual ordering and confirmed transactional merge of live relationships while retaining original source identity and historical snapshots.
+
+New reviews use an explicit inclusive calendar-date period; the optional two-week suggestion is editable. Each area allows independent partial answers: satisfaction 0–10 or null, attention now true/false/null, and one useful change string (including a deliberately empty answer) or null. An optional standing definition answers “What does good enough mean to me in this area?” New reviews snapshot names, IDs, versions, definition, question wording, period and scale metadata. Legacy missing scale metadata continues to mean the original 1–10 scale; never remap or rewrite historical answers. Saved assessments are immutable through normal save operations.
+
+Show related directions, goals, projects, tasks, habits, events and planned actions using canonical effective links. Distinguish direct and inherited relationships and deduplicate each canonical record. Task completion never changes satisfaction. No total life score or ranking is computed.
+
+A review may lead only to an explicit editor or confirmation: create/link a next task, inspect the roadmap, open a project to reduce scope, confirm pausing a project, or preview and free selected future time. Editing review answers alone never changes the calendar. A manual short planning-review entry point shows upcoming shifts/commitments, current goals, space for recovery and reducible/pausable work. It creates no journal, mandatory report, recurring task or notification permission.
+
+
+### 4. Wishlist ("Список бажань")
+A compact subsection for desired items or experiences:
+- stable ID;
+- required title;
+- optional plain-text note;
+- optional flat category;
+- optional project link;
+- optional safe web link;
+- optional supported local image;
+- optional estimated price (exact integer minor units + explicit ISO currency);
+- purchase status:
+  * **Хочу** (want / active)
+  * **Куплено** (purchased)
+  * **Більше не актуально** (no longer relevant / canceled)
+- legacy fulfilled and archived records are preserved immutably without inventing purchases or purchase dates;
+- timing groups ("Зараз", "Пізніше", "Колись") are preserved as optional secondary intent grouping (default "Пізніше");
+- categories remain user-defined, flat, and separate; deleting a category leaves wishes uncategorized without deleting them.
+
+Money rules:
+represented exactly in minor integer units and canonical strings; no floating-point arithmetic.
+Supported currencies formatted with Ukrainian locale.
+No exchange rates, cross-currency totals, budgets, shopping feeds, or automatic price lookups.
+Wishes never occupy calendar hours and are not tasks.
+
+### 5. Settings ("Налаштування")
+Settings live as a secondary section inside "Я":
+- theme (system, light, dark);
+- time zone (device, manual);
+- accessibility (reduced motion, reduced transparency);
+- optional module toggles: Habits, Wishlist, Reviews, Roadmap (disabling never deletes data, never removes records from ZIP backups, and never un-blocks calendar time);
+- storage inspection and persistence;
+- complete ZIP backup export and atomic restore;
+- recovery snapshot management (up to 3 snapshots);
+- controlled reset;
+- application version.
+
+---
+Do not automatically convert wishes into tasks/projects or add a separate Wishlist primary destination.
+
+Settings:
+theme, zone, accessibility, display preferences, storage, backup/restore, recovery snapshots, application version, reset.
+Expose wishlist currency preference within an appropriate existing settings/editor context, not a finance module.
+
+Settings links reuse existing habit/roster/category editors.
+
+---
+
+
+## C16. DESIGN SYSTEM
+
+Create an original restrained iOS-inspired interface:
+clear hierarchy, precise spacing, neutral surfaces, coherent icons, tactile feedback, progressive disclosure.
+
+Do not draw fake device frames or macOS window controls.
+
+Themes:
+system, light, dark.
+Default system.
+Persist manual choice.
+
+Initial semantic colors, light / dark:
+- Canvas: `#F5F5F7` / `#000000`
+- Surface: `#FFFFFF` / `#111214`
+- Elevated: `#ECEEF1` / `#1B1D21`
+- Pressed neutral: `#E1E4E9` / `#272A30`
+- Primary text: `#18191C` / `#F5F5F7`
+- Secondary text: `#5D626C` / `#ADB1BA`
+- Brand red: `#B93E4B` / `#F08B95`
+- Work: `#876238` / `#C6A172`
+- Day off: `#3F705A` / `#8AB49E`
+- Personal event: `#3D689F` / `#89AEE0`
+- Task reservation: `#745298` / `#B9A1DE`
+- Rest: `#606A7D` / `#A1ABC0`
+
+Check actual contrast.
+Adjust failing tokens consistently and document the reason.
+Do not silently change semantic roles.
+
+Use restrained markers/edges/tints.
+Avoid neon, large saturated category cards, and decorative dashboards.
+Wishlist timing groups do not need another bright color system.
+
+Use system fonts with no mandatory remote font.
+Approximate:
+body 17 px, secondary 15 px, captions 13 px, large title 32–34 px, mobile inputs at least 16 px.
+
+Spacing:
+4, 8, 12, 16, 20, 24, 32 CSS px.
+Mobile side padding generally 16–20 px.
+Primary touch targets at least 44 by 44 CSS px.
+
+---
+
+
+## C17. FLOATING NAVIGATION AND GLOBAL BUTTON
+
+Mobile navigation is an inset floating capsule or soft rounded panel.
+It must not touch left, right, or bottom edges.
+
+Starting proportions:
+- 12–16 px side gaps;
+- bottom safe area plus visible external gap;
+- roughly 60–68 px height when text size permits.
+
+Allow text enlargement without clipping.
+Do not turn it into an opaque full-width strip.
+
+Use theme-specific translucency, subtle edge/depth, and static backdrop blur when supported.
+Content remains perceptible without sacrificing legibility.
+
+Without blur, use a readable translucent fallback.
+Reduced-transparency mode may use denser material.
+
+Inactive labels remain readable.
+Active styling is restrained.
+No permanent central glow.
+
+The separate global button is generally above the panel at the right, roughly 48–52 px, with a clear 12–16 px gap.
+
+Do not merge them into one massive structure.
+Reserve measured bottom scroll clearance.
+
+During modal/sheet editing:
+- hide the global button;
+- make underlying navigation inert;
+- manage focus;
+- provide visible close alternatives;
+- protect dirty input.
+
+During keyboard entry:
+do not let both floating controls jump unpredictably above the keyboard.
+They may temporarily hide while the editor provides its own actions.
+Restore layout without losing input.
+
+---
+
+
+## C18. MOTION, ACCESSIBILITY, AND RESPONSIVENESS
+
+Initial motion:
+- 120 ms micro;
+- 180 ms small;
+- 210 ms screen;
+- 240 ms modal.
+
+Base easing: `cubic-bezier(0.16, 1, 0.3, 1)`.
+
+Use brief interruptible transform/opacity transitions.
+Do not delay actions for decorative motion.
+No continuous reflections, large animated blur, or long row staggers.
+
+Respect reduced motion and transparency.
+Use visible focus, semantic controls, accessible names, non-color status cues, and gesture alternatives.
+
+Target WCAG AA text contrast:
+4.5:1 ordinary text; 3:1 sufficiently large text.
+Check actual combinations.
+
+Use correct viewport sizing and dynamic height.
+Avoid accidental double-tap effects and tiny-input focus zoom.
+Preserve intentional pinch zoom and useful text selection.
+Do not globally cancel touch events.
+
+Support safe areas, keyboards, landscape, foreground restoration, and enlarged text.
+
+Desktop/tablet:
+adapt to sidebar and list/detail layouts;
+keep the same product model;
+use readable form widths and keyboard access;
+retain one global creation mechanism.
+
+Verify widths:
+320, 375, 390, 430, 768, 1024, 1440 CSS px.
+
+---
+
+
+## State check-ins and preferred life
+
+State check-ins and preferred-life material are optional modules.
+
+New state input is a short voluntary check-in, never a diary-writing form. Mood, energy and tension retain their existing 1–5 meanings; optional sleep duration (integer minutes, 0–1440) and subjective sleep quality (1 very poor–5 very good) are user-entered. New records carry scaleVersion 1. Multiple records per local date are independent; editing preserves identity, original timestamp, zone, text and tags. Historical text is available in a secondary read/copy/selected-export/explicit-delete archive. Text-only legacy notes are never fabricated into scored check-ins. No cause, diagnosis, treatment or automatic workload conclusions are produced.
+
+“Моє бажане життя”, framed “Як я бачу своє ідеальне життя”, reuses inspiration/media stores. New fragments may contain title/text, local JPEG/PNG/WebP, HTTP/S links and optional life-area, goal and existing project links. Optional prompts cover ordinary days, relationships, work/rest, creativity, and more/less. No automatic task/goal/date conversion or external fetching. Existing unclassified inspiration remains in “Збережене натхнення”. Disabling either module retains its data and complete ZIP coverage.
+
+## Contextual habits and manual sessions
+
+Habits are optional inside Сьогодні → Звички, with no fifth primary destination. Reuse the existing full editor and one canonical habit/date history. Daily, weekday, weekly-frequency, binary/numeric, pause/archive, skip, partial and explicit previous-date logging remain available.
+
+Optional minimum-version wording, cue/context, reminder intention and direction/project/life-area links are user-entered. Minimum completion is separately indicated on a partial entry; it never converts incompatible wording into numeric progress or satisfies the ordinary target. It does not automatically release sessions. “Після пробудження” is a label, with no wake-time inference, notification clock or automatic scheduling.
+
+The days_off rule requires an explicit DayOffAnnotation on that stored calendar date. A blank date is not a day off. The marker is an intentional classification independent of occupied time: a shift ending that morning, or another explicit shift on the date, retains its actual blocking interval. Never describe the whole marked date as unoccupied. Logged occurrences retain their saved rule/target and explicit day-off classification when schedules or markers change; pending unlogged dates use current effective rules/markers. Future habit revisions are visible with their effective dates. Revisions are append-only and old logged timestamps/scores/IDs remain intact.
+
+Manual habit sessions use the existing reservation store, interval validation, overlap engine and calendar projections. They reference a canonical habit/date entry, create no task or duplicate habit, and never multiply weekly completion. Completing or intentionally skipping an occurrence releases its future pending sessions and truncates an ongoing session at action time, retaining elapsed occupancy and original interval metadata. Ended sessions and other occurrences remain unchanged. Clearing completion does not restore released time. Cancelling one session leaves sibling sessions and the log unchanged. Disabling/pausing does not cancel any existing session or remove definitions/history/backup coverage. Calendar session controls remain usable when the module is disabled.
+
+## Wishlist and purchase semantics
+
+Wishlist is optional inside Я. Name alone is sufficient; note, exact approximate price/currency, flat category, safe HTTP/S link, local JPEG/PNG/WebP and canonical project reference are optional. Creation progressively discloses optional fields. No wish/link/status operation creates planning records, deadlines, expenses, budgets or exchanges.
+
+Purchase intent has three current statuses: Хочу, Куплено, Більше не актуально. Archive remains orthogonal. Legacy active records default to Хочу at read time; legacy fulfilled records without an explicit purchase status display Здійснено раніше in a separate history scope. Migration does not infer purchase or generate purchasedAt. Explicit purchase marking records its time; a later status change retains the first explicit marking timestamp and original legacy state/fulfilledAt. Legacy fulfillment timestamps remain historical information, not purchase dates.
+
+Зараз/Пізніше/Колись remain independent secondary timing metadata, with Пізніше as the existing default. Arbitrary category names do not affect timing. Category deletion only unlinks categoryId. Project moves retain canonical projectId; explicit project deletion unlinks without deleting the wish.
+
+Money parsing and formatting use integer/string operations with BigInt intermediates, preserving the existing safe-integer minor-unit and decimal-string storage format. Missing and zero differ. Accept comma or dot decimals and correctly grouped spaces; reject ambiguous grouping, mixed separators, excess precision and unsafe integers without rounding. Existing amounts/currencies and unchanged authored text stay intact. Default currency applies to new entry defaults. Changing an existing priced item's currency requires explicit confirmation that the entered number will be expressed in the new currency, with no conversion. No cross-currency totals or financial tracking.
+
+Local images use the existing bounded raster/media infrastructure, with browser decoding before attachment, atomic wish/media writes and shared reference checks across live wishes, inspiration and retained recovery snapshots. Links open only on user action; no scraping or previews. Disabling the module preserves records, media and complete ZIP coverage.
+
+
+
+## Accessibility details
+
+Use the existing CSS tokens, system fonts and local icons; no remote font dependency.
+Phone layouts cover 320/375/390/430px; tablet/desktop 768/1024/1440px. Keep editable
+mobile input text at least 16px, touch controls at least 44px, keyboard focus visible,
+safe-area scroll clearance and readable text enlargement. Never fake OS chrome.
+Motion tokens are 120/180/210/240ms with reduced-motion overrides; preserve solid
+fallbacks for reduced transparency. Portaled dialogs trap/restore focus and make
+background content inert. Inline Settings confirmations must stay interactive:
+hiding floating controls or blocking PWA activation is distinct from background inertness.

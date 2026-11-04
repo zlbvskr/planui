@@ -1,34 +1,30 @@
-import { selectAmbientContext } from './domain/projections';
-import { transitionCreation } from './components/shell/creationTransition';
-import { PlanuiError } from './i18n/errorsUk';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { SharedEditorHost } from './components/editors/SharedEditorHost';
 import { HabitSessionSheet } from './components/habits/HabitSessionSheet';
-import { usePwaLifecycle } from './pwa/pwaController';
-import { PwaStatusBanner, PwaInstallAndOfflineCard } from './components/pwa/PwaStatusAndInstallCard';
+import {
+  PwaStatusBanner,
+  PwaInstallAndOfflineCard,
+} from './components/pwa/PwaStatusAndInstallCard';
+import { FloatingShell } from './components/shell/FloatingShell';
+import { transitionCreation } from './components/shell/creationTransition';
+import { EventDetailSheet } from './components/timeline/EventDetailSheet';
+import { GapTaskPickerSheet } from './components/timeline/GapTaskPickerSheet';
+import { FeedbackBanner } from './components/ui/primitives';
+import { selectAmbientContext } from './domain/projections';
+import type { UnoccupiedTimeGap } from './domain/scheduling';
+import {
+  detectDeviceTimeZone,
+  evaluateTimeZoneStatus,
+  todayLocalDateInZone,
+} from './domain/temporal';
 import { restoreTodayInteraction } from './domain/today';
-import React, {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
-import {
-  Calendar as CalendarIcon,
-  ChevronLeft,
-  ChevronRight,
-  Clock,
-  HeartHandshake,
-  Repeat,
-  Sparkles,
-} from 'lucide-react';
+import { CalendarEvent, PlanuiDomainSnapshot, RecoverySnapshotRecord } from './domain/types';
+import { PlanuiError } from './i18n/errorsUk';
 import { PrimaryDestinationId, UK_STRINGS } from './i18n/uk';
+import { usePwaLifecycle } from './pwa/pwaController';
 import {
-  CalendarViewMode,
   DestinationContextMap,
-  HabitsFilterMode,
   ImplementedCreationActionKind,
-  MeSubViewMode,
   applyThemeAndAccessibilityToDocument,
   buildInitialCreationContext,
   createInitialDestinationContextMap,
@@ -37,37 +33,12 @@ import {
   parseDestinationFromHash,
   updateDestinationContext,
 } from './state/shellStore';
-import {
-  addDaysToLocalDate,
-  detectDeviceTimeZone,
-  evaluateTimeZoneStatus,
-  formatUkrainianDateHeading,
-  todayLocalDateInZone,
-} from './domain/temporal';
-import {
-  UnoccupiedTimeGap,
-  projectScheduleForDate,
-} from './domain/scheduling';
-import {
-  CalendarEvent,
-  PlanuiDomainSnapshot,
-  RecoverySnapshotRecord,
-} from './domain/types';
-import {
-  PlanuiRepositories,
-  TaskLifecycleUndoToken,
-} from './storage/repositories';
-import { FloatingShell } from './components/shell/FloatingShell';
-import { SharedEditorHost } from './components/editors/SharedEditorHost';
-import { SharedDayTimeline } from './components/timeline/SharedDayTimeline';
-import { GapTaskPickerSheet } from './components/timeline/GapTaskPickerSheet';
-import { EventDetailSheet } from './components/timeline/EventDetailSheet';
-import { TodayWorkspaceView } from './views/TodayWorkspaceView';
+import { PlanuiRepositories, TaskLifecycleUndoToken } from './storage/repositories';
 import { CalendarWorkspaceView } from './views/CalendarWorkspaceView';
 import { HabitsWorkspaceView } from './views/HabitsWorkspaceView';
 import { MeWorkspaceView } from './views/MeWorkspaceView';
 import { PlansView } from './views/PlansView';
-import { FeedbackBanner } from './components/ui/primitives';
+import { TodayWorkspaceView } from './views/TodayWorkspaceView';
 
 const repositories = new PlanuiRepositories();
 
@@ -465,48 +436,6 @@ export function App() {
   const directionsCtx = contexts.directions ?? contexts.plans;
   const todayCtx = contexts.today;
   const meCtx = contexts.me;
-
-  const calendarDayProjection = useMemo(
-    () =>
-      projectScheduleForDate({
-        localDate: calendarCtx.selectedDate,
-        displayZone: activeZone,
-        events,
-        reservations,
-        tasks,
-        dayOffAnnotations,
-        includeReleasedReservations: false,
-      }),
-    [
-      calendarCtx.selectedDate,
-      activeZone,
-      events,
-      reservations,
-      tasks,
-      dayOffAnnotations,
-    ]
-  );
-
-  const calendarDayProjectionWithReleased = useMemo(
-    () =>
-      projectScheduleForDate({
-        localDate: calendarCtx.selectedDate,
-        displayZone: activeZone,
-        events,
-        reservations,
-        tasks,
-        dayOffAnnotations,
-        includeReleasedReservations: true,
-      }),
-    [
-      calendarCtx.selectedDate,
-      activeZone,
-      events,
-      reservations,
-      tasks,
-      dayOffAnnotations,
-    ]
-  );
 
   const anyModalOpen =
     isEditorOpen ||

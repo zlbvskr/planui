@@ -1396,6 +1396,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
                     }}
                   >
                     <div className="space-y-2">
+                      {item.goalId && <Button onClick={()=>onOpenPlan('goal',item.goalId!)}>Ціль: {snapshot.goals.find(goal=>goal.id===item.goalId)?.title??'Відкрити'}</Button>}
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex items-center gap-1.5 text-[12px] font-medium">
                           {item.kind === 'quote' ? (

@@ -1,8 +1,3 @@
-import { deadlineDate } from '../domain/today';
-import { RoadmapCalendarLayer } from './RoadmapCalendarLayer';
-import { RoadmapSource, projectRoadmap, roadmapMarkers } from '../domain/roadmap';
-import { PlanuiSettings } from '../domain/types';
-import React, { useMemo, useState } from 'react';
 import {
   Calendar as CalendarIcon,
   CheckCircle2,
@@ -11,21 +6,18 @@ import {
   Clock,
   Plus,
 } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { WorkRosterSubview } from '../components/roster/WorkRosterSubview';
+import { SharedDayTimeline } from '../components/timeline/SharedDayTimeline';
 import {
-  CalendarEvent,
-  DayOffAnnotation,
-  EntityId,
-  IanaTimeZone,
-  LocalDateString,
-  ShiftTemplate,
-  Task,
-  TaskReservation,
-} from '../domain/types';
-import {
-  addDaysToLocalDate,
-  addMonthsToLocalDate,
-  formatUkrainianDateHeading,
-} from '../domain/temporal';
+  Button,
+  Card,
+  EmptyStateCard,
+  SegmentedControl,
+  ModalSheet,
+} from '../components/ui/primitives';
+import { formatMinutesCompactUk } from '../domain/formatting';
+import { RoadmapSource, projectRoadmap, roadmapMarkers } from '../domain/roadmap';
 import {
   CalendarSecondaryFilter,
   ProjectedDaySchedule,
@@ -40,20 +32,26 @@ import {
   selectCalendarDateFromCell,
 } from '../domain/scheduling';
 import {
-  CalendarViewMode,
-  ImplementedCreationActionKind,
-} from '../state/shellStore';
-import { PlanuiRepositories } from '../storage/repositories';
-import { UK_STRINGS } from '../i18n/uk';
+  addDaysToLocalDate,
+  addMonthsToLocalDate,
+  formatUkrainianDateHeading,
+} from '../domain/temporal';
+import { deadlineDate } from '../domain/today';
+import { PlanuiSettings } from '../domain/types';
 import {
-  Button,
-  Card,
-  EmptyStateCard,
-  SegmentedControl,
-  ModalSheet,
-} from '../components/ui/primitives';
-import { SharedDayTimeline } from '../components/timeline/SharedDayTimeline';
-import { WorkRosterSubview } from '../components/roster/WorkRosterSubview';
+  CalendarEvent,
+  DayOffAnnotation,
+  EntityId,
+  IanaTimeZone,
+  LocalDateString,
+  ShiftTemplate,
+  Task,
+  TaskReservation,
+} from '../domain/types';
+import { UK_STRINGS } from '../i18n/uk';
+import { CalendarViewMode, ImplementedCreationActionKind } from '../state/shellStore';
+import { PlanuiRepositories } from '../storage/repositories';
+import { RoadmapCalendarLayer } from './RoadmapCalendarLayer';
 
 export interface CalendarWorkspaceViewProps {
   roadmapSource: RoadmapSource;
@@ -83,14 +81,6 @@ export interface CalendarWorkspaceViewProps {
   onModalStateChange?: (isOpen: boolean) => void;
 }
 
-function formatMinutesCompactUk(totalMinutes: number): string {
-  const mins = Math.max(0, Math.round(totalMinutes));
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  if (h > 0 && m > 0) return `${h} год ${m} хв`;
-  if (h > 0) return `${h} год`;
-  return `${m} хв`;
-}
 
 export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
   roadmapSource,

@@ -1,4 +1,3 @@
-import React, { useMemo, useState } from 'react';
 import {
   Check,
   Clock,
@@ -10,25 +9,8 @@ import {
   Sun,
   Trash2,
 } from 'lucide-react';
-import {
-  CalendarEvent,
-  DayOffAnnotation,
-  EntityId,
-  IanaTimeZone,
-  LocalDateString,
-  ShiftTemplate,
-  Task,
-  TaskReservation,
-} from '../../domain/types';
-import {
-  formatUkrainianDateHeading,
-  parseLocalDateParts,
-} from '../../domain/temporal';
-import {
-  ProjectedMonthCalendarGrid,
-  ProjectedMonthCell,
-  projectScheduleForDate,
-} from '../../domain/scheduling';
+import React, { useMemo, useState } from 'react';
+import { formatMinutesCompactUk } from '../../domain/formatting';
 import {
   MultiDateBatchActionSpec,
   ProposedRosterItem,
@@ -40,10 +22,23 @@ import {
   prepareMultiDateRosterBatch,
 } from '../../domain/roster';
 import {
-  PlanuiRepositories,
-  RosterBatchUndoToken,
-} from '../../storage/repositories';
+  ProjectedMonthCalendarGrid,
+  ProjectedMonthCell,
+  projectScheduleForDate,
+} from '../../domain/scheduling';
+import { formatUkrainianDateHeading, parseLocalDateParts } from '../../domain/temporal';
+import {
+  CalendarEvent,
+  DayOffAnnotation,
+  EntityId,
+  IanaTimeZone,
+  LocalDateString,
+  ShiftTemplate,
+  Task,
+  TaskReservation,
+} from '../../domain/types';
 import { ImplementedCreationActionKind } from '../../state/shellStore';
+import { PlanuiRepositories, RosterBatchUndoToken } from '../../storage/repositories';
 import {
   Button,
   Card,
@@ -81,14 +76,6 @@ type BatchActionChoiceKind =
   | 'day_off'
   | 'clear_date';
 
-function formatMinutesCompactUk(totalMinutes: number): string {
-  const mins = Math.max(0, Math.round(totalMinutes));
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  if (h > 0 && m > 0) return `${h} год ${m} хв`;
-  if (h > 0) return `${h} год`;
-  return `${m} хв`;
-}
 
 function createId(): string {
   return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'

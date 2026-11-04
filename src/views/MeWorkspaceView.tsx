@@ -1,14 +1,7 @@
-import { WishExtrasFields, WishLocalImage, emptyWishExtras, resolveWishExtras } from '../components/wishlist/WishExtrasFields';
-import { getWishPurchaseStatus, setWishPurchaseStatus, WISH_STATUS_LABELS_UK } from '../domain/wishlist';
-import type { WishPurchaseStatus } from '../domain/types';
-import { StateCheckInsView } from './StateCheckInsView';
-import { LifeAreasReviewView } from './LifeAreasReviewView';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
   ArrowUp,
   ArrowDown,
-  CheckCircle2,
   ChevronRight,
   Compass,
   Edit3,
@@ -19,7 +12,6 @@ import {
   Link2,
   Plus,
   Quote,
-  RotateCcw,
   Settings,
   Sparkles,
   Star,
@@ -27,11 +19,35 @@ import {
   Trash2,
   Archive,
 } from 'lucide-react';
-import { UK_STRINGS } from '../i18n/uk';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ImplementedCreationActionKind,
-  MeSubViewMode,
-} from '../state/shellStore';
+  Button,
+  Card,
+  EmptyStateCard,
+  FeedbackBanner,
+  InputField,
+  ModalSheet,
+  SegmentedControl,
+  SelectField,
+  TextAreaField,
+} from '../components/ui/primitives';
+import {
+  WishExtrasFields,
+  WishLocalImage,
+  emptyWishExtras,
+  resolveWishExtras,
+} from '../components/wishlist/WishExtrasFields';
+import {
+  ENERGY_SCALE_LABELS_UK,
+  MOOD_SCALE_LABELS_UK,
+  MediaObjectUrlRegistry,
+  STRESS_SCALE_LABELS_UK,
+  buildInspirationItemRecord,
+  buildLifeAreaAssessmentSnapshot,
+  updateLifeAreaQuestionWording,
+  validateAndPrepareRasterMedia,
+} from '../domain/personalSpace';
+import type { WishPurchaseStatus } from '../domain/types';
 import {
   IanaTimeZone,
   InspirationItem,
@@ -46,27 +62,16 @@ import {
   RecoverySnapshotRecord,
   SUPPORTED_CURRENCIES,
   Scale1To10,
-  Scale1To5,
   SupportedCurrencyCode,
   WishItem,
   WishlistCategory,
   WishlistTimingGroup,
 } from '../domain/types';
 import {
-  ENERGY_SCALE_LABELS_UK,
-  LIFE_AREA_SCALE_1_10_LABELS_UK,
-  MOOD_SCALE_LABELS_UK,
-  MediaObjectUrlRegistry,
-  PERSONAL_STATE_QUESTIONS_UK,
-  STRESS_SCALE_LABELS_UK,
-  buildInspirationItemRecord,
-  buildLifeAreaAssessmentSnapshot,
-  normalizeSimpleTags,
-  sortPersonalRecordsChronologically,
-  updateLifeAreaQuestionWording,
-  updatePersonalRecordInPlace,
-  validateAndPrepareRasterMedia,
-} from '../domain/personalSpace';
+  getWishPurchaseStatus,
+  setWishPurchaseStatus,
+  WISH_STATUS_LABELS_UK,
+} from '../domain/wishlist';
 import {
   WISHLIST_TIMING_LABELS_UK,
   WISHLIST_TIMING_ORDER,
@@ -80,19 +85,12 @@ import {
   setWishArchivedState,
   sortWishlistCategories,
 } from '../domain/wishlist';
+import { UK_STRINGS } from '../i18n/uk';
+import { ImplementedCreationActionKind, MeSubViewMode } from '../state/shellStore';
 import { PlanuiRepositories } from '../storage/repositories';
 import { BasicSettingsView } from './BasicSettingsView';
-import {
-  Button,
-  Card,
-  EmptyStateCard,
-  FeedbackBanner,
-  InputField,
-  ModalSheet,
-  SegmentedControl,
-  SelectField,
-  TextAreaField,
-} from '../components/ui/primitives';
+import { LifeAreasReviewView } from './LifeAreasReviewView';
+import { StateCheckInsView } from './StateCheckInsView';
 
 export interface MeWorkspaceViewProps {
   onOpenPlan: (kind: 'goal' | 'project', id: string) => void;

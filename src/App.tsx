@@ -1,3 +1,4 @@
+import { HabitSessionSheet } from './components/habits/HabitSessionSheet';
 import { restoreTodayInteraction } from './domain/today';
 import React, {
   useCallback,
@@ -89,6 +90,7 @@ export function App() {
     try {
       Object.assign(map.today, restoreTodayInteraction(window.sessionStorage.getItem('planui.today-context.v1'), initialTodayDate));
     } catch { /* Session storage can be unavailable; in-memory context still works. */ }
+    if (typeof window !== 'undefined' && window.location.hash.startsWith('#/habits')) map.today.mode = 'habits';
     return map;
   });
 
@@ -99,7 +101,10 @@ export function App() {
   const [recoverySnapshots, setRecoverySnapshots] = useState<
     RecoverySnapshotRecord[]
   >([]);
+  const [habitFilter, setHabitFilter] = useState<'active' | 'paused' | 'archived'>('active');
+  const [habitOccurrence, setHabitOccurrence] = useState<{habitId: string; date: string} | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
+  useEffect(() => { if (habitOccurrence && snapshot && !snapshot.habits.some(h => h.id === habitOccurrence.habitId)) setHabitOccurrence(null); }, [habitOccurrence, snapshot]);
   const [isLocalModalOpen, setIsLocalModalOpen] = useState(false);
   const [editorInitialAction, setEditorInitialAction] = useState<
     ImplementedCreationActionKind | undefined
@@ -270,6 +275,7 @@ export function App() {
       if (hash.startsWith('#/plans')) {
         window.history.replaceState(null, '', '#/directions');
       } else if (hash.startsWith('#/habits')) {
+        setContexts(prev => updateDestinationContext(prev, 'today', {mode: 'habits'}));
         window.history.replaceState(null, '', '#/today');
       } else if (hash.startsWith('#/diary') || hash.startsWith('#/records')) {
         window.history.replaceState(null, '', '#/me');
@@ -485,6 +491,7 @@ export function App() {
 
   const anyModalOpen =
     isEditorOpen ||
+    Boolean(habitOccurrence) ||
     isLocalModalOpen ||
     Boolean(activeGapForPicker) ||
     Boolean(inspectedEvent);
@@ -537,6 +544,8 @@ export function App() {
               tasks={tasks}
               projects={projects}
               dayOffAnnotations={dayOffAnnotations}
+              habitsContent={<HabitsWorkspaceView selectedDate={todayCtx.selectedDate} actualTodayDate={actualTodayDate} filter={habitFilter} onChangeFilter={setHabitFilter} habits={habits} habitEntries={habitEntries} projects={projects} folders={folders} lifeAreaQuestions={lifeAreaQuestions} dayOffDates={dayOffAnnotations.map(d => d.localDate)} repositories={repositories} onSelectDate={date => setContexts(prev => updateDestinationContext(prev, 'today', {selectedDate: date, hasInteraction: true}))} onOpenGlobalCreation={openGlobalCreation} onDataChanged={async msg => { await reloadLocalData(); if(msg) setToastMessage(msg); }} onModalStateChange={setIsLocalModalOpen} onPlanHabit={(habitId,date) => setHabitOccurrence({habitId,date})} />}
+              onInspectHabitSession={session => { if(session.habitOccurrence) setHabitOccurrence({habitId: session.habitOccurrence.habitId,date: session.habitOccurrence.localDate}); }}
               habits={habits}
               habitEntries={habitEntries}
               habitsEnabled={snapshot?.settings.modules?.habitsEnabled !== false}
@@ -606,7 +615,8 @@ export function App() {
                 reservations={reservations}
                 tasks={tasks}
                 dayOffAnnotations={dayOffAnnotations}
-                shiftTemplates={shiftTemplates}
+                onInspectHabitSession={session => { if(session.habitOccurrence) setHabitOccurrence({habitId: session.habitOccurrence.habitId,date: session.habitOccurrence.localDate}); }}
+              shiftTemplates={shiftTemplates}
                 repositories={repositories}
                 onChangeMode={(mode) =>
                   setContexts((prev) =>
@@ -731,6 +741,7 @@ export function App() {
                 handleSelectDestination('calendar');
               }}
               onNavigateToHabits={() => {
+                setContexts(prev => updateDestinationContext(prev, 'today', {mode: 'habits'}));
                 handleSelectDestination('today');
               }}
               onModalStateChange={setIsLocalModalOpen}
@@ -739,6 +750,7 @@ export function App() {
         </div>
       </FloatingShell>
 
+      {habitOccurrence && snapshot && habits.some(h => h.id === habitOccurrence.habitId) && <HabitSessionSheet habit={habits.find(h => h.id === habitOccurrence.habitId)!} date={habitOccurrence.date} zone={activeZone} tasks={tasks} events={events} reservations={reservations} entries={habitEntries} repositories={repositories} allowPlanning={snapshot.settings.modules?.habitsEnabled !== false} onChanged={reloadLocalData} onClose={() => setHabitOccurrence(null)} />}
       <SharedEditorHost
         isOpen={isEditorOpen}
         activeDestination={activeDestination}

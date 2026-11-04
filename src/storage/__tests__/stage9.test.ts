@@ -38,6 +38,8 @@ describe('Stage 9: Habits and Today Integration (C14, 9.1-9.5)', () => {
     const { repos } = createTestRepos();
     const nowIso = '2026-11-03T08:00:00.000Z';
 
+    await repos.saveLifeAreaQuestion({id:'la_q_1',questionTextUk:'Здоров’я',order:0,version:1,updatedAt:nowIso,revision:1});
+
     // 1. Binary selected-weekdays habit (Mon=1, Wed=3, Fri=5)
     const workoutHabit: Habit = {
       id: 'hab_workout',

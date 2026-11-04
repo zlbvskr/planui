@@ -198,8 +198,8 @@ export function getReservationEffectiveBlockingSlice(
   if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
     return null;
   }
-  const task = tasksById.get(reservation.taskId);
-  const title = task ? task.title : 'Запланована справа';
+  const task = reservation.taskId ? tasksById.get(reservation.taskId) : undefined;
+  const title = task ? task.title : (reservation.habitOccurrence ? 'Сеанс звички' : 'Запланована справа');
 
   return {
     sourceKind: 'reservation',
@@ -656,8 +656,8 @@ export function projectScheduleForDate(params: {
       params.localDate,
       params.localDate
     );
-    const task = tasksById.get(res.taskId);
-    const title = task ? task.title : 'Запланована справа';
+    const task = res.taskId ? tasksById.get(res.taskId) : undefined;
+    const title = task ? task.title : (res.habitOccurrence ? 'Сеанс звички' : 'Запланована справа');
 
     for (const seg of segments) {
       let releaseNoteUk: string | null = null;

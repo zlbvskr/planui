@@ -600,7 +600,7 @@ Do not invent daily streaks for weekly-frequency habits.
 No punitive streaks or productivity guilt.
 
 Habits can be disabled in Settings without deleting records, without dropping them from backups, and without affecting other views.
-Do not create timed habit reservations in this release.
+Superseded by the explicit M8 request: allow manually planned habit sessions referencing canonical occurrences, under the lifecycle policy documented below.
 
 ---
 
@@ -1016,3 +1016,13 @@ The explicit M7 request combines optional state check-ins and preferred-life mat
 New state input is a short voluntary check-in, never a diary-writing form. Mood, energy and tension retain their existing 1–5 meanings; optional sleep duration (integer minutes, 0–1440) and subjective sleep quality (1 very poor–5 very good) are user-entered. New records carry scaleVersion 1. Multiple records per local date are independent; editing preserves identity, original timestamp, zone, text and tags. Historical text is available in a secondary read/copy/selected-export/explicit-delete archive. Text-only legacy notes are never fabricated into scored check-ins. No cause, diagnosis, treatment or automatic workload conclusions are produced.
 
 “Моє бажане життя”, framed “Як я бачу своє ідеальне життя”, reuses inspiration/media stores. New fragments may contain title/text, local JPEG/PNG/WebP, HTTP/S links and optional life-area, goal and existing project links. Optional prompts cover ordinary days, relationships, work/rest, creativity, and more/less. No automatic task/goal/date conversion or external fetching. Existing unclassified inspiration remains in “Збережене натхнення”. Disabling either module retains its data and complete ZIP coverage.
+
+## M8 latest approved scope (2026-11-04): contextual habits and manual sessions
+
+The explicit M8 request delivers the formerly deferred embedded-habit alignment and supersedes the older prohibition on timed habit reservations. Habits are optional inside Сьогодні → Звички, with no fifth primary destination. Reuse the existing full editor and one canonical habit/date history. Daily, weekday, weekly-frequency, binary/numeric, pause/archive, skip, partial and explicit previous-date logging remain available.
+
+Optional minimum-version wording, cue/context, reminder intention and direction/project/life-area links are user-entered. Minimum completion is separately indicated on a partial entry; it never converts incompatible wording into numeric progress or satisfies the ordinary target. It does not automatically release sessions. “Після пробудження” is a label, with no wake-time inference, notification clock or automatic scheduling.
+
+The days_off rule requires an explicit DayOffAnnotation on that stored calendar date. A blank date is not a day off. The marker is an intentional classification independent of occupied time: a shift ending that morning, or another explicit shift on the date, retains its actual blocking interval. Never describe the whole marked date as unoccupied. Logged occurrences retain their saved rule/target and explicit day-off classification when schedules or markers change; pending unlogged dates use current effective rules/markers. Future habit revisions are visible with their effective dates. Revisions are append-only and old logged timestamps/scores/IDs remain intact.
+
+Manual habit sessions use the existing reservation store, interval validation, overlap engine and calendar projections. They reference a canonical habit/date entry, create no task or duplicate habit, and never multiply weekly completion. Completing or intentionally skipping an occurrence releases its future pending sessions and truncates an ongoing session at action time, retaining elapsed occupancy and original interval metadata. Ended sessions and other occurrences remain unchanged. Clearing completion does not restore released time. Cancelling one session leaves sibling sessions and the log unchanged. Disabling/pausing does not cancel any existing session or remove definitions/history/backup coverage. Calendar session controls remain usable when the module is disabled.

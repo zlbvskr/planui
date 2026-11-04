@@ -106,3 +106,12 @@ The active product revision `PLANUI-LIFE-ALIGNMENT-1` supersedes earlier product
 - New forms have no diary field. Editing a check-in preserves original text and timestamps; historical text is readable/copyable/exportable and removable only through explicit deletion.
 - Missing inspiration collection means saved inspiration. A new preferred-life fragment never automatically creates a planning entity. HTTP/S links require user opening; no external fetches.
 - Database/ZIP v6 retains all old stores and supports v1–v5 imports. No reset, seed or destructive migration.
+
+## M8 latest approved scope (2026-11-04)
+
+- Explicit M8 supersedes the prior “no timed habit reservations” restriction and delivers the formerly deferred habit alignment. Preserve the completed local M7 baseline separately from the independent Pages PR; implement no later stage here.
+- Reuse the existing full habit editor inside Today and one habit/date history. A session-owned no_entry row is a stable pending occurrence, not a completed log or unrelated task.
+- Minimum wording stays text-only. An explicit minimum action records partial plus the actual minimum wording; it never compares units or automatically satisfies the ordinary target/weekly count. Ordinary completion is counted once per date regardless of session count.
+- Explicit day-off markers are authoritative classification, independent of actual occupied intervals. Overnight carry-in may coexist with a valid day-off marker. Blank dates never imply days off. Logged rule/target/day-off interpretation is pinned; future unlogged opportunities reflect explicit effective revisions and current date markers.
+- Completion and intentional skip release only this occurrence's pending remainder, retaining elapsed occupancy and original timing metadata. Partial/minimum actions retain sessions; manual single-session release leaves completion untouched. Clearing a log retains referenced occurrence identity and never reactivates released sessions.
+- Pause/module disable preserve all definitions, logs, states, intervals and backup coverage. Disabled-module session completion remains an explicit calendar action. No automatic alarms, wake-time inference, repetition, allocations, progression or accumulated debt.

@@ -259,12 +259,16 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
   const [wishlistCategoryName, setWishlistCategoryName] = useState('');
 
   // Habit fields (Stage 9: 9.1 / 9.3 / 9.4)
+  const [habitMinimum, setHabitMinimum] = useState('');
+  const [habitCue, setHabitCue] = useState('');
+  const [habitReminder, setHabitReminder] = useState('');
+  const [habitFolder, setHabitFolder] = useState('');
   const [habitName, setHabitName] = useState('');
   const [habitDescription, setHabitDescription] = useState('');
   const [habitIcon, setHabitIcon] = useState<string>('repeat');
   const [habitLifeAreaId, setHabitLifeAreaId] = useState<string>('');
   const [habitRuleKind, setHabitRuleKind] = useState<
-    'daily' | 'selected_weekdays' | 'weekly_frequency'
+    'daily' | 'days_off' | 'selected_weekdays' | 'weekly_frequency'
   >('daily');
   const [habitWeekdaysIso, setHabitWeekdaysIso] = useState<number[]>([
     1, 3, 5,
@@ -386,6 +390,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
       setShowWishDetails(false);
       setWishlistCategoryName('');
 
+      setHabitMinimum(''); setHabitCue(''); setHabitReminder(''); setHabitFolder('');
       setHabitName('');
       setHabitDescription('');
       setHabitIcon('repeat');
@@ -435,6 +440,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
     stageTitle.trim().length > 0 ||
     stageExpectedOutcome.trim().length > 0 ||
     folderName.trim().length > 0 ||
+    habitMinimum.trim().length > 0 || habitCue.trim().length > 0 || habitReminder.trim().length > 0 || habitFolder !== '' ||
     habitName.trim().length > 0 ||
     habitDescription.trim().length > 0 ||
     recordSleep !== '' || recordSleepQuality !== '' || recordText.trim().length > 0 ||
@@ -956,7 +962,8 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
           nowIso.slice(0, 10);
 
         let rule: HabitFrequencyRule;
-        if (habitRuleKind === 'daily') {
+        if (habitRuleKind === 'days_off') { rule = {kind: 'days_off'};
+        } else if (habitRuleKind === 'daily') {
           rule = { kind: 'daily' };
         } else if (habitRuleKind === 'selected_weekdays') {
           rule = {
@@ -988,6 +995,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
         await repositories.saveHabit({
           id,
           name: habitName,
+          minimumVersionUk: habitMinimum.trim() || null, contextCueUk: habitCue.trim() || null, reminderIntentionUk: habitReminder.trim() || null, folderId: editableContext.projectId ? null : habitFolder || null,
           description: habitDescription.trim() ? habitDescription.trim() : null,
           icon: habitIcon.trim() ? habitIcon.trim() : null,
           lifeAreaId: habitLifeAreaId ? habitLifeAreaId : null,
@@ -2564,6 +2572,10 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
               data-testid="create-habit-description-input"
             />
 
+            <InputField label="Мінімальна версія (текст, необов’язково)" value={habitMinimum} onChange={e => setHabitMinimum(e.target.value)} />
+            <InputField label="Контекст / підказка (необов’язково)" placeholder="Наприклад: після пробудження" value={habitCue} onChange={e => setHabitCue(e.target.value)} />
+            <InputField label="Мій намір нагадати собі (без будильника)" value={habitReminder} onChange={e => setHabitReminder(e.target.value)} />
+            <SelectField label="Напрям (без проєкту)" value={editableContext.projectId ? '' : habitFolder} disabled={Boolean(editableContext.projectId)} onChange={e => setHabitFolder(e.target.value)} options={[{value:'',label:'Без напряму'},...folders.map(f => ({value:f.id,label:f.name}))]} />
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <SelectField
                 label="Піктограма"
@@ -2613,16 +2625,17 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
                 className="text-[14px] font-medium block"
                 style={{ color: 'var(--text-primary)' }}
               >
-                Правило розкладу (без часових слотів у календарі)
+                Правило розкладу (час лише за ручним плануванням)
               </span>
               <SegmentedControl<
-                'daily' | 'selected_weekdays' | 'weekly_frequency'
+                'daily' | 'days_off' | 'selected_weekdays' | 'weekly_frequency'
               >
                 ariaLabel="Правило розкладу звички"
                 value={habitRuleKind}
                 onChange={setHabitRuleKind}
                 options={[
                   { value: 'daily', label: 'Щодня' },
+                  { value: 'days_off', label: 'Позначені вихідні' },
                   { value: 'selected_weekdays', label: 'Обрані дні' },
                   { value: 'weekly_frequency', label: 'Разів на тиждень' },
                 ]}

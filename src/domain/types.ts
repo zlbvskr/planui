@@ -3,9 +3,9 @@
  */
 
 export const PLANUI_APP_VERSION = '0.3.0';
-export const PLANUI_DB_SCHEMA_VERSION = 6;
+export const PLANUI_DB_SCHEMA_VERSION = 7;
 export const PLANUI_BACKUP_FORMAT = 'planui-backup-zip' as const;
-export const PLANUI_BACKUP_VERSION = 6;
+export const PLANUI_BACKUP_VERSION = 7;
 
 export type EntityId = string;
 export type IsoInstantString = string;
@@ -184,7 +184,9 @@ export type ReservationReleaseReason =
   | 'task_completed'
   | 'task_canceled'
   | 'manual_unplan'
-  | 'project_archived';
+  | 'project_archived'
+  | 'habit_completed'
+  | 'habit_skipped';
 
 export interface ReservationReleaseMetadata {
   releasedAt: IsoInstantString;
@@ -195,7 +197,8 @@ export interface ReservationReleaseMetadata {
 
 export interface TaskReservation {
   id: EntityId;
-  taskId: EntityId;
+  taskId: EntityId | null;
+  habitOccurrence?: { entryId: EntityId; habitId: EntityId; localDate: LocalDateString } | null;
   interval: ZonedInterval;
   state: ReservationState;
   releaseMetadata: ReservationReleaseMetadata | null;
@@ -271,6 +274,7 @@ export type HabitLifecycleState = 'active' | 'paused' | 'archived';
 
 export type HabitFrequencyRule =
   | { kind: 'daily' }
+  | { kind: 'days_off' }
   | { kind: 'selected_weekdays'; weekdaysIso: number[] }
   | { kind: 'weekly_frequency'; timesPerWeek: number };
 
@@ -287,6 +291,10 @@ export interface HabitRuleRevision {
 }
 
 export interface Habit {
+  minimumVersionUk?: string | null;
+  contextCueUk?: string | null;
+  reminderIntentionUk?: string | null;
+  folderId?: EntityId | null;
   id: EntityId;
   name: string;
   description: string | null;
@@ -300,9 +308,12 @@ export interface Habit {
   revision: number;
 }
 
-export type HabitEntryStatus = 'completed' | 'partial' | 'skipped';
+export type HabitEntryStatus = 'completed' | 'partial' | 'skipped' | 'no_entry';
 
 export interface HabitEntry {
+  ruleSnapshot?: HabitRuleRevision;
+  dayOffSnapshot?: boolean;
+  minimumCompletedUk?: string | null;
   id: EntityId;
   habitId: EntityId;
   localDate: LocalDateString;

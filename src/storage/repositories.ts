@@ -38,6 +38,7 @@ import {
   Task,
   TaskOwnership,
   TaskReservation,
+  ReservationReleaseReason,
   WishItem,
   WishlistCategory,
   ZonedInterval,
@@ -49,6 +50,7 @@ import {
   appendEffectiveHabitRuleRevision,
   resolveHabitEntryMutation,
   sortHabitRuleRevisions,
+  getEffectiveHabitRuleRevisionForDate,
 } from '../domain/habits';
 import { isMediaReferencedByLiveOrSnapshots } from '../domain/personalSpace';
 import {
@@ -437,6 +439,7 @@ export class PlanuiRepositories {
 
     return this.engine.runTransaction(
       [
+        STORE_NAMES.habits,
         STORE_NAMES.folders,
         STORE_NAMES.projects,
         STORE_NAMES.stages,
@@ -451,6 +454,12 @@ export class PlanuiRepositories {
           throw new PlanuiError('ENTITY_NOT_FOUND', folderId);
         }
 
+        const removedDirections = mode === 'recursive_delete' ? collectDescendantFolderIds(allFolders, folderId) : new Set([folderId]);
+        const relatedProjects = await tx.getAll<Project>(STORE_NAMES.projects);
+        const removedProjects = new Set(mode === 'recursive_delete' ? relatedProjects.filter(p => p.folderId && removedDirections.has(p.folderId)).map(p => p.id) : []);
+        for (const habit of await tx.getAll<Habit>(STORE_NAMES.habits)) {
+          if ((habit.folderId && removedDirections.has(habit.folderId)) || (habit.projectId && removedProjects.has(habit.projectId))) await tx.put(STORE_NAMES.habits, {...habit, folderId: habit.folderId && removedDirections.has(habit.folderId) ? (mode === 'rehome_to_parent' ? target.parentId : null) : habit.folderId, projectId: habit.projectId && removedProjects.has(habit.projectId) ? null : habit.projectId, updatedAt: nowIso, revision: habit.revision + 1});
+        }
         const allProjects = await tx.getAll<Project>(STORE_NAMES.projects);
         const allTasks = await tx.getAll<Task>(STORE_NAMES.tasks);
 
@@ -539,7 +548,7 @@ export class PlanuiRepositories {
           STORE_NAMES.reservations
         );
         for (const res of allReservations) {
-          if (deletedTaskIds.has(res.taskId)) {
+          if ((res.taskId !== null && deletedTaskIds.has(res.taskId))) {
             await tx.delete(STORE_NAMES.reservations, res.id);
           }
         }
@@ -690,7 +699,7 @@ export class PlanuiRepositories {
           }
           const reservations = await tx.getAll<TaskReservation>(STORE_NAMES.reservations);
           for (const r of reservations) {
-            if (deletedIds.has(r.taskId)) {
+            if ((r.taskId !== null && deletedIds.has(r.taskId))) {
               await tx.delete(STORE_NAMES.reservations, r.id);
             }
           }
@@ -853,7 +862,7 @@ export class PlanuiRepositories {
         );
         const activeReservationsByTaskId = new Map<string, number>();
         for (const r of reservations) {
-          if (r.state === 'active') {
+          if (r.state === 'active' && r.taskId !== null) {
             activeReservationsByTaskId.set(
               r.taskId,
               (activeReservationsByTaskId.get(r.taskId) ?? 0) + 1
@@ -956,6 +965,7 @@ export class PlanuiRepositories {
       [STORE_NAMES.reservations, STORE_NAMES.tasks],
       'readwrite',
       async (tx) => {
+        if (reservation.taskId === null || reservation.habitOccurrence) throw new PlanuiError('VALIDATION_FAILED');
         const task = await tx.get<Task>(STORE_NAMES.tasks, reservation.taskId);
         if (!task) {
           throw new PlanuiError(
@@ -1018,6 +1028,7 @@ export class PlanuiRepositories {
         if (!existing) {
           throw new PlanuiError('ENTITY_NOT_FOUND', reservationId);
         }
+        if (existing.taskId === null || existing.habitOccurrence) throw new PlanuiError('VALIDATION_FAILED');
         const task = await tx.get<Task>(STORE_NAMES.tasks, existing.taskId);
         if (!task) {
           throw new PlanuiError('RESERVATION_TASK_NOT_FOUND', existing.taskId);
@@ -1057,6 +1068,7 @@ export class PlanuiRepositories {
         if (!existing) {
           throw new PlanuiError('ENTITY_NOT_FOUND', reservationId);
         }
+        if (existing.taskId === null || existing.habitOccurrence) throw new PlanuiError('VALIDATION_FAILED');
         const task = await tx.get<Task>(STORE_NAMES.tasks, existing.taskId);
         if (!task) {
           throw new PlanuiError('RESERVATION_TASK_NOT_FOUND', existing.taskId);
@@ -1821,7 +1833,7 @@ export class PlanuiRepositories {
           const nowMs = Date.parse(nowIso);
 
           for (const res of allReservations) {
-            if (projectTaskIds.has(res.taskId) && res.state === 'active') {
+            if ((res.taskId !== null && projectTaskIds.has(res.taskId)) && res.state === 'active') {
               const startMs = Date.parse(res.interval.startInstant);
               const endMs = Date.parse(res.interval.endInstant);
               if (startMs >= nowMs) {
@@ -1985,7 +1997,7 @@ export class PlanuiRepositories {
             STORE_NAMES.reservations
           );
           for (const res of allReservations) {
-            if (deletedTaskIds.has(res.taskId)) {
+            if ((res.taskId !== null && deletedTaskIds.has(res.taskId))) {
               await tx.delete(STORE_NAMES.reservations, res.id);
             }
           }
@@ -2713,6 +2725,70 @@ export class PlanuiRepositories {
     };
   }
 
+  private async pinHabitHistory(tx: StorageTransactionContext, habit: Habit): Promise<void> {
+    for (const entry of await tx.getAll<HabitEntry>(STORE_NAMES.habitEntries)) {
+      if (entry.habitId === habit.id && !entry.ruleSnapshot) {
+        await tx.put(STORE_NAMES.habitEntries, { ...entry, ruleSnapshot: getEffectiveHabitRuleRevisionForDate(habit, entry.localDate) });
+      }
+    }
+  }
+
+  private async releaseHabitOccurrenceSessions(tx: StorageTransactionContext, entry: Pick<HabitEntry, 'id' | 'status'>, now: string, onlySessionId?: string, reason?: ReservationReleaseReason): Promise<void> {
+    if (entry.status !== 'completed' && entry.status !== 'skipped') return;
+    for (const session of await tx.getAll<TaskReservation>(STORE_NAMES.reservations)) {
+      if ((onlySessionId && session.id !== onlySessionId) || session.habitOccurrence?.entryId !== entry.id || session.state !== 'active' || Date.parse(session.interval.endInstant) <= Date.parse(now)) continue;
+      const future = Date.parse(session.interval.startInstant) >= Date.parse(now);
+      const wall = formatInstantInZone(now, session.interval.originZone);
+      const updated: TaskReservation = { ...session,
+        state: future ? 'released' : 'active',
+        interval: future ? session.interval : { ...session.interval, endInstant: now, originEndLocalDate: wall.localDate, originEndLocalTime: wall.localTime },
+        releaseMetadata: { releasedAt: now, reason: reason ?? (entry.status === 'completed' ? 'habit_completed' : 'habit_skipped'), originalStartInstant: session.interval.startInstant, originalEndInstant: session.releaseMetadata?.originalEndInstant ?? session.interval.endInstant },
+        updatedAt: now, revision: session.revision + 1 };
+      validateReservationRecord(updated);
+      await tx.put(STORE_NAMES.reservations, updated);
+    }
+  }
+
+  public async scheduleHabitSession(params: { id: string; habitId: string; localDate: string; interval: ZonedInterval; confirmOverlap?: boolean; expectedHabitRevision: number; nowIso?: string }): Promise<TaskReservation> {
+    this.tabSync.assertNoRemoteImportInProgress();
+    assertValidLocalDate(params.localDate); validateZonedInterval(params.interval);
+    const now = params.nowIso ?? new Date().toISOString();
+    const result = await this.engine.runTransaction([STORE_NAMES.habits, STORE_NAMES.habitEntries, STORE_NAMES.reservations, STORE_NAMES.events, STORE_NAMES.tasks, STORE_NAMES.dayOffAnnotations], 'readwrite', async tx => {
+      const habit = await tx.get<Habit>(STORE_NAMES.habits, params.habitId);
+      if (!habit || habit.state !== 'active') throw new PlanuiError('HABIT_NOT_FOUND');
+      this.assertRevisionMatch(habit, params.expectedHabitRevision);
+      const entries = await tx.getAll<HabitEntry>(STORE_NAMES.habitEntries);
+      let entry = entries.find(e => e.habitId === habit.id && e.localDate === params.localDate);
+      if (entry?.status === 'completed' || entry?.status === 'skipped') throw new PlanuiError('VALIDATION_FAILED');
+      const report = detectScheduleConflicts({ candidateStartInstant: params.interval.startInstant, candidateEndInstant: params.interval.endInstant, displayZone: params.interval.originZone, events: await tx.getAll(STORE_NAMES.events), tasks: await tx.getAll(STORE_NAMES.tasks), reservations: await tx.getAll(STORE_NAMES.reservations) });
+      if (report.hasConflicts && !params.confirmOverlap) throw new PlanuiError('VALIDATION_FAILED');
+      if (await tx.get(STORE_NAMES.reservations, params.id)) throw new PlanuiError('STALE_WRITE_CONFLICT');
+      if (!entry) {
+        const daysOff = await tx.getAll<DayOffAnnotation>(STORE_NAMES.dayOffAnnotations);
+        entry = { id: `hentry_${habit.id}_${params.localDate}`, habitId: habit.id, localDate: params.localDate, status: 'no_entry', numericValue: null, note: null, recordedAt: now, updatedAt: now, revision: 1, ruleSnapshot: getEffectiveHabitRuleRevisionForDate(habit, params.localDate), dayOffSnapshot: daysOff.some(d => d.localDate === params.localDate) };
+        validateHabitEntryRecord(entry); if (await tx.get(STORE_NAMES.habitEntries, entry.id)) throw new PlanuiError('STALE_WRITE_CONFLICT'); await tx.put(STORE_NAMES.habitEntries, entry);
+      }
+      const session: TaskReservation = { id: params.id, taskId: null, habitOccurrence: { entryId: entry.id, habitId: habit.id, localDate: entry.localDate }, interval: params.interval, state: 'active', releaseMetadata: null, createdAt: now, updatedAt: now, revision: 1 };
+      validateReservationRecord(session); await tx.put(STORE_NAMES.reservations, session);
+      return session;
+    });
+    this.tabSync.broadcast({ type: 'ENTITY_MUTATED', stores: [STORE_NAMES.habitEntries, STORE_NAMES.reservations], dbGeneration: this.knownDbGeneration ?? 1, timestamp: now });
+    return result;
+  }
+
+  public async cancelHabitSession(id: string, expectedRevision: number): Promise<void> {
+    this.tabSync.assertNoRemoteImportInProgress();
+    await this.engine.runTransaction([STORE_NAMES.reservations], 'readwrite', async tx => {
+      const session = await tx.get<TaskReservation>(STORE_NAMES.reservations, id);
+      if (!session?.habitOccurrence) throw new PlanuiError('ENTITY_NOT_FOUND');
+      this.assertRevisionMatch(session, expectedRevision);
+      // Same preservation policy as completion: retain the elapsed blocking slice.
+      const now = new Date().toISOString();
+      await this.releaseHabitOccurrenceSessions(tx, { id: session.habitOccurrence.entryId, status: 'skipped' }, now, id, 'manual_unplan');
+    });
+    this.tabSync.broadcast({ type: 'ENTITY_MUTATED', stores: [STORE_NAMES.reservations], dbGeneration: this.knownDbGeneration ?? 1, timestamp: new Date().toISOString() });
+  }
+
   public async saveHabit(
     habit: Habit,
     expectedRevision?: number
@@ -2726,10 +2802,17 @@ export class PlanuiRepositories {
     validateHabitRecord(sortedHabit);
 
     const saved = await this.engine.runTransaction(
-      [STORE_NAMES.habits, STORE_NAMES.settings],
+      [STORE_NAMES.habits, STORE_NAMES.habitEntries, STORE_NAMES.settings, STORE_NAMES.folders, STORE_NAMES.projects, STORE_NAMES.lifeAreaQuestions],
       'readwrite',
       async (tx) => {
         const existing = await tx.get<Habit>(STORE_NAMES.habits, sortedHabit.id);
+        if (existing) {
+          if (existing.ruleRevisions.some(old => !sortedHabit.ruleRevisions.some(next => JSON.stringify(old) === JSON.stringify(next)))) throw new PlanuiError('HABIT_INVALID_RULE');
+          await this.pinHabitHistory(tx, existing);
+        }
+        if (sortedHabit.folderId && !await tx.get(STORE_NAMES.folders, sortedHabit.folderId)) throw new PlanuiError('ENTITY_NOT_FOUND');
+        if (sortedHabit.projectId && !await tx.get(STORE_NAMES.projects, sortedHabit.projectId)) throw new PlanuiError('PROJECT_NOT_FOUND');
+        if (sortedHabit.lifeAreaId && !await tx.get(STORE_NAMES.lifeAreaQuestions, sortedHabit.lifeAreaId)) throw new PlanuiError('ENTITY_NOT_FOUND');
         const nextRev = this.assertRevisionMatch(existing, expectedRevision);
         const record: Habit = { ...sortedHabit, revision: nextRev };
         validateHabitRecord(record);
@@ -2762,13 +2845,14 @@ export class PlanuiRepositories {
     this.tabSync.assertNoRemoteImportInProgress();
 
     const saved = await this.engine.runTransaction(
-      [STORE_NAMES.habits, STORE_NAMES.settings],
+      [STORE_NAMES.habits, STORE_NAMES.habitEntries, STORE_NAMES.settings, STORE_NAMES.folders, STORE_NAMES.projects, STORE_NAMES.lifeAreaQuestions],
       'readwrite',
       async (tx) => {
         const existing = await tx.get<Habit>(STORE_NAMES.habits, habitId);
         if (!existing) {
           throw new PlanuiError('HABIT_NOT_FOUND', habitId);
         }
+        await this.pinHabitHistory(tx, existing);
         const nextRev = this.assertRevisionMatch(existing, expectedRevision);
         const updatedRevisions = appendEffectiveHabitRuleRevision(
           existing.ruleRevisions,
@@ -2848,7 +2932,7 @@ export class PlanuiRepositories {
     this.tabSync.assertNoRemoteImportInProgress();
 
     const saved = await this.engine.runTransaction(
-      [STORE_NAMES.habitEntries, STORE_NAMES.habits, STORE_NAMES.settings],
+      [STORE_NAMES.habitEntries, STORE_NAMES.habits, STORE_NAMES.settings, STORE_NAMES.reservations, STORE_NAMES.dayOffAnnotations],
       'readwrite',
       async (tx) => {
         const habit = await tx.get<Habit>(STORE_NAMES.habits, entry.habitId);
@@ -2874,9 +2958,11 @@ export class PlanuiRepositories {
 
         const existing = allEntries.find((e) => e.id === entry.id);
         const nextRev = this.assertRevisionMatch(existing, expectedRevision);
-        const record: HabitEntry = { ...entry, revision: nextRev };
+        if (existing && (existing.habitId !== entry.habitId || existing.localDate !== entry.localDate)) throw new PlanuiError('VALIDATION_FAILED');
+        const record: HabitEntry = { ...entry, ruleSnapshot: (existing?.status !== 'no_entry' ? existing?.ruleSnapshot : undefined) ?? entry.ruleSnapshot ?? getEffectiveHabitRuleRevisionForDate(habit, entry.localDate), dayOffSnapshot: (existing?.status !== 'no_entry' ? existing?.dayOffSnapshot : undefined) ?? entry.dayOffSnapshot ?? (await tx.getAll<DayOffAnnotation>(STORE_NAMES.dayOffAnnotations)).some(d => d.localDate === entry.localDate), revision: nextRev };
         validateHabitEntryRecord(record, new Set([habit.id]));
         await tx.put(STORE_NAMES.habitEntries, record);
+        await this.releaseHabitOccurrenceSessions(tx, record, record.updatedAt);
         const settings = await this.ensureSettingsInTx(tx, record.updatedAt);
         return { record, dbGeneration: settings.dbGeneration };
       }
@@ -2884,7 +2970,7 @@ export class PlanuiRepositories {
 
     this.tabSync.broadcast({
       type: 'ENTITY_MUTATED',
-      stores: [STORE_NAMES.habitEntries],
+      stores: [STORE_NAMES.habitEntries, STORE_NAMES.reservations],
       dbGeneration: saved.dbGeneration,
       timestamp: saved.record.updatedAt,
     });
@@ -2907,7 +2993,7 @@ export class PlanuiRepositories {
     const nowIso = params.nowIso ?? new Date().toISOString();
 
     const res = await this.engine.runTransaction(
-      [STORE_NAMES.habitEntries, STORE_NAMES.habits, STORE_NAMES.settings],
+      [STORE_NAMES.habitEntries, STORE_NAMES.habits, STORE_NAMES.settings, STORE_NAMES.reservations, STORE_NAMES.dayOffAnnotations],
       'readwrite',
       async (tx) => {
         const habit = await tx.get<Habit>(STORE_NAMES.habits, params.habitId);
@@ -2934,12 +3020,20 @@ export class PlanuiRepositories {
 
         let savedEntry: HabitEntry | null = null;
         if (mutation.action === 'delete') {
-          await tx.delete(STORE_NAMES.habitEntries, mutation.entryId);
-          savedEntry = null;
+          const hasSession = (await tx.getAll<TaskReservation>(STORE_NAMES.reservations)).some(r => r.habitOccurrence?.entryId === mutation.entryId);
+          if (hasSession && existingEntry) {
+            savedEntry = { ...existingEntry, status: 'no_entry', numericValue: null, minimumCompletedUk: null, revision: existingEntry.revision + 1, updatedAt: nowIso };
+            await tx.put(STORE_NAMES.habitEntries, savedEntry);
+          } else { await tx.delete(STORE_NAMES.habitEntries, mutation.entryId); savedEntry = null; }
         } else if (mutation.action === 'upsert') {
+          mutation.entry.ruleSnapshot = (existingEntry?.status !== 'no_entry' ? existingEntry?.ruleSnapshot : undefined) ?? getEffectiveHabitRuleRevisionForDate(habit, params.localDate);
+          mutation.entry.dayOffSnapshot = (existingEntry?.status !== 'no_entry' ? existingEntry?.dayOffSnapshot : undefined) ?? (await tx.getAll<DayOffAnnotation>(STORE_NAMES.dayOffAnnotations)).some(d => d.localDate === params.localDate);
+          const collision = await tx.get<HabitEntry>(STORE_NAMES.habitEntries, mutation.entry.id);
+          if (collision && (collision.habitId !== habit.id || collision.localDate !== params.localDate)) throw new PlanuiError('STALE_WRITE_CONFLICT');
           validateHabitEntryRecord(mutation.entry, new Set([habit.id]));
           await tx.put(STORE_NAMES.habitEntries, mutation.entry);
           savedEntry = mutation.entry;
+          await this.releaseHabitOccurrenceSessions(tx, savedEntry, nowIso);
         } else {
           savedEntry = existingEntry;
         }
@@ -2951,7 +3045,7 @@ export class PlanuiRepositories {
 
     this.tabSync.broadcast({
       type: 'ENTITY_MUTATED',
-      stores: [STORE_NAMES.habitEntries],
+      stores: [STORE_NAMES.habitEntries, STORE_NAMES.reservations],
       dbGeneration: res.dbGeneration,
       timestamp: nowIso,
     });
@@ -2966,10 +3060,13 @@ export class PlanuiRepositories {
     this.tabSync.assertNoRemoteImportInProgress();
 
     const res = await this.engine.runTransaction(
-      [STORE_NAMES.habitEntries, STORE_NAMES.settings],
+      [STORE_NAMES.habitEntries, STORE_NAMES.settings, STORE_NAMES.reservations],
       'readwrite',
       async (tx) => {
-        await tx.delete(STORE_NAMES.habitEntries, entryId);
+        const entry = await tx.get<HabitEntry>(STORE_NAMES.habitEntries, entryId);
+        const referenced = (await tx.getAll<TaskReservation>(STORE_NAMES.reservations)).some(s => s.habitOccurrence?.entryId === entryId);
+        if (entry && referenced) await tx.put(STORE_NAMES.habitEntries, { ...entry, status: 'no_entry', numericValue: null, minimumCompletedUk: null, revision: entry.revision + 1, updatedAt: nowIso });
+        else await tx.delete(STORE_NAMES.habitEntries, entryId);
         const settings = await this.ensureSettingsInTx(tx, nowIso);
         return { dbGeneration: settings.dbGeneration };
       }
@@ -2993,7 +3090,7 @@ export class PlanuiRepositories {
     this.tabSync.assertNoRemoteImportInProgress();
 
     const res = await this.engine.runTransaction(
-      [STORE_NAMES.habits, STORE_NAMES.habitEntries, STORE_NAMES.settings],
+      [STORE_NAMES.habits, STORE_NAMES.habitEntries, STORE_NAMES.settings, STORE_NAMES.reservations],
       'readwrite',
       async (tx) => {
         const existingHabit = await tx.get<Habit>(STORE_NAMES.habits, habitId);
@@ -3012,6 +3109,7 @@ export class PlanuiRepositories {
           }
         }
 
+        for (const session of await tx.getAll<TaskReservation>(STORE_NAMES.reservations)) if (session.habitOccurrence?.habitId === habitId) await tx.delete(STORE_NAMES.reservations, session.id);
         await tx.delete(STORE_NAMES.habits, habitId);
         const settings = await this.ensureSettingsInTx(tx, nowIso);
         return {
@@ -3023,7 +3121,7 @@ export class PlanuiRepositories {
 
     this.tabSync.broadcast({
       type: 'ENTITY_MUTATED',
-      stores: [STORE_NAMES.habits, STORE_NAMES.habitEntries],
+      stores: [STORE_NAMES.habits, STORE_NAMES.habitEntries, STORE_NAMES.reservations],
       dbGeneration: res.dbGeneration,
       timestamp: nowIso,
     });

@@ -266,3 +266,15 @@ M6 numbering note: legacy AT-M06-01/02/03 references in habit rows retain their 
 | Preferred-life framing/prompts, independent fragments and local media/links/relationships | Existing inspiration form/store/media pipeline plus collections, lifeAreaId/goalId; M7 reference/merge/deletion and link tests; Stage 10 media tests |
 | Legacy inspiration and disabled-module export | Saved collection fallback; module preferences retained; real ZIP replacement tests and disabled-history browser check |
 | No inferred sleep, causal/medical claims or automatic planning | Explicit user fields and neutral UI only; no scheduling-engine changes |
+
+## M8 coverage
+
+| Requirement | Implementation / verification |
+|---|---|
+| Optional embedded Today habits; no primary destination; disabled preservation | App/Today reuse HabitsWorkspaceView; 4-destination Chromium check; disabled session/calendar/ZIP tests |
+| Preserve daily/weekdays/weekly and binary/numeric, states, history and night-shift logging | Existing habit engine plus optional snapshots; original Stage 9 and M8 tests; explicit-date/yesterday UI retained |
+| Minimum text, cue, reminder intention, area/direction/project links | Existing creation/edit forms, reference validation and safe unlinking; Chromium metadata round-trip and M8 direction test |
+| Explicit days off with overnight carry-in and no inferred sleep | days_off rule + actual markers; 480-minute carry-in test and frozen-log/future-marker-change test |
+| Immutable effective revisions and historic target/unit interpretation | append-only revisions, transactional legacy-log pinning, future revision display; M8 legacy numeric snapshot and equal-time revision tests |
+| Canonical sessions and once-only completion/shared lifecycle | Existing reservation store/projection + habitOccurrence pointers; multi-session, truncation, cancellation, clear/reopen, failure rollback and calendar completion tests |
+| Migration and backups | Metadata-only schema v7; v1–v7 import; exact native v6→v7 preservation and real ZIP replacement with disabled habits |

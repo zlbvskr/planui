@@ -44,8 +44,8 @@ export function projectLifeAreaLinks(snapshot: LifeLinkSource): LifeAreaLink[] {
   for (const e of snapshot.events) add('event', e, e.title);
   for (const r of snapshot.reservations) {
     const task = snapshot.tasks.find(t => t.id === r.taskId);
-    const parent = task && result.get(`task:${task.id}`);
-    result.set(`reservation:${r.id}`, { kind: 'reservation', id: r.id, title: task?.title ?? 'Запланована дія', revision: r.revision, effectiveId: parent?.effectiveId ?? null, directId: null, inheritedId: parent?.effectiveId ?? null, taskId: r.taskId });
+    const parent = task ? result.get(`task:${task.id}`) : (r.habitOccurrence ? result.get(`habit:${r.habitOccurrence.habitId}`) : undefined);
+    result.set(`reservation:${r.id}`, { kind: 'reservation', id: r.id, title: task?.title ?? 'Запланована дія', revision: r.revision, effectiveId: parent?.effectiveId ?? null, directId: null, inheritedId: parent?.effectiveId ?? null, taskId: r.taskId ?? undefined });
   }
   return [...result.values()];
 }

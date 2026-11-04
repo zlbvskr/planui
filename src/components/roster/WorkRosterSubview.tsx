@@ -207,6 +207,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
       '0'
     )}-14`
   );
+  const [cyclePattern,setCyclePattern]=useState('');
   const [cycleEveryDays, setCycleEveryDays] = useState('');
   const [periodWeekdays, setPeriodWeekdays] = useState<number[]>([0, 2, 4]);
   const [periodActionKind, setPeriodActionKind] = useState<
@@ -432,6 +433,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
       const preview = generateFinitePeriodRosterPreview({
         startDate: periodStart,
         endDate: periodEnd,
+        cycleTemplateSequence: cyclePattern.trim()?cyclePattern.split(',').map(code=>{const key=code.trim();if(key==='-')return null;const template=shiftTemplates.find(template=>template.code===key);if(!template)throw new Error(`Невідомий код шаблону: ${key}`);return template;}):undefined,
         cycleEveryDays: cycleEveryDays ? Number(cycleEveryDays) : undefined,
         selectedWeekdaysMondayFirst: periodWeekdays,
         action: actionSpec,
@@ -465,6 +467,8 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
     periodEnd,
     periodWeekdays,
     cycleEveryDays,
+    cyclePattern,
+    shiftTemplates,
     displayZone,
     events,
     reservations,
@@ -2005,6 +2009,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
             </div>
           </div>
 
+          <InputField label="Послідовність циклу" value={cyclePattern} onChange={e=>setCyclePattern(e.target.value)} hint="Коди ваших шаблонів через кому; - означає вихідний. Наприклад: Д,Н,-,-. Повторюється лише в обраному періоді." />
           <InputField label="Повтор кожні N днів (необов’язково)" type="number" min="1" max="366" value={cycleEveryDays} onChange={e => setCycleEveryDays(e.target.value)} hint="Цикл розгортається лише в обраному періоді. Редагування однієї зміни не змінює решту." />
           <SelectField
             label="Дія для відібраних дат періоду"

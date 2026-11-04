@@ -645,6 +645,7 @@ export function prepareMultiDateRosterBatch(params: {
 export function generateFinitePeriodRosterPreview(params: {
   startDate: LocalDateString;
   endDate: LocalDateString;
+  cycleTemplateSequence?: readonly (ShiftTemplate | null)[];
   cycleEveryDays?: number;
   selectedWeekdaysMondayFirst?: readonly number[]; // 0 = Monday .. 6 = Sunday
   explicitDatesFilter?: readonly LocalDateString[];
@@ -679,6 +680,13 @@ export function generateFinitePeriodRosterPreview(params: {
     params.startDate,
     params.endDate
   );
+
+  if(params.cycleTemplateSequence){
+    const sequence=params.cycleTemplateSequence;if(!sequence.length||sequence.length>366)throw new PlanuiError('VALIDATION_FAILED');
+    const sequencePrefix=params.idPrefix??`roster-cycle-${Date.now()}`;
+    const items=allDatesInPeriod.flatMap((date,index)=>prepareMultiDateRosterBatch({selectedDates:[date],action:sequence[index%sequence.length]?{kind:'template_shift',template:sequence[index%sequence.length]!}:{kind:'day_off'},lockedZoneId:params.lockedZoneId,existingEvents:params.existingEvents,existingReservations:params.existingReservations,existingDayOffAnnotations:params.existingDayOffAnnotations,nowIso:params.nowIso,idPrefix:`${sequencePrefix}-${index}`}).items);
+    return finalizeRosterBatchPreview({lockedZoneId:params.lockedZoneId,items,existingEvents:params.existingEvents,existingReservations:params.existingReservations,existingDayOffAnnotations:params.existingDayOffAnnotations});
+  }
 
   const explicitSet = params.explicitDatesFilter
     ? new Set(params.explicitDatesFilter)

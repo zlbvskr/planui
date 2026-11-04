@@ -286,8 +286,8 @@ export class IndexedDbStorageEngine implements StorageEngine {
           };
         }
 
-        // v5 only advances storage metadata. Existing areas/assessments remain byte-for-byte intact.
-        if (oldVersion >= 4 && oldVersion < 5 && req.transaction) {
+        // v5/v6 advance storage metadata only; existing personal records, inspiration, areas and assessments remain intact.
+        if (oldVersion >= 4 && oldVersion < 6 && req.transaction) {
           const request = req.transaction.objectStore(STORE_NAMES.settings).openCursor();
           request.onsuccess = () => {
             const cursor = request.result;

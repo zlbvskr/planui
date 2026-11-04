@@ -563,3 +563,9 @@ The live migration adds an empty dictionary. Daily focus does not create task co
 Minimal-day filtering keeps focus tasks, tasks with deadlines and tasks with retained sessions. It never changes source records or availability. Released future placeholders do not qualify as current dated work. Historical sessions remain inspectable. Effort is manually selected only.
 
 Today selected date/mode/scroll is optional sessionStorage interaction context (planui.today-context.v1), excluded from domain backups. The existing persisted next-day collapse preference remains authoritative. The session fallback validates dates/modes/scroll and ignores corrupt context safely.
+
+## M7 additive model, schema v6
+
+`PersonalRecord` remains the single canonical record: optional `scaleVersion: 1`, `sleepMinutes: number | null` (integer 0–1440), `sleepQuality: Scale1To5 | null`. Absent fields on historical entries remain absent; existing mood/energy/stress values and text are never rewritten. `scaleVersion` points to the Ukrainian mood, energy, tension and sleep-quality labels in `STATE_SCALE_V1`. Missing historical scale metadata uses the original version-1 1–5 meanings. New explicit check-ins with no answers remain identifiable by scaleVersion; text-only legacy entries remain archive material.
+
+`InspirationItem` adds optional `collection: 'preferred_life' | 'saved'`, `lifeAreaId`, `goalId`; existing `projectId`, favorites, kind, text, links and media remain canonical. Missing collection means saved inspiration, without rewriting stored records. A fragment can contain an image and safe link together. Goal deletion unlinks fragments transactionally; area merge includes fragments in the reviewed revision signature and transfers direct references. No new object stores or duplicated historical records.

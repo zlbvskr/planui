@@ -3,9 +3,9 @@
  */
 
 export const PLANUI_APP_VERSION = '0.3.0';
-export const PLANUI_DB_SCHEMA_VERSION = 5;
+export const PLANUI_DB_SCHEMA_VERSION = 6;
 export const PLANUI_BACKUP_FORMAT = 'planui-backup-zip' as const;
-export const PLANUI_BACKUP_VERSION = 5;
+export const PLANUI_BACKUP_VERSION = 6;
 
 export type EntityId = string;
 export type IsoInstantString = string;
@@ -318,6 +318,9 @@ export type Scale1To5 = 1 | 2 | 3 | 4 | 5;
 export type Scale1To10 = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 
 export interface PersonalRecord {
+  scaleVersion?: 1;
+  sleepMinutes?: number | null;
+  sleepQuality?: Scale1To5 | null;
   id: EntityId;
   recordedAt: IsoInstantString;
   localDate: LocalDateString;
@@ -393,6 +396,9 @@ export type InspirationKind = 'text' | 'quote' | 'link' | 'image';
 export type InspirationItemKind = InspirationKind;
 
 export interface InspirationItem {
+  collection?: 'preferred_life' | 'saved';
+  lifeAreaId?: EntityId | null;
+  goalId?: EntityId | null;
   id: EntityId;
   kind: InspirationKind;
   title: string | null;

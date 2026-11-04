@@ -11,7 +11,7 @@ import { TaskPlanningSheet } from '../components/today/TaskPlanningSheet';
 import { RoadmapView } from './RoadmapView';
 
 const EMPTY_ANSWER: ReviewAnswerDraft = { score: null, attentionNow: null, usefulChangeUk: null };
-const KIND_UK = { folder: 'Напрям', goal: 'Ціль', project: 'Проєкт', task: 'Завдання', habit: 'Звичка', event: 'Подія', reservation: 'Запланована дія' };
+const KIND_UK = { inspiration: 'Матеріал', folder: 'Напрям', goal: 'Ціль', project: 'Проєкт', task: 'Завдання', habit: 'Звичка', event: 'Подія', reservation: 'Запланована дія' };
 
 function AreaEditor({ area, repositories, onChanged }: { area: LifeAreaQuestion; repositories: PlanuiRepositories; onChanged: () => Promise<void> | void }) {
   const [name, setName] = useState(area.questionTextUk), [definition, setDefinition] = useState(area.goodEnoughUk ?? ''), [archived, setArchived] = useState(!!area.archived), [error, setError] = useState('');

@@ -645,7 +645,7 @@ export class PlanuiRepositories {
 
     return this.engine.runTransaction(
       [
-        STORE_NAMES.goals,
+        STORE_NAMES.inspirationItems, STORE_NAMES.goals,
         STORE_NAMES.projects,
         STORE_NAMES.stages,
         STORE_NAMES.tasks,
@@ -712,6 +712,9 @@ export class PlanuiRepositories {
 
         for (const stage of await tx.getAll<ProjectStage>(STORE_NAMES.stages)) {
           if (stage.goalId === goalId) await tx.delete(STORE_NAMES.stages, stage.id);
+        }
+        for (const item of await tx.getAll<InspirationItem>(STORE_NAMES.inspirationItems)) {
+          if (item.goalId === goalId) await tx.put(STORE_NAMES.inspirationItems, { ...item, goalId: null, revision: item.revision + 1, updatedAt: nowIso });
         }
         await tx.delete(STORE_NAMES.goals, goalId);
 
@@ -3093,7 +3096,7 @@ export class PlanuiRepositories {
 
   public async setLifeAreaLink(kind: Exclude<LifeLinkKind, 'reservation'>, id: string, areaId: string | null, expectedRevision: number): Promise<void> {
     this.tabSync.assertNoRemoteImportInProgress();
-    const stores = { folder: STORE_NAMES.folders, goal: STORE_NAMES.goals, project: STORE_NAMES.projects, task: STORE_NAMES.tasks, habit: STORE_NAMES.habits, event: STORE_NAMES.events };
+    const stores = { inspiration: STORE_NAMES.inspirationItems, folder: STORE_NAMES.folders, goal: STORE_NAMES.goals, project: STORE_NAMES.projects, task: STORE_NAMES.tasks, habit: STORE_NAMES.habits, event: STORE_NAMES.events };
     const store = stores[kind];
     if (!store) throw new PlanuiError('VALIDATION_FAILED');
     await this.engine.runTransaction([store, STORE_NAMES.lifeAreaQuestions], 'readwrite', async tx => {
@@ -3134,13 +3137,13 @@ export class PlanuiRepositories {
   public async mergeLifeAreas(sourceId: string, targetId: string, sourceRevision: number, targetRevision: number, reviewedSignature: string, explicitConfirmation: boolean): Promise<void> {
     this.tabSync.assertNoRemoteImportInProgress();
     if (!explicitConfirmation || sourceId === targetId) throw new PlanuiError('VALIDATION_FAILED');
-    const stores = { folder: STORE_NAMES.folders, goal: STORE_NAMES.goals, project: STORE_NAMES.projects, task: STORE_NAMES.tasks, habit: STORE_NAMES.habits, event: STORE_NAMES.events };
+    const stores = { inspiration: STORE_NAMES.inspirationItems, folder: STORE_NAMES.folders, goal: STORE_NAMES.goals, project: STORE_NAMES.projects, task: STORE_NAMES.tasks, habit: STORE_NAMES.habits, event: STORE_NAMES.events };
     await this.engine.runTransaction([STORE_NAMES.lifeAreaQuestions, ...Object.values(stores), STORE_NAMES.reservations], 'readwrite', async tx => {
       const areas = await tx.getAll<LifeAreaQuestion>(STORE_NAMES.lifeAreaQuestions);
       const source = areas.find(a => a.id === sourceId), target = areas.find(a => a.id === targetId);
       if (!source || !target || source.mergedIntoId || target.mergedIntoId || target.archived) throw new PlanuiError('VALIDATION_FAILED');
       this.assertRevisionMatch(source, sourceRevision); this.assertRevisionMatch(target, targetRevision);
-      const data: LifeLinkSource = { folders: await tx.getAll(STORE_NAMES.folders), goals: await tx.getAll(STORE_NAMES.goals), projects: await tx.getAll(STORE_NAMES.projects), tasks: await tx.getAll(STORE_NAMES.tasks), habits: await tx.getAll(STORE_NAMES.habits), events: await tx.getAll(STORE_NAMES.events), reservations: await tx.getAll(STORE_NAMES.reservations) };
+      const data: LifeLinkSource = { inspirationItems: await tx.getAll<InspirationItem>(STORE_NAMES.inspirationItems), folders: await tx.getAll(STORE_NAMES.folders), goals: await tx.getAll(STORE_NAMES.goals), projects: await tx.getAll(STORE_NAMES.projects), tasks: await tx.getAll(STORE_NAMES.tasks), habits: await tx.getAll(STORE_NAMES.habits), events: await tx.getAll(STORE_NAMES.events), reservations: await tx.getAll(STORE_NAMES.reservations) };
       if (lifeAreaMergeSignature(data, sourceId) !== reviewedSignature) throw new PlanuiError('STALE_WRITE_CONFLICT');
       const now = new Date().toISOString();
       for (const link of directMergeLinks(data, sourceId)) {
@@ -3263,7 +3266,7 @@ export class PlanuiRepositories {
 
     const saved = await this.engine.runTransaction(
       [
-        STORE_NAMES.inspirationItems,
+        STORE_NAMES.goals, STORE_NAMES.lifeAreaQuestions, STORE_NAMES.inspirationItems,
         STORE_NAMES.mediaMeta,
         STORE_NAMES.mediaBlobs,
         STORE_NAMES.settings,
@@ -3292,6 +3295,8 @@ export class PlanuiRepositories {
         const nextRev = this.assertRevisionMatch(existing, expectedRevision);
         const record: InspirationItem = { ...item, revision: nextRev };
         validateInspirationItemRecord(record, mediaIds);
+        if (record.goalId != null && !await tx.get(STORE_NAMES.goals, record.goalId)) throw new PlanuiError('VALIDATION_FAILED');
+        if (record.lifeAreaId != null && !await tx.get(STORE_NAMES.lifeAreaQuestions, record.lifeAreaId)) throw new PlanuiError('VALIDATION_FAILED');
         await tx.put(STORE_NAMES.inspirationItems, record);
         const settings = await this.ensureSettingsInTx(tx, record.updatedAt);
         return { record, dbGeneration: settings.dbGeneration };

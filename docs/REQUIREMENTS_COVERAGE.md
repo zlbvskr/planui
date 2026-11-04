@@ -256,3 +256,13 @@ This document defines stable requirement identifiers (`REQ-C01-*` through `REQ-C
 
 
 M6 numbering note: legacy AT-M06-01/02/03 references in habit rows retain their former scope and are not claimed as completed here. The latest life-area M6 request uses AT-M06-LA-01 through AT-M06-LA-05 to avoid reusing those identifiers with a different meaning.
+
+## M7 coverage (latest explicit stage scope)
+
+| Requirement | Implementation / verification |
+|---|---|
+| Voluntary optional state and sleep; versioned 1–5 scales; explicit dates, multiple entries, edits/deletion | StateCheckInsView, global editor, stateCheckIns.ts, validatePersonalRecord; M7 unit and Chromium smoke checks |
+| Preserve unified diary text/IDs/timestamps/scores; secondary read/copy/export/delete archive | Existing PersonalRecord store and ZIP arrays unchanged; legacy classification, selected JSON export; unit ZIP and native v5→v6 Chromium checks |
+| Preferred-life framing/prompts, independent fragments and local media/links/relationships | Existing inspiration form/store/media pipeline plus collections, lifeAreaId/goalId; M7 reference/merge/deletion and link tests; Stage 10 media tests |
+| Legacy inspiration and disabled-module export | Saved collection fallback; module preferences retained; real ZIP replacement tests and disabled-history browser check |
+| No inferred sleep, causal/medical claims or automatic planning | Explicit user fields and neutral UI only; no scheduling-engine changes |

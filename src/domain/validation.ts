@@ -546,6 +546,9 @@ export function validatePersonalRecord(rec: PersonalRecord): PersonalRecord {
   assertOptionalScale1To5(rec.mood);
   assertOptionalScale1To5(rec.energy);
   assertOptionalScale1To5(rec.stress);
+  assertOptionalScale1To5(rec.sleepQuality);
+  if (rec.scaleVersion !== undefined && rec.scaleVersion !== 1) throw new PlanuiError('VALIDATION_FAILED');
+  if (rec.sleepMinutes != null && (!Number.isInteger(rec.sleepMinutes) || rec.sleepMinutes < 0 || rec.sleepMinutes > 1440)) throw new PlanuiError('VALIDATION_FAILED');
   assertValidIsoInstant(rec.createdAt);
   assertValidIsoInstant(rec.updatedAt);
   assertPositiveRevision(rec.revision);
@@ -848,7 +851,8 @@ export function validateInspirationItemRecord(
       throw new PlanuiError('PROJECT_NOT_FOUND', item.projectId);
     }
   }
-  if (item.kind === 'link') {
+  if (item.collection !== undefined && !['preferred_life', 'saved'].includes(item.collection)) throw new PlanuiError('VALIDATION_FAILED');
+  if (item.linkUrl != null || item.kind === 'link') {
     if (!item.linkUrl) {
       throw new PlanuiError('UNSAFE_INSPIRATION_URL');
     }
@@ -861,7 +865,8 @@ export function validateInspirationItemRecord(
       if (err instanceof PlanuiError) throw err;
       throw new PlanuiError('UNSAFE_INSPIRATION_URL', item.linkUrl);
     }
-  } else if (item.kind === 'image') {
+  }
+  if (item.mediaId != null || item.kind === 'image') {
     if (!item.mediaId) {
       throw new PlanuiError('MISSING_REFERENCED_MEDIA', item.id);
     }
@@ -1210,6 +1215,8 @@ export function validateDomainSnapshot(
   const inspirationIds = new Set<string>();
   for (const ins of snapshot.inspirationItems) {
     validateInspirationItemRecord(ins, mediaIds, projectIds);
+    if (ins.goalId != null && !snapshot.goals.some(g => g.id === ins.goalId)) throw new PlanuiError('VALIDATION_FAILED');
+    if (ins.lifeAreaId != null && !snapshot.lifeAreaQuestions.some(a => a.id === ins.lifeAreaId)) throw new PlanuiError('VALIDATION_FAILED');
     if (inspirationIds.has(ins.id)) {
       throw new PlanuiError('INVALID_ID', ins.id);
     }

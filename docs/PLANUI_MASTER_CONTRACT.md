@@ -1008,3 +1008,11 @@ Do not claim unperformed tests or measurements.
 Do not dump the complete codebase into chat.
 
 Stop after reporting and wait for the next instruction.
+
+## M7 latest approved scope (2026-11-04)
+
+The explicit M7 request combines optional state check-ins and preferred-life material, superseding the former M8/M9 labels for these delivered features. Deferred habit alignment is unchanged.
+
+New state input is a short voluntary check-in, never a diary-writing form. Mood, energy and tension retain their existing 1–5 meanings; optional sleep duration (integer minutes, 0–1440) and subjective sleep quality (1 very poor–5 very good) are user-entered. New records carry scaleVersion 1. Multiple records per local date are independent; editing preserves identity, original timestamp, zone, text and tags. Historical text is available in a secondary read/copy/selected-export/explicit-delete archive. Text-only legacy notes are never fabricated into scored check-ins. No cause, diagnosis, treatment or automatic workload conclusions are produced.
+
+“Моє бажане життя”, framed “Як я бачу своє ідеальне життя”, reuses inspiration/media stores. New fragments may contain title/text, local JPEG/PNG/WebP, HTTP/S links and optional life-area, goal and existing project links. Optional prompts cover ordinary days, relationships, work/rest, creativity, and more/less. No automatic task/goal/date conversion or external fetching. Existing unclassified inspiration remains in “Збережене натхнення”. Disabling either module retains its data and complete ZIP coverage.

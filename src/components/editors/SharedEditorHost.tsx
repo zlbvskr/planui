@@ -226,6 +226,8 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
   const [folderName, setFolderName] = useState('');
 
   // Personal record fields (10.2)
+  const [recordSleep, setRecordSleep] = useState('');
+  const [recordSleepQuality, setRecordSleepQuality] = useState('');
   const [recordText, setRecordText] = useState('');
   const [recordMood, setRecordMood] = useState<string>('');
   const [recordEnergy, setRecordEnergy] = useState<string>('');
@@ -361,6 +363,8 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
       setStageTargetDate(null);
 
       setFolderName('');
+      setRecordSleep('');
+      setRecordSleepQuality('');
       setRecordText('');
       setRecordMood('');
       setRecordEnergy('');
@@ -433,7 +437,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
     folderName.trim().length > 0 ||
     habitName.trim().length > 0 ||
     habitDescription.trim().length > 0 ||
-    recordText.trim().length > 0 ||
+    recordSleep !== '' || recordSleepQuality !== '' || recordText.trim().length > 0 ||
     recordMood !== '' ||
     recordEnergy !== '' ||
     recordStress !== '' ||
@@ -1026,7 +1030,10 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
           recordedAt: nowIso,
           localDate: editableContext.targetDate ?? nowIso.slice(0, 10),
           zoneId: lockedEditorZone,
-          text: recordText.trim() ? recordText.trim() : null,
+          text: null,
+          scaleVersion: 1,
+          sleepMinutes: recordSleep === '' ? null : Number(recordSleep),
+          sleepQuality: recordSleepQuality === '' ? null : Number(recordSleepQuality) as 1 | 2 | 3 | 4 | 5,
           mood: parsedMood,
           energy: parsedEnergy,
           stress: parsedStress,
@@ -1080,7 +1087,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
           nowIso,
         });
         await repositories.saveInspirationWithMediaTransactionally(
-          item,
+          { ...item, collection: 'preferred_life' },
           preparedMedia
         );
         onEntityCreated(`Елемент натхнення збережено${optFeedback}.`);
@@ -2736,13 +2743,8 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
 
         {selectedAction === 'personal_record' && (
           <div className="space-y-3.5" data-testid="create-personal-record-form">
-            <TextAreaField
-              label={UK_STRINGS.creation.recordForm.textLabel}
-              placeholder={UK_STRINGS.creation.recordForm.textPlaceholder}
-              value={recordText}
-              onChange={(e) => setRecordText(e.target.value)}
-              data-testid="create-record-text-input"
-            />
+            <InputField label="Тривалість сну, хвилини (необов’язково)" type="number" min="0" max="1440" step="1" value={recordSleep} onChange={e => setRecordSleep(e.target.value)} />
+            <SelectField label="Суб’єктивна якість сну" value={recordSleepQuality} onChange={e => setRecordSleepQuality(e.target.value)} options={[{value: '', label: 'Не вказано'}, ...['Дуже погана', 'Погана', 'Посередня', 'Добра', 'Дуже добра'].map((label,i) => ({value: String(i+1), label}))]} />
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <SelectField
                 label={PERSONAL_STATE_QUESTIONS_UK.mood}

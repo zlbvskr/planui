@@ -97,3 +97,12 @@ The active product revision `PLANUI-LIFE-ALIGNMENT-1` supersedes earlier product
 - New reviews use an explicit inclusive date period and 0–10 metadata. Null differs from zero, false or deliberately empty text. Missing legacy scale means 1–10, never conversion to zero-based values. Preserve original identity, wording, version, definitions, periods and answers; normal saved assessments are immutable.
 - Reuse M1 effective inheritance and direct precedence. Add optional direct links only where needed for directions/tasks/events; project habits and reservations dynamically. No duplicate assignments, total score, life ranking or automatic score changes from work completion.
 - Review-to-action steps use ordinary editors or explicit confirmation. Answers themselves have no scheduling effects. Manual planning review requires no report, recurrence, notification permission or journal.
+
+## M7 latest approved scope (2026-11-04)
+
+- The explicit M7 request delivers state check-ins and preferred life together; former M8/M9 feature labels are superseded, without reassigning deferred habits.
+- Extend unified PersonalRecord and InspirationItem; do not split or copy legacy text/scored entries or relabel all inspiration as preferred life.
+- Keep the existing mood/energy/tension 1–5 labels. Version-1 subjective sleep quality rises from very poor to very good. Sleep duration is integer minutes 0–1440; zero and absence differ. Never infer sleep from events.
+- New forms have no diary field. Editing a check-in preserves original text and timestamps; historical text is readable/copyable/exportable and removable only through explicit deletion.
+- Missing inspiration collection means saved inspiration. A new preferred-life fragment never automatically creates a planning entity. HTTP/S links require user opening; no external fetches.
+- Database/ZIP v6 retains all old stores and supports v1–v5 imports. No reset, seed or destructive migration.

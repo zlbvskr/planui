@@ -501,7 +501,7 @@ export function buildInspirationItemRecord(params: {
       : null;
 
   let linkUrl: string | null = null;
-  if (params.kind === 'link') {
+  if (params.linkUrl?.trim() || params.kind === 'link') {
     linkUrl = validateSafeHttpUrl(params.linkUrl ?? '');
   } else if (params.kind === 'text' || params.kind === 'quote') {
     if (!contentText && !title) {

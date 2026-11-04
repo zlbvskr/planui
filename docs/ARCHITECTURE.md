@@ -126,3 +126,9 @@ Area merge is a single transaction over areas and the live relationship stores. 
 Review answers alone write only a review record. Planning effects route through explicit linking/task editors, project pause confirmation, normal scope editors, the shared roadmap, or the M5 exact reservation/assignment preview. Manual planning review uses canonical events including non-blocking recovery, reservations and date/deadline tasks with origin-zone interval semantics and union occupancy. It never assumes free time implies usable energy.
 
 This user-approved M6 scope supersedes the earlier habit-stage numbering only for the requested work; habit rule enhancements remain deferred. Native browser/device verification remains outstanding.
+
+## M7 state and preferred-life integration
+
+`StateCheckInsView` replaces new diary forms with optional scales, explicit calendar date and user-entered sleep; edits preserve original text/timestamps. Secondary archive provides reading/copying, selected JSON export and confirmed deletion. Existing data stays accessible from Я when modules are disabled. Global creation also has no new diary-text field. `stateCheckIns.ts` centralizes scale metadata, history classification and personal export.
+
+Preferred-life fragments use the existing transactional inspiration/media repository and object-URL lifecycle. Existing inspiration is a separate saved collection; no external previews. New references are checked transactionally and during ZIP import. Life-area projections/merge signatures include inspiration; goal deletion unlinks its fragments. Migration v6 changes metadata only.

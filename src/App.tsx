@@ -106,6 +106,7 @@ export function App() {
   >([]);
   const [habitFilter, setHabitFilter] = useState<'active' | 'paused' | 'archived'>('active');
   const [habitOccurrence, setHabitOccurrence] = useState<{habitId: string; date: string} | null>(null);
+  const [quickAdd, setQuickAdd] = useState(false);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   useEffect(() => { if (habitOccurrence && snapshot && !snapshot.habits.some(h => h.id === habitOccurrence.habitId)) setHabitOccurrence(null); }, [habitOccurrence, snapshot]);
   const [isLocalModalOpen, setIsLocalModalOpen] = useState(false);
@@ -340,6 +341,7 @@ export function App() {
   const openGlobalCreation = (
     preferredAction?: ImplementedCreationActionKind
   ) => {
+    setQuickAdd(false);
     setEditorInitialAction(preferredAction);
     setIsEditorOpen(true);
   };
@@ -520,7 +522,7 @@ export function App() {
       <FloatingShell
         activeDestination={activeDestination}
         onSelectDestination={handleSelectDestination}
-        onOpenGlobalCreate={() => openGlobalCreation('task')}
+        onOpenGlobalCreate={() => { openGlobalCreation('task'); setQuickAdd(true); }}
         isModalOpen={anyModalOpen}
         isBackgroundInert={Boolean(habitOccurrence) || isEditorOpen || isLocalModalOpen || Boolean(activeGapForPicker) || Boolean(inspectedEvent)}
       >
@@ -785,7 +787,7 @@ export function App() {
         isOpen={isEditorOpen}
         activeDestination={activeDestination}
         contexts={contexts}
-        initialContext={buildInitialCreationContext(
+        initialContext={quickAdd ? { ...buildInitialCreationContext(activeDestination, contexts), targetDate: null, folderId: null, goalId: null, projectId: null, stageId: null } : buildInitialCreationContext(
           activeDestination,
           contexts
         )}

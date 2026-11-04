@@ -1,3 +1,4 @@
+import { selectTaskReviewState } from '../domain/projections';
 import { TodayMode, DailyPlan } from '../domain/types';
 import { EMPTY_DAILY_PLAN, shouldRevealNow, projectTodayTasks, deadlineDate } from '../domain/today';
 import { DailyFocusPanel } from '../components/today/DailyFocusPanel';
@@ -266,6 +267,11 @@ export function TodayWorkspaceView({
         {([{ value: 'day', label: 'День' }, { value: 'tasks', label: 'Завдання' }, ...(habitsEnabled ? [{ value: 'habits', label: 'Звички' }] : [])] as { value: TodayMode; label: string }[]).map(option => <Button key={option.value} aria-pressed={effectiveMode === option.value} variant={effectiveMode === option.value ? 'primary' : 'secondary'} onClick={() => onChangeMode(option.value)}>{option.label}</Button>)}
         {selectedDate === actualTodayDate && effectiveMode === 'day' && <Button onClick={revealCurrentTime}>До поточного часу</Button>}
       </nav>
+      {selectedDate === actualTodayDate && tasks.some(task => selectTaskReviewState(task, actualTodayDate) === 'needs_triage') && <details className="rounded-3xl p-4" style={{ background: 'var(--surface-card-elevated)', border: '1px solid var(--border-subtle)' }}>
+        <summary className="cursor-pointer">Переглянути попередні плани</summary>
+        <p>Ці справи залишилися на попередніх датах. Оберіть наступний крок, коли будете готові.</p>
+        <ul>{tasks.filter(task => selectTaskReviewState(task, actualTodayDate) === 'needs_triage').map(task => <li key={task.id} data-review-state="needs_triage"><Button variant="secondary" onClick={() => setPlanningTask({ task })}>{task.title}</Button></li>)}</ul>
+      </details>}
       <DailyFocusPanel key={selectedDate + ':' + JSON.stringify(dailyPlan)} date={selectedDate} zone={activeZone} plan={dailyPlan} tasks={tasks} reservations={reservations} repositories={repositories} onChanged={() => onDataChanged()} />
       {dailyPlan.minimalDay && effectiveMode !== 'day' && <Card className="space-y-2" data-testid="today-minimal-commitments">
         <h2 className="font-semibold">Зобов’язання та зайнятий час залишаються видимими</h2>

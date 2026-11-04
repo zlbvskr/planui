@@ -19,3 +19,15 @@ it('projections retain one task and derive explicit review without rollover', as
  assert.equal(selectTodayTasks(snapshot,'2026-11-04')[0].state,'completed');
  assert.equal(selectTaskReviewState(task,'2026-11-05'),'completed');
 });
+
+it('direction life area flows through the canonical links without changing satisfaction', async () => {
+ const { projectLifeAreaLinks } = await import('../../domain/lifeAreas');
+ const snapshot = (await new PlanuiRepositories(new InMemoryTransactionalEngine()).captureCoherentSnapshot()).snapshot;
+ const now='2026-11-04T00:00:00Z';
+ snapshot.folders=[{id:'direction',name:'Creative',parentId:null,order:0,createdAt:now,updatedAt:now,revision:1,lifeAreaId:'area'}];
+ snapshot.tasks=[{id:'task',title:'Step',state:'open',priority:'normal',description:null,deadline:null,estimatedDurationMinutes:null,planningState:'unplanned',plannedDate:null,ownership:{kind:'folder',folderId:'direction'},checklist:[],createdAt:now,updatedAt:now,completedAt:null,canceledAt:null,revision:1}];
+ const before=JSON.stringify(snapshot.lifeAreaAssessments);
+ assert.equal(projectLifeAreaLinks(snapshot).find(link=>link.kind==='task')?.effectiveId,'area');
+ snapshot.tasks[0].state='completed';
+ assert.equal(JSON.stringify(snapshot.lifeAreaAssessments),before);
+});

@@ -29,7 +29,7 @@ export type LifeLinkKind = 'folder' | 'goal' | 'project' | 'task' | 'habit' | 'e
 export interface LifeAreaLink { kind: LifeLinkKind; id: string; title: string; revision: number; effectiveId: string | null; directId: string | null; inheritedId: string | null; taskId?: string; projectId?: string }
 export type LifeLinkSource = Pick<PlanuiDomainSnapshot, 'folders' | 'goals' | 'projects' | 'tasks' | 'habits' | 'events' | 'reservations'> & Partial<Pick<PlanuiDomainSnapshot, 'inspirationItems'>>;
 export function projectLifeAreaLinks(snapshot: LifeLinkSource): LifeAreaLink[] {
-  const context = { goalsById: new Map(snapshot.goals.map(g => [g.id, g])), projectsById: new Map(snapshot.projects.map(p => [p.id, p])) };
+  const context = { foldersById: new Map(snapshot.folders.map(f => [f.id, f])), goalsById: new Map(snapshot.goals.map(g => [g.id, g])), projectsById: new Map(snapshot.projects.map(p => [p.id, p])) };
   const result = new Map<string, LifeAreaLink>();
   function add(kind: LifeLinkKind, record: { id: string; revision: number; lifeAreaId?: string | null }, title: string, inherited?: { goalId?: string | null; ownership?: Task['ownership'] }, taskId?: string, projectId?: string) {
     const resolved = resolveEffectiveLifeArea({ ...record, ...inherited }, context);

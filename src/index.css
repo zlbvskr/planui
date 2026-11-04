@@ -1,4 +1,6 @@
 @import "tailwindcss";
+/* Preserve utilities previously discovered in documentation examples. */
+@source inline("backdrop-filter inline resize sticky");
 
 @custom-variant dark (&:where(.dark, .dark *));
 

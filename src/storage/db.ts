@@ -208,11 +208,15 @@ export class IndexedDbStorageEngine implements StorageEngine {
     this.dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
       const req = indexedDB.open(this.dbName, PLANUI_DB_SCHEMA_VERSION);
 
+      let abandoned = false;
       req.onblocked = () => {
+        abandoned = true;
+        this.dbPromise = null;
         reject(new PlanuiError('DB_VERSION_BLOCKED'));
       };
 
       req.onupgradeneeded = (event) => {
+        if (abandoned) { req.transaction?.abort(); return; }
         const db = req.result;
         const oldVersion = event.oldVersion;
 
@@ -286,8 +290,8 @@ export class IndexedDbStorageEngine implements StorageEngine {
           };
         }
 
-        // v5/v6 advance storage metadata only; existing personal records, inspiration, areas and assessments remain intact.
-        if (oldVersion >= 4 && oldVersion < 8 && req.transaction) {
+        // v5–v9 advance metadata only. v9 also prevents older unguarded replacement clients from reopening.
+        if (oldVersion >= 4 && oldVersion < 9 && req.transaction) {
           const request = req.transaction.objectStore(STORE_NAMES.settings).openCursor();
           request.onsuccess = () => {
             const cursor = request.result;
@@ -307,7 +311,7 @@ export class IndexedDbStorageEngine implements StorageEngine {
               const task = cursor.value;
               let changed = false;
               if (task && task.ownership) {
-                if (task.ownership.kind === 'standalone' && task.ownership.folderId !== null) {
+                if (task.ownership.kind === 'standalone' && task.ownership.folderId !== null && task.ownership.folderId !== undefined) {
                   // In v1, standalone with folderId meant folder task
                   task.ownership = {
                     kind: 'folder',
@@ -327,6 +331,7 @@ export class IndexedDbStorageEngine implements StorageEngine {
 
       req.onsuccess = () => {
         const db = req.result;
+        if (abandoned) { db.close(); return; }
         db.onversionchange = () => {
           db.close();
           this.dbPromise = null;
@@ -336,7 +341,7 @@ export class IndexedDbStorageEngine implements StorageEngine {
 
       req.onerror = () => {
         this.dbPromise = null;
-        reject(new PlanuiError('DB_OPEN_FAILED'));
+        reject(new PlanuiError(req.error?.name === 'VersionError' ? 'INCOMPATIBLE_NEWER_SCHEMA_WRITE_BLOCKED' : 'DB_OPEN_FAILED'));
       };
     });
 

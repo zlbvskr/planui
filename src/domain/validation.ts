@@ -12,6 +12,7 @@ import {
   validateZonedInterval,
 } from './temporal';
 import {
+  PLANUI_DB_SCHEMA_VERSION,
   CalendarEvent,
   DayOffAnnotation,
   Folder,
@@ -56,7 +57,7 @@ export function assertNonEmptyString(
 }
 
 export function assertPositiveRevision(rev: unknown): number {
-  if (typeof rev !== 'number' || !Number.isInteger(rev) || rev < 1) {
+  if (typeof rev !== 'number' || !Number.isSafeInteger(rev) || rev < 1) {
     throw new PlanuiError('INVALID_REVISION', String(rev));
   }
   return rev;
@@ -373,6 +374,14 @@ export function validateCalendarEventRecord(
   assertNonEmptyString(event.id, 'INVALID_ID');
   assertNonEmptyString(event.title, 'REQUIRED_TITLE');
 
+  if (!['personal','work_shift','rest','sleep','travel'].includes(event.type) ||
+      !['brand','work','dayoff','personal','reservation','rest'].includes(event.color) ||
+      !['active','canceled'].includes(event.state) || typeof event.isBlocking !== 'boolean') throw new PlanuiError('VALIDATION_FAILED');
+  if (event.workProperties !== null) {
+    assertNonEmptyString(event.workProperties.shiftName);
+    if (event.workProperties.shiftCode !== null && typeof event.workProperties.shiftCode !== 'string') throw new PlanuiError('VALIDATION_FAILED');
+    if (event.workProperties.sourceTemplateId !== null) assertNonEmptyString(event.workProperties.sourceTemplateId, 'INVALID_ID');
+  }
   if (event.schedule.kind === 'timed') {
     validateZonedInterval(event.schedule.interval);
     if (
@@ -967,6 +976,8 @@ export function validateSettingsRecord(
   if (!settings || typeof settings !== 'object') {
     throw new PlanuiError('VALIDATION_FAILED', 'settings');
   }
+  if (!Number.isSafeInteger(settings.dbGeneration) || settings.dbGeneration < 1 || settings.dbGeneration >= Number.MAX_SAFE_INTEGER ||
+      settings.dbSchemaVersion !== PLANUI_DB_SCHEMA_VERSION) throw new PlanuiError('VALIDATION_FAILED');
   if (settings.roadmapLayer !== undefined && !['hidden', 'key_dates', 'periods'].includes(settings.roadmapLayer)) throw new PlanuiError('VALIDATION_FAILED');
   validateDailyPlans(settings.dailyPlans);
   if (settings.id !== 'singleton') {
@@ -1025,6 +1036,7 @@ export function validateDomainSnapshot(
 
   const requiredArrayKeys: (keyof Omit<PlanuiDomainSnapshot, 'settings'>)[] = [
     'folders',
+    'goals',
     'projects',
     'stages',
     'tasks',
@@ -1042,9 +1054,25 @@ export function validateDomainSnapshot(
     'wishlistCategories',
     'wishes',
   ];
+  if (Object.keys(snapshot).some(key => key !== 'settings' && !requiredArrayKeys.includes(key as keyof Omit<PlanuiDomainSnapshot, 'settings'>))) throw new PlanuiError('VALIDATION_FAILED');
   for (const key of requiredArrayKeys) {
-    if (!Array.isArray(snapshot[key])) {
+    if (!Array.isArray(snapshot[key]) || snapshot[key].some(record => !record || typeof record !== 'object' || Array.isArray(record))) {
       throw new PlanuiError('VALIDATION_FAILED', `snapshot.${key}`);
+    }
+  }
+
+  // Reject malformed scalar payloads before they reach editors or React rendering.
+  // Optional historical fields remain optional; authored strings are never coerced.
+  for (const key of requiredArrayKeys) {
+    for (const record of snapshot[key]) {
+      const fields = record as unknown as Record<string, unknown>;
+      for (const name of ['description','note','text','contentText','icon','desiredOutcome','completionCriteria','expectedOutcome','purposeUk','completionCriteriaUk','implementationIntentionUk','collaboratorText']) {
+        if (fields[name] !== undefined && fields[name] !== null && typeof fields[name] !== 'string') throw new PlanuiError('VALIDATION_FAILED');
+      }
+      for (const name of ['archived','isFavorite','wasOptimized','isBlocking']) {
+        if (fields[name] !== undefined && typeof fields[name] !== 'boolean') throw new PlanuiError('VALIDATION_FAILED');
+      }
+      if (fields.order !== undefined && (typeof fields.order !== 'number' || !Number.isFinite(fields.order))) throw new PlanuiError('VALIDATION_FAILED');
     }
   }
 
@@ -1071,8 +1099,7 @@ export function validateDomainSnapshot(
       validateGoalRecord(g, { folderIds });
       if (
         g.lifeAreaId !== null &&
-        lifeAreaQuestionIds.size > 0 &&
-        !lifeAreaQuestionIds.has(g.lifeAreaId)
+          !lifeAreaQuestionIds.has(g.lifeAreaId)
       ) {
         throw new PlanuiError('VALIDATION_FAILED', `goal.lifeAreaId:${g.lifeAreaId}`);
       }
@@ -1094,7 +1121,6 @@ export function validateDomainSnapshot(
     validateProjectRecord(p, { folderIds, goalIds });
     if (
       p.lifeAreaId !== null &&
-      lifeAreaQuestionIds.size > 0 &&
       !lifeAreaQuestionIds.has(p.lifeAreaId)
     ) {
       throw new PlanuiError('VALIDATION_FAILED', `project.lifeAreaId:${p.lifeAreaId}`);
@@ -1104,9 +1130,11 @@ export function validateDomainSnapshot(
   }
 
   const stageProjectMap = new Map<string, string>();
+  const stageIds = new Set<string>();
   for (const s of snapshot.stages) {
     validateStageRecord(s, projectIds, goalIds);
-    if (stageProjectMap.has(s.id)) throw new PlanuiError('INVALID_ID', s.id);
+    if (stageIds.has(s.id)) throw new PlanuiError('INVALID_ID', s.id);
+    stageIds.add(s.id);
     if (s.projectId) stageProjectMap.set(s.id, s.projectId);
   }
 
@@ -1184,7 +1212,6 @@ export function validateDomainSnapshot(
     }
     if (
       h.lifeAreaId !== null &&
-      lifeAreaQuestionIds.size > 0 &&
       !lifeAreaQuestionIds.has(h.lifeAreaId)
     ) {
       throw new PlanuiError('VALIDATION_FAILED', `habit.lifeAreaId:${h.lifeAreaId}`);
@@ -1215,6 +1242,7 @@ export function validateDomainSnapshot(
 
   const personalRecordIds = new Set<string>();
   for (const pr of snapshot.personalRecords) {
+    if ((pr.text !== null && typeof pr.text !== 'string') || !Array.isArray(pr.tags) || pr.tags.some(tag => typeof tag !== 'string')) throw new PlanuiError('VALIDATION_FAILED');
     validatePersonalRecord(pr);
     if (personalRecordIds.has(pr.id)) {
       throw new PlanuiError('INVALID_ID', pr.id);

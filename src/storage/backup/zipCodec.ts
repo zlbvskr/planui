@@ -3,6 +3,7 @@ import { PlanuiError } from '../../i18n/errorsUk';
 export const BACKUP_LIMITS = {
   MAX_ARCHIVE_BYTES: 100 * 1024 * 1024,
   MAX_TOTAL_UNCOMPRESSED_BYTES: 120 * 1024 * 1024,
+  MAX_MANIFEST_BYTES: 2 * 1024 * 1024,
   MAX_DATA_JSON_BYTES: 20 * 1024 * 1024,
   MAX_SINGLE_MEDIA_BYTES: 15 * 1024 * 1024,
   MAX_ENTRY_COUNT: 500,
@@ -55,7 +56,7 @@ export function normalizeAndValidateZipEntryPath(rawPath: string): string {
   if (typeof rawPath !== 'string' || rawPath.length === 0) {
     throw new PlanuiError('BACKUP_UNSAFE_PATH', rawPath);
   }
-  if (rawPath.includes('\0') || rawPath.includes('\\')) {
+  if (/[\x00-\x1f\x7f%]/.test(rawPath) || rawPath.includes('\\')) {
     throw new PlanuiError('BACKUP_UNSAFE_PATH', rawPath);
   }
   if (rawPath.startsWith('/') || /^[A-Za-z]:/.test(rawPath)) {
@@ -171,7 +172,8 @@ export async function createZipArchive(
 
     if (!isAlreadyCompressedMedia && typeof CompressionStream !== 'undefined') {
       const deflated = await deflateRawCompress(file.bytes);
-      if (deflated.byteLength < file.bytes.byteLength) {
+      if (deflated.byteLength < file.bytes.byteLength &&
+          (file.bytes.length <= 65536 || file.bytes.length / Math.max(1, deflated.length) <= BACKUP_LIMITS.MAX_COMPRESSION_RATIO)) {
         method = 8;
         compressedBytes = deflated;
       }
@@ -285,8 +287,10 @@ export async function extractAndVerifyZipArchive(
   const minEocdSearch = Math.max(0, zipBytes.byteLength - 65557);
   for (let i = zipBytes.byteLength - 22; i >= minEocdSearch; i--) {
     if (view.getUint32(i, true) === 0x06054b50) {
-      eocdOffset = i;
-      break;
+      if (i + 22 + view.getUint16(i + 20, true) === zipBytes.byteLength) {
+        eocdOffset = i;
+        break;
+      }
     }
   }
   if (eocdOffset < 0) {
@@ -294,6 +298,10 @@ export async function extractAndVerifyZipArchive(
   }
 
   const entryCount = view.getUint16(eocdOffset + 10, true);
+  if (view.getUint16(eocdOffset + 4, true) !== 0 || view.getUint16(eocdOffset + 6, true) !== 0 ||
+      view.getUint16(eocdOffset + 8, true) !== entryCount || entryCount === 0xffff) {
+    throw new PlanuiError('BACKUP_CORRUPTED_ZIP');
+  }
   if (entryCount > limits.MAX_ENTRY_COUNT) {
     throw new PlanuiError(
       'BACKUP_BOMB_DETECTED',
@@ -305,7 +313,7 @@ export async function extractAndVerifyZipArchive(
   const centralDirOffset = view.getUint32(eocdOffset + 16, true);
 
   if (
-    centralDirOffset + centralDirSize > eocdOffset ||
+    centralDirOffset + centralDirSize !== eocdOffset ||
     centralDirOffset < 0
   ) {
     throw new PlanuiError('BACKUP_CORRUPTED_ZIP', 'Invalid central directory bounds');
@@ -315,12 +323,14 @@ export async function extractAndVerifyZipArchive(
   const extracted = new Map<string, ZipExtractedFile>();
   let cdCursor = centralDirOffset;
   let runningExpandedBytes = 0;
+  const ranges: Array<[number, number]> = [];
+  const foldedPaths = new Set<string>();
 
   for (let i = 0; i < entryCount; i++) {
     if (signal?.aborted) {
       throw new PlanuiError('BACKUP_VALIDATION_ABORTED');
     }
-    if (cdCursor + 46 > eocdOffset) {
+    if (cdCursor + 46 > centralDirOffset + centralDirSize) {
       throw new PlanuiError('BACKUP_CORRUPTED_ZIP', 'Truncated CDFH');
     }
     const sig = view.getUint32(cdCursor, true);
@@ -329,6 +339,10 @@ export async function extractAndVerifyZipArchive(
     }
 
     const versionMadeBy = view.getUint16(cdCursor + 4, true);
+    const flags = view.getUint16(cdCursor + 8, true);
+    if ((flags & ~0x0800) !== 0 || view.getUint16(cdCursor + 34, true) !== 0 || view.getUint16(cdCursor + 6, true) > 20) {
+      throw new PlanuiError('BACKUP_CORRUPTED_ZIP');
+    }
     const method = view.getUint16(cdCursor + 10, true);
     const expectedCrc = view.getUint32(cdCursor + 16, true);
     const compressedSize = view.getUint32(cdCursor + 20, true);
@@ -348,7 +362,7 @@ export async function extractAndVerifyZipArchive(
 
     const nameStart = cdCursor + 46;
     const nameEnd = nameStart + fileNameLen;
-    if (nameEnd + extraLen + commentLen > eocdOffset) {
+    if (nameEnd + extraLen + commentLen > centralDirOffset + centralDirSize) {
       throw new PlanuiError('BACKUP_CORRUPTED_ZIP', 'CDFH name overflow');
     }
 
@@ -360,10 +374,19 @@ export async function extractAndVerifyZipArchive(
     }
 
     const normalizedPath = normalizeAndValidateZipEntryPath(rawName);
-    if (extracted.has(normalizedPath)) {
+    const folded = normalizedPath.normalize('NFC').toLowerCase();
+    if (foldedPaths.has(folded)) {
       throw new PlanuiError('BACKUP_DUPLICATE_ENTRY', normalizedPath);
     }
 
+    foldedPaths.add(folded);
+    for (let cursor = nameEnd; cursor < nameEnd + extraLen;) {
+      if (cursor + 4 > nameEnd + extraLen) throw new PlanuiError('BACKUP_CORRUPTED_ZIP');
+      const tag = view.getUint16(cursor, true);
+      const length = view.getUint16(cursor + 2, true);
+      cursor += 4 + length;
+      if (cursor > nameEnd + extraLen || tag === 1 || tag === 0x7075) throw new PlanuiError('BACKUP_CORRUPTED_ZIP');
+    }
     if (method !== 0 && method !== 8) {
       throw new PlanuiError(
         'BACKUP_CORRUPTED_ZIP',
@@ -387,9 +410,23 @@ export async function extractAndVerifyZipArchive(
       throw new PlanuiError('BACKUP_CORRUPTED_ZIP', 'Entry data out of bounds');
     }
 
+    if (lfhNameLen !== fileNameLen || lfhExtraLen !== 0 ||
+        !zipBytes.subarray(localHeaderOffset + 30, localHeaderOffset + 30 + lfhNameLen).every((value, index) => value === zipBytes[nameStart + index]) ||
+        view.getUint16(localHeaderOffset + 6, true) !== flags ||
+        view.getUint16(localHeaderOffset + 8, true) !== method ||
+        view.getUint32(localHeaderOffset + 14, true) !== expectedCrc ||
+        view.getUint32(localHeaderOffset + 18, true) !== compressedSize ||
+        view.getUint32(localHeaderOffset + 22, true) !== declaredUncompressedSize ||
+        ranges.some(([start, end]) => localHeaderOffset < end && dataEnd > start)) {
+      throw new PlanuiError('BACKUP_CORRUPTED_ZIP');
+    }
+    ranges.push([localHeaderOffset, dataEnd]);
     const compressedSlice = zipBytes.subarray(dataStart, dataEnd);
-    const remainingBudget =
-      limits.MAX_TOTAL_UNCOMPRESSED_BYTES - runningExpandedBytes;
+    const perEntryLimit = normalizedPath === 'data.json' ? limits.MAX_DATA_JSON_BYTES :
+      normalizedPath === 'manifest.json' ? limits.MAX_MANIFEST_BYTES : limits.MAX_SINGLE_MEDIA_BYTES;
+    const remainingBudget = Math.min(perEntryLimit,
+      limits.MAX_TOTAL_UNCOMPRESSED_BYTES - runningExpandedBytes);
+    if (declaredUncompressedSize > remainingBudget) throw new PlanuiError('BACKUP_BOMB_DETECTED');
     if (remainingBudget <= 0) {
       throw new PlanuiError('BACKUP_BOMB_DETECTED', 'Total uncompressed limit');
     }
@@ -428,5 +465,12 @@ export async function extractAndVerifyZipArchive(
     cdCursor = nameEnd + extraLen + commentLen;
   }
 
+  const orderedRanges = ranges.sort((a, b) => a[0] - b[0]);
+  let expectedOffset = 0;
+  for (const [start, end] of orderedRanges) {
+    if (start !== expectedOffset) throw new PlanuiError('BACKUP_CORRUPTED_ZIP');
+    expectedOffset = end;
+  }
+  if (expectedOffset !== centralDirOffset || cdCursor !== centralDirOffset + centralDirSize) throw new PlanuiError('BACKUP_CORRUPTED_ZIP');
   return extracted;
 }

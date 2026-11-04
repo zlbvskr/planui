@@ -1,5 +1,7 @@
 # PLANUI Implementation Status & Workspace Inventory
 
+Current checkpoint: **M10 integration/recovery hardening completed** (2026-11-04). Native DB schema **9**, ZIP format **8**. Earlier environment/stage descriptions below are historical; see the latest checkpoint and RELEASE_CHECKLIST for current evidence. Final PWA/deployment work remains pending.
+
 ## 1. Environment & Workspace Inspection (Stage 1.1)
 
 ### 1.1 Available Capabilities
@@ -318,3 +320,15 @@ Commands run against the unmodified workspace prior to creating documentation:
   - Browser backup dependency corrections reuse the already-established compression backpressure fix from the separate Pages work and separate inline Settings confirmation state from actual portaled modals. This enables real ZIP download/import without changing format or bypassing confirmation; hosting changes/PR remain separate.
   - Final verification: npm run lint, npm run build and git diff --check pass. Full regression 152/152 tests pass across 18 suites, including sixteen M9 tests, using node --import tsx with explicit suite imports. Existing >500 kB bundle warning remains non-blocking. Chromium at 390×844 plus 1440×900 render passes inline/global creation, exact-price errors/zero, local PNG display, status/archive/category/project/link flows, currency acknowledgement and an actual disabled-module ZIP export/import. No page errors, preview requests or generated planning records. Native v7→v8 exact legacy preservation passes. No M9 blocker; physical devices and exhaustive accessibility remain unverified.
   - Stop after M9. The previously recorded backup-limit documentation mismatch and later stages remain outside this change.
+
+
+- **Checkpoint M10 (2026-11-04)**:
+  - Completed only integration/recovery hardening on the preserved M1–M9 baseline. Reused the existing ZIP infrastructure, stores and single-database transactions; no new persistence infrastructure or product module. The separate Pages branch/PR remains unchanged.
+  - Advanced native schema to 9 as a compatibility barrier against older unguarded replacement code. ZIP format remains 8. Native v1–v8 upgrades and supported archive/local-snapshot migrations preserve canonical records/relationships, archive/lifecycle data, exact money, text, scores and media. Existing databases are never reseeded.
+  - Recovery captures the latest committed state under the replacement write lock; import/reset/restore use the normal persisted schema/generation guard. Generation changes are acknowledged only after commit. Recovery rotation/eviction and media GC roll back on failure/quota; the newest protective point is retained despite equal timestamps or clock rollback. Conflicting media IDs cannot overwrite recovery bytes.
+  - Strengthened ZIP container/header/path/entry/size/expansion/inventory validation, domain structure/references/statuses/safe counters and UTC date/precision checks. Private validated previews prevent unchecked mutation. Browser import/export decodes bounded media with a tested fallback. Highly repetitive text remains exportable within the same import limits. Corrected earlier backup-limit documentation drift without raising runtime limits.
+  - Remote replacements preserve visible unsaved form input and block stale saves until explicit reload. Missed broadcasts cannot bypass persisted checks; independent advisory leases expire after interrupted imports. Newer schemas fail closed, and blocked native opens are abandoned without leaking connections.
+  - Retained explicit export, reset and recovery-deletion controls; clarified unencrypted browser/ZIP protection, origin/device access, quota/eviction and secure-erasure limitations. Runtime review found no analytics, remote previews or sensitive logging in the reviewed paths.
+  - Final checks: npm run lint passed; full regression **168/168 across 19 suites** passed; npm run build and git diff --check passed. Native Chromium migration/interruption/restart, actual preview/confirmation, quota rollback, raster decoding/corruption, two-tab stale-form preservation and newer-schema preservation passed. Reproducible browser script is scripts/check-m10-browser.mjs; detailed evidence is docs/RELEASE_CHECKLIST.md.
+  - One existing M8 test depended on the real clock; explicit test timestamps now verify the same pending-session lifecycle deterministically. Database/backup version assertions now reflect independent versions. No tests were disabled or weakened.
+  - No M10 blocker remains. Existing >500 kB bundle warning remains. Final PWA/deployment and physical-device verification are outside M10 and remain pending. Stop after M10.

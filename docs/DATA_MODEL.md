@@ -2,10 +2,10 @@
 
 ## 1. Version Separation & Database Identity
 
-- **Application Version**: `1.0.0` (semver string tracking application build).
-- **Database Name**: `planui_db` (isolated test runs use `planui_test_<uuid>`).
-- **Database Schema Version**: `2` (integer passed to `indexedDB.open('planui_db', 2)`).
-- **Backup Format Identifier & Version**: `format: "planui-backup-zip"`, `backupVersion: 2` (v1 supported via backwards-compatible migration).
+- **Application Version**: `0.3.0` (semver string tracking application build).
+- **Database Name**: `planui_local_db` (isolated test runs use `planui_test_<uuid>`).
+- **Database Schema Version**: `9` (integer passed to `indexedDB.open('planui_local_db', 9)`).
+- **Backup Format Identifier & Version**: `format: "planui-backup-zip"`, `backupVersion: 8` (backup v1–v8 and DB schemas v1–v9 supported via migration).
 - **Bootstrap Theme Cache**: `localStorage.getItem('planui_theme_bootstrap')` (`"system" | "light" | "dark"`) is the only permitted `localStorage` entry to prevent initial paint flash before IndexedDB opens. All canonical settings live in the `settings` object store.
 
 ---
@@ -589,3 +589,16 @@ The existing timing scalar remains required by the saved format and defaults to 
 ExactPrice remains `{ amountMinor: safe integer number, amountDecimal: string, currency: SupportedCurrencyCode }`, with no representation or currency-list migration. BigInt is used only transiently for exact parsing/formatting and is never persisted. Accept supported currency precision exactly, including zero-decimal JPY; reject excess precision/ambiguity instead of rounding. No monetary totals/conversions are introduced.
 
 Images reference existing mediaMeta/mediaBlobs by ID. The same asset may be referenced by wishes, inspiration and recovery snapshots. Validate references and write new media plus its wish atomically; replacement/deletion removes only unreferenced live media. Missing media never becomes an external request. There are no new object stores or financial entities.
+
+
+## M10 persistence protocol and recovery (current)
+
+The actual serialized model is `PlanuiDomainSnapshot` in `src/domain/types.ts`; store names are `STORE_NAMES` in `src/storage/db.ts`. Database/schema and backup versions are independent. M10 advances only the native schema to 9 so older running v8 code cannot bypass the hardened replacement protocol. Existing data/IDs/revisions, authored strings, exact money and all M1–M9 fields remain unchanged. The ZIP format stays at 8. Settings are the only records modified by the v8→v9 versionchange migration. No reseeding occurs for an existing database.
+
+All 18 domain collections and settings are captured together with media bytes in one readonly transaction. Nested checkpoints, rule revisions, occurrence target/day-off snapshots, historical area questions/scales and lifecycle metadata are not separate or duplicated collections. Today, Directions, Calendar, Roadmap and Habits derive from the same records; roadmap metadata never becomes occupancy. Provenance `workProperties.sourceTemplateId` may outlive a deleted template: generated shifts are independent records, not mutable template instances. Historical area answers retain their question snapshots independently of live questions.
+
+Replacement uses the same stored schema and generation guard as ordinary writes. Protective live snapshot, retained recovery metadata, canonical records, blobs and new settings generation commit in one transaction in the same database. The client learns the new generation only after completion; failed commits cannot acknowledge it. Recovery captures the current state under the write lock, preserving intervening committed edits. At most three recovery points remain, with the new point retained even after a clock rollback. Shared media are collected only after checking live and retained recovery references. A conflicting incoming media ID/byte identity aborts replacement.
+
+Validation rejects duplicate goal-owned stages as well as project-owned stages, dangling area links even with no live areas, malformed collection members, future/unsupported schema metadata and unknown top-level collections. UTC instants preserve their authored strings, require real dates/times and representable millisecond precision (trailing fractional zeros remain allowed); no timestamp normalization or inference occurs. Revisions/generations use safe integer semantics. Exact decimal price validation is unchanged.
+
+A tab's generation remains fixed until its own successful replacement or an explicit reload/acknowledgement. Remote replacement notices preserve open form input and expose an explicit reload action. A failed stale save retains the input. The advisory per-tab import lease expires after 30 seconds; serialization and persisted guards enforce correctness. Native older-version opens fail closed; versionchange closes old connections. See BACKUP_FORMAT for the exact transaction boundary and protection limitations.

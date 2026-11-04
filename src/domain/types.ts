@@ -3,7 +3,7 @@
  */
 
 export const PLANUI_APP_VERSION = '0.3.0';
-export const PLANUI_DB_SCHEMA_VERSION = 8;
+export const PLANUI_DB_SCHEMA_VERSION = 9;
 export const PLANUI_BACKUP_FORMAT = 'planui-backup-zip' as const;
 export const PLANUI_BACKUP_VERSION = 8;
 

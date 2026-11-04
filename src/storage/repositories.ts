@@ -139,7 +139,6 @@ export class PlanuiRepositories {
   public readonly tabSync: TabSyncCoordinator;
   private readonly rawEngine: StorageEngine;
   private knownDbGeneration: number | null = null;
-  private bypassGenerationCheck = false;
 
   constructor(engine?: StorageEngine, tabSync?: TabSyncCoordinator) {
     const baseEngine = engine ?? createStorageEngine();
@@ -159,8 +158,9 @@ export class PlanuiRepositories {
             ? [...storeNames, STORE_NAMES.settings]
             : storeNames;
 
-        return baseEngine.runTransaction(effectiveStores, mode, async (tx) => {
-          if (mode === 'readwrite' && !this.bypassGenerationCheck) {
+        let committedGeneration: number | null = null;
+        const result = await baseEngine.runTransaction(effectiveStores, mode, async (tx) => {
+          if (mode === 'readwrite') {
             const existingSettings = await tx.get<PlanuiSettings>(
               STORE_NAMES.settings,
               'singleton'
@@ -204,12 +204,17 @@ export class PlanuiRepositories {
               'singleton'
             );
             if (postSettings) {
-              this.knownDbGeneration = postSettings.dbGeneration;
+              committedGeneration = postSettings.dbGeneration;
             }
           }
 
           return result;
+        }).catch((error: unknown) => {
+          if (error instanceof PlanuiError) throw error;
+          throw new PlanuiError(error && typeof error === 'object' && 'name' in error && error.name === 'QuotaExceededError' ? 'STORAGE_QUOTA_EXCEEDED' : 'DB_TRANSACTION_FAILED');
         });
+        if (committedGeneration !== null) this.knownDbGeneration = committedGeneration;
+        return result;
       },
     };
   }
@@ -226,29 +231,12 @@ export class PlanuiRepositories {
     this.knownDbGeneration = null;
   }
 
-  public async runUnguardedReplacementTransaction<R>(
+  // Replacement uses the same schema/generation guard as every other write.
+  public async runReplacementTransaction<R>(
     storeNames: readonly StoreName[],
     work: (tx: StorageTransactionContext) => Promise<R> | R
   ): Promise<R> {
-    const prev = this.bypassGenerationCheck;
-    this.bypassGenerationCheck = true;
-    try {
-      return await this.rawEngine.runTransaction(storeNames, 'readwrite', async (tx) => {
-        const res = await work(tx);
-        if (storeNames.includes(STORE_NAMES.settings)) {
-          const postSettings = await tx.get<PlanuiSettings>(
-            STORE_NAMES.settings,
-            'singleton'
-          );
-          if (postSettings) {
-            this.knownDbGeneration = postSettings.dbGeneration;
-          }
-        }
-        return res;
-      });
-    } finally {
-      this.bypassGenerationCheck = prev;
-    }
+    return this.engine.runTransaction(storeNames, 'readwrite', work);
   }
 
   private assertRevisionMatch(
@@ -277,7 +265,6 @@ export class PlanuiRepositories {
     );
     if (existing) {
       if (
-        !this.bypassGenerationCheck &&
         this.knownDbGeneration !== null &&
         existing.dbGeneration !== this.knownDbGeneration
       ) {
@@ -2780,17 +2767,16 @@ export class PlanuiRepositories {
     return result;
   }
 
-  public async cancelHabitSession(id: string, expectedRevision: number): Promise<void> {
+  public async cancelHabitSession(id: string, expectedRevision: number, nowIso = new Date().toISOString()): Promise<void> {
     this.tabSync.assertNoRemoteImportInProgress();
     await this.engine.runTransaction([STORE_NAMES.reservations], 'readwrite', async tx => {
       const session = await tx.get<TaskReservation>(STORE_NAMES.reservations, id);
       if (!session?.habitOccurrence) throw new PlanuiError('ENTITY_NOT_FOUND');
       this.assertRevisionMatch(session, expectedRevision);
       // Same preservation policy as completion: retain the elapsed blocking slice.
-      const now = new Date().toISOString();
-      await this.releaseHabitOccurrenceSessions(tx, { id: session.habitOccurrence.entryId, status: 'skipped' }, now, id, 'manual_unplan');
+      await this.releaseHabitOccurrenceSessions(tx, { id: session.habitOccurrence.entryId, status: 'skipped' }, nowIso, id, 'manual_unplan');
     });
-    this.tabSync.broadcast({ type: 'ENTITY_MUTATED', stores: [STORE_NAMES.reservations], dbGeneration: this.knownDbGeneration ?? 1, timestamp: new Date().toISOString() });
+    this.tabSync.broadcast({ type: 'ENTITY_MUTATED', stores: [STORE_NAMES.reservations], dbGeneration: this.knownDbGeneration ?? 1, timestamp: nowIso });
   }
 
   public async saveHabit(
@@ -3674,119 +3660,129 @@ export class PlanuiRepositories {
       await this.getOrInitSettings(nowIso);
     }
 
-    return this.engine.runTransaction(
-      ALL_STORE_NAMES,
-      'readonly',
-      async (tx) => {
-        const [
-          folders,
-          goals,
-          projects,
-          stages,
-          tasks,
-          reservations,
-          events,
-          shiftTemplates,
-          dayOffAnnotations,
-          habits,
-          habitEntries,
-          personalRecords,
-          lifeAreaQuestions,
-          lifeAreaAssessments,
-          inspirationItems,
-          mediaMeta,
-          mediaBlobRecords,
-          wishlistCategories,
-          wishes,
-          settingsRec,
-        ] = await Promise.all([
-          tx.getAll<Folder>(STORE_NAMES.folders),
-          tx.getAll<Goal>(STORE_NAMES.goals),
-          tx.getAll<Project>(STORE_NAMES.projects),
-          tx.getAll<ProjectStage>(STORE_NAMES.stages),
-          tx.getAll<Task>(STORE_NAMES.tasks),
-          tx.getAll<TaskReservation>(STORE_NAMES.reservations),
-          tx.getAll<CalendarEvent>(STORE_NAMES.events),
-          tx.getAll<ShiftTemplate>(STORE_NAMES.shiftTemplates),
-          tx.getAll<DayOffAnnotation>(STORE_NAMES.dayOffAnnotations),
-          tx.getAll<Habit>(STORE_NAMES.habits),
-          tx.getAll<HabitEntry>(STORE_NAMES.habitEntries),
-          tx.getAll<PersonalRecord>(STORE_NAMES.personalRecords),
-          tx.getAll<LifeAreaQuestion>(STORE_NAMES.lifeAreaQuestions),
-          tx.getAll<LifeAreaAssessment>(STORE_NAMES.lifeAreaAssessments),
-          tx.getAll<InspirationItem>(STORE_NAMES.inspirationItems),
-          tx.getAll<MediaAssetMeta>(STORE_NAMES.mediaMeta),
-          tx.getAll<MediaBlobRecord>(STORE_NAMES.mediaBlobs),
-          tx.getAll<WishlistCategory>(STORE_NAMES.wishlistCategories),
-          tx.getAll<WishItem>(STORE_NAMES.wishes),
-          tx.get<PlanuiSettings>(STORE_NAMES.settings, 'singleton'),
-        ]);
-
-        const mediaBlobs = new Map<string, Uint8Array>();
-        for (const mb of mediaBlobRecords) {
-          const bytes =
-            mb.bytes instanceof Uint8Array
-              ? mb.bytes
-              : new Uint8Array(Object.values(mb.bytes as unknown as Record<string, number>));
-          mediaBlobs.set(mb.id, bytes);
-        }
-
-        const baseSettings = settingsRec ?? createDefaultSettings(nowIso);
-        let resolvedModules: OptionalModulesSettings;
-        if (!baseSettings.modules) {
-          resolvedModules = {
-            habitsEnabled: habits.length > 0,
-            stateCheckInsEnabled:
-              personalRecords.length > 0,
-            desiredLifeEnabled: inspirationItems.length > 0,
-            wishlistEnabled:
-              wishes.length > 0 || wishlistCategories.length > 0,
-          };
-        } else if (baseSettings.modules.userConfigured) {
-          resolvedModules = { ...baseSettings.modules };
-        } else {
-          resolvedModules = {
-            habitsEnabled: baseSettings.modules.habitsEnabled || habits.length > 0,
-            stateCheckInsEnabled:
-              baseSettings.modules.stateCheckInsEnabled ||
-              personalRecords.length > 0,
-            desiredLifeEnabled:
-              baseSettings.modules.desiredLifeEnabled ||
-              inspirationItems.length > 0,
-            wishlistEnabled:
-              baseSettings.modules.wishlistEnabled ||
-              wishes.length > 0 ||
-              wishlistCategories.length > 0,
-          };
-        }
-        const snapshot: PlanuiDomainSnapshot = {
-          folders,
-          goals,
-          projects,
-          stages,
-          tasks,
-          reservations,
-          events,
-          shiftTemplates,
-          dayOffAnnotations,
-          habits,
-          habitEntries,
-          personalRecords,
-          lifeAreaQuestions,
-          lifeAreaAssessments,
-          inspirationItems,
-          mediaMeta,
-          wishlistCategories,
-          wishes,
-          settings: {
-            ...baseSettings,
-            modules: resolvedModules,
-          },
-        };
-
-        return { snapshot, mediaBlobs };
-      }
+    return this.engine.runTransaction(ALL_STORE_NAMES, 'readonly', tx =>
+      this.captureSnapshotInTransaction(tx, nowIso)
     );
+  }
+
+  /** Caller must include every store. No non-IDB awaits inside the transaction. */
+  public async captureSnapshotInTransaction(
+    tx: StorageTransactionContext,
+    nowIso: IsoInstantString
+  ): Promise<{ snapshot: PlanuiDomainSnapshot; mediaBlobs: Map<string, Uint8Array> }> {
+    const [
+      folders,
+      goals,
+      projects,
+      stages,
+      tasks,
+      reservations,
+      events,
+      shiftTemplates,
+      dayOffAnnotations,
+      habits,
+      habitEntries,
+      personalRecords,
+      lifeAreaQuestions,
+      lifeAreaAssessments,
+      inspirationItems,
+      mediaMeta,
+      mediaBlobRecords,
+      wishlistCategories,
+      wishes,
+      settingsRec,
+    ] = await Promise.all([
+      tx.getAll<Folder>(STORE_NAMES.folders),
+      tx.getAll<Goal>(STORE_NAMES.goals),
+      tx.getAll<Project>(STORE_NAMES.projects),
+      tx.getAll<ProjectStage>(STORE_NAMES.stages),
+      tx.getAll<Task>(STORE_NAMES.tasks),
+      tx.getAll<TaskReservation>(STORE_NAMES.reservations),
+      tx.getAll<CalendarEvent>(STORE_NAMES.events),
+      tx.getAll<ShiftTemplate>(STORE_NAMES.shiftTemplates),
+      tx.getAll<DayOffAnnotation>(STORE_NAMES.dayOffAnnotations),
+      tx.getAll<Habit>(STORE_NAMES.habits),
+      tx.getAll<HabitEntry>(STORE_NAMES.habitEntries),
+      tx.getAll<PersonalRecord>(STORE_NAMES.personalRecords),
+      tx.getAll<LifeAreaQuestion>(STORE_NAMES.lifeAreaQuestions),
+      tx.getAll<LifeAreaAssessment>(STORE_NAMES.lifeAreaAssessments),
+      tx.getAll<InspirationItem>(STORE_NAMES.inspirationItems),
+      tx.getAll<MediaAssetMeta>(STORE_NAMES.mediaMeta),
+      tx.getAll<MediaBlobRecord>(STORE_NAMES.mediaBlobs),
+      tx.getAll<WishlistCategory>(STORE_NAMES.wishlistCategories),
+      tx.getAll<WishItem>(STORE_NAMES.wishes),
+      tx.get<PlanuiSettings>(STORE_NAMES.settings, 'singleton'),
+    ]);
+
+    const mediaBlobs = new Map<string, Uint8Array>();
+    for (const mb of mediaBlobRecords) {
+      const bytes =
+        mb.bytes instanceof Uint8Array
+          ? mb.bytes
+          : new Uint8Array(Object.values(mb.bytes as unknown as Record<string, number>));
+      mediaBlobs.set(mb.id, bytes);
+    }
+
+    const baseSettings = settingsRec ?? createDefaultSettings(nowIso);
+    let resolvedModules: OptionalModulesSettings;
+    if (!baseSettings.modules) {
+      resolvedModules = {
+        habitsEnabled: habits.length > 0,
+        stateCheckInsEnabled:
+          personalRecords.length > 0,
+        desiredLifeEnabled: inspirationItems.length > 0,
+        wishlistEnabled:
+          wishes.length > 0 || wishlistCategories.length > 0,
+      };
+    } else if (baseSettings.modules.userConfigured) {
+      resolvedModules = { ...baseSettings.modules };
+    } else {
+      resolvedModules = {
+        habitsEnabled: baseSettings.modules.habitsEnabled || habits.length > 0,
+        stateCheckInsEnabled:
+          baseSettings.modules.stateCheckInsEnabled ||
+          personalRecords.length > 0,
+        desiredLifeEnabled:
+          baseSettings.modules.desiredLifeEnabled ||
+          inspirationItems.length > 0,
+        wishlistEnabled:
+          baseSettings.modules.wishlistEnabled ||
+          wishes.length > 0 ||
+          wishlistCategories.length > 0,
+      };
+    }
+    const snapshot: PlanuiDomainSnapshot = {
+      folders,
+      goals,
+      projects,
+      stages,
+      tasks,
+      reservations,
+      events,
+      shiftTemplates,
+      dayOffAnnotations,
+      habits,
+      habitEntries,
+      personalRecords,
+      lifeAreaQuestions,
+      lifeAreaAssessments,
+      inspirationItems,
+      mediaMeta,
+      wishlistCategories,
+      wishes,
+      settings: {
+        ...baseSettings,
+        modules: resolvedModules,
+      },
+    };
+
+    if (snapshot.settings.dbSchemaVersion > PLANUI_DB_SCHEMA_VERSION) {
+      throw new PlanuiError('INCOMPATIBLE_NEWER_SCHEMA_WRITE_BLOCKED');
+    }
+    if (this.knownDbGeneration !== null && snapshot.settings.dbGeneration !== this.knownDbGeneration) {
+      throw new PlanuiError('STALE_DB_GENERATION_CONFLICT');
+    }
+    return { snapshot, mediaBlobs };
   }
 
   public async listRecoverySnapshots(): Promise<RecoverySnapshotRecord[]> {

@@ -31,9 +31,9 @@ export interface BackupFileInventoryEntry {
 
 export interface BackupManifest {
   format: 'planui-backup-zip';
-  backupVersion: 5;                  // Supports v1/v2/v3/v4 import via migration
+  backupVersion: 8;                  // Supports backup v1–v8; DB schemas v1–v9
   appVersion: string;                // e.g. "0.3.0"
-  dbSchemaVersion: number;           // Current: 5
+  dbSchemaVersion: number;           // Current: 9
   createdAt: string;                 // UTC ISO-8601 instant
   entityCounts: {
     folders: number;
@@ -102,14 +102,14 @@ All limits are explicit memory/security bounds (never folder-depth limits):
 
 | Resource / Security Parameter | Limit | Reason |
 |---|---|---|
-| Maximum ZIP archive file size | `150 MB` (`157,286,400` bytes) | Prevents browser tab OOM during local parsing |
-| Maximum total uncompressed size | `200 MB` (`209,715,200` bytes) | Decompression bomb protection (actual streamed bytes counted, never trusting ZIP header size alone) |
-| Maximum compression ratio per entry | `100 : 1` (for entries > 64 KB) | Rejects synthetic zip bombs early |
-| Maximum ZIP entry count | `1,000` entries | Prevents central-directory exhaustion (`manifest.json` + `data.json` + up to 998 media images) |
-| Maximum `manifest.json` size | `2 MB` | Bounds manifest JSON parse |
-| Maximum `data.json` size | `50 MB` | Bounds domain JSON parse |
-| Maximum single image file size | `15 MB` | Bounds individual media blob allocation |
-| Maximum image dimensions | `8192 × 8192` px (`<= 33,554,432` total pixels / `128 MB` RGBA decoded) | Prevents canvas/bitmap decoder crash on mobile Safari |
+| Maximum ZIP archive file size | `100 MiB` (`104,857,600` bytes) | Prevents browser tab OOM during local parsing |
+| Maximum total uncompressed size | `120 MiB` (`125,829,120` bytes) | Decompression bomb protection (actual streamed bytes counted, never trusting ZIP header size alone) |
+| Maximum compression ratio per entry | `50 : 1` (for entries > 64 KB) | Rejects synthetic zip bombs early |
+| Maximum ZIP entry count | `500` entries | Prevents central-directory exhaustion (`manifest.json` + `data.json` + up to 498 media images) |
+| Maximum `manifest.json` size | `2 MiB` | Bounds manifest JSON parse |
+| Maximum `data.json` size | `20 MiB` | Bounds domain JSON parse |
+| Maximum single image file size | `15 MiB` | Bounds individual media blob allocation |
+| Maximum image dimensions | `8192 × 8192` px (`<= 25,000,000` total pixels / approximately `100 MB` RGBA decoded) | Prevents canvas/bitmap decoder crash on mobile Safari |
 | Allowed image formats | `image/jpeg`, `image/png`, `image/webp` | Verified by binary magic bytes (`FF D8 FF`, `89 50 4E 47`, `RIFF....WEBP`) + browser image decode check. Active SVG (`image/svg+xml`), HTML, scripts, and arbitrary attachments are strictly rejected. |
 
 ---
@@ -125,15 +125,15 @@ All validation runs **outside** the IndexedDB write transaction before any live 
    - Decompress `manifest.json` while enforcing actual byte caps.
    - Decompress `data.json` and each `media/*` entry while counting actual output bytes (aborting immediately if exceeding cap or ratio), verifying exact byte length and SHA-256 hex digest against `manifest.files`, and verifying no extra or missing files exist.
 3. **Schema & Domain Invariant Validation**:
-   - Validate `manifest.format === 'planui-backup'` and supported `backupFormatVersion` / `schemaVersion`.
+   - Validate `manifest.format === 'planui-backup-zip'` and independently supported `backupVersion` / `dbSchemaVersion`.
    - Validate every record in `data.json`:
      - Unique IDs across each collection; valid timestamps (`InstantISO`), calendar dates (`YYYY-MM-DD`), 24h times (`HH:mm`), and `Intl` IANA time zones.
      - **Folders**: Every `parentId` exists in `folders`; iterative cycle check confirms zero cycles and zero self-parenting regardless of depth.
      - **Projects & Tasks**: Every `task.folderId` or `project.folderId` exists; standalone tasks do not set `projectId`/`stageId`; project tasks reference an existing `projectId` and a `stageId` belonging to that project; `planningMode` matches `plannedDate` presence.
-     - **Reservations & Events**: Every `reservation.taskId` exists in `tasks`; all intervals satisfy `startInstant < endInstant`; palette colors and event kinds are valid.
-     - **Habits**: Every `habitEntry.habitId` exists in `habits`; no duplicate `(habitId, localDate)` pairs; `ruleHistory` is non-empty and sorted.
-     - **Personal Space**: Scales are within `1..5` (personal records) or `1..10` (life areas); inspiration links use only `http:` or `https:`; every `inspirationItem.mediaId` exists in `mediaMetadata` and has a matching binary file in `media/`.
-     - **Wishlist**: Every `wish.categoryId` is `null` or exists in `wishlistCategories`; `timingGroup` is `'now' | 'later' | 'someday'`; `state` is `'active' | 'fulfilled'`; `price` is either `null` or has a valid ISO-4217 `currency`, valid `exponent`, non-negative safe integer `amountMinor`, and matching `canonicalDecimal`; `settings.preferredWishlistCurrency` is `null` or a valid ISO-4217 currency code.
+     - **Reservations & Events**: Exactly one owner: `reservation.taskId` exists in `tasks`, or `habitOccurrence` references its canonical habit/date entry; all intervals satisfy `startInstant < endInstant`; palette colors and event kinds are valid.
+     - **Habits**: Every `habitEntry.habitId` exists in `habits`; no duplicate `(habitId, localDate)` pairs; `ruleRevisions` is non-empty and sorted.
+     - **Personal Space**: Scales are within `1..5` (personal records) or `1..10` (life areas); inspiration links use only `http:` or `https:`; every `inspirationItem.mediaId` exists in `mediaMeta` and has a matching binary file in `media/`.
+     - **Wishlist**: Every `wish.categoryId` is `null` or exists in `wishlistCategories`; `timing` is `'now' | 'later' | 'someday'`; `state` is `'active' | 'fulfilled'`; `estimatedPrice` is either `null` or has a valid ISO-4217 `currency`, non-negative safe integer `amountMinor`, and matching `amountDecimal`; `settings.preferredWishlistCurrency` is `null` or a valid ISO-4217 currency code.
 4. **Media Signature & Decode Verification**:
    - Inspect binary magic bytes of every `media/*` file and decode header dimensions to verify `width`, `height`, and pixel budget.
 
@@ -209,3 +209,22 @@ New optional purchase/link/media/project fields serialize in the existing wishes
 Import validates current statuses, explicit purchase timestamps, safe protocols, project/category/media references, exact prices and existing raster content/size/checksum rules. Local file selection additionally requires successful browser decoding; broken images have a Ukrainian local fallback rather than remote loading. Disabled Wishlist data/media and all purchase/archive/legacy scopes remain in full exports and recovery snapshots. Reference-aware cleanup considers all live wishes/inspiration and retained recovery snapshots before releasing bytes. No new archive files/stores or automatic conversions are added.
 
 Browser ZIP writing drains CompressionStream concurrently to avoid a Chromium backpressure stall; format, checksums and limits are unchanged. The existing explicit import preview/confirmation is retained and remains clickable inside Settings. Disabled-module export/import was executed in an isolated browser with wishes and actual local images.
+
+
+## M10 integration and recovery hardening (current)
+
+Database schema **9**, ZIP format **8**, app version **0.3.0**. The schema bump is a compatibility barrier for older clients whose replacement path bypassed generation guards. It changes only settings schema metadata; no entity, relationship, text, price, timestamp, ID or history is rewritten. Native upgrades accept old database versions 1–8. Backup versions 1–8 with database schemas 1–9 are supported; future versions are refused. Older local recovery snapshots use the same migration chain on restoration/export. Current archives must contain every required collection; legacy omissions are filled only for the documented v1 migration.
+
+Complete payload coverage is `PlanuiDomainSnapshot` in `src/domain/types.ts`: all 18 domain arrays, settings, and referenced media bytes. Checkpoints, schedule versions/snapshots, lifecycle/release metadata and daily plans are embedded in their canonical records. Directions/folders, goals, projects, stages, tasks, dates/deadlines, reservations (including habit sessions), events/shifts, explicit days off/templates, habits/logs, life areas/question/scale/review snapshots, check-ins/sleep/legacy diary, preferred life/saved inspiration, Wishlist categories/statuses/legacy fulfillment/exact prices/currencies/timing/links/images all survive. Manual zones, explicit module preferences and archive flags are included even when every optional module is disabled. Derived projections, session navigation, resource caches and recursive recovery history remain excluded.
+
+Validation rejects inconsistent local/central ZIP headers, encrypted/data-descriptor/unsupported flags, ZIP64/multidisk archives, symlinks, overlapping entries, alternate Unicode paths, case/Unicode-equivalent duplicate paths, controls/percent escapes/traversal and unexpected or unreferenced files. This is the supported subset produced by PLANUI, not a general-purpose ZIP reader. Per-entry declared and streamed limits apply before JSON parsing; aggregate limits and CRC/SHA-256 are checked. Browser imports additionally decode bounded images before a preview is accepted. Non-browser tests validate raster signatures/dimensions; they do not substitute for browser decoding. Checksums detect corruption, not authenticity. The conservative runtime limits above correct earlier documentation drift; no limit was raised.
+
+A successful validation owns a private copy of its preview payload. Callers cannot fabricate a preview or change the validated records/media before replacement. Repetitive user text is stored uncompressed when compression would exceed the reader's ratio bound; successful exports satisfy the same size bounds as imports. Failed export never changes live data.
+
+Replacement, recovery restoration and reset acquire one read-write transaction covering **all stores in the single `planui_local_db` IndexedDB database**. Within that transaction they verify stored schema/generation, capture the latest committed live snapshot, evict older recovery points, write the new protective point, replace records/settings/media, collect unreferenced blobs and rotate generation. The newly created recovery point is always retained, including equal timestamps or clock rollback. Up to two previous points remain. No non-IDB asynchronous hashing/decompression runs inside this transaction. Failure, abort or quota exhaustion rolls the entire operation back, including eviction and generation. No unsafe no-snapshot fallback is performed. Export and explicit snapshot management remain available. Existing blob IDs are immutable: an incoming ID with different bytes is rejected to protect recovery images.
+
+This atomic boundary does **not** include localStorage's theme hint, sessionStorage, CacheStorage, downloads or another database. The theme hint is refreshed separately after commit and has no canonical data. Recovery points are local copies in the same browser database, not external backups. Ordinary ZIP/JSON and browser records are not application-encrypted. Browser-origin isolation and device/browser access controls are the actual protection; PLANUI adds no authentication/PIN/encryption. Clearing site data, storage eviction, private browsing or device loss can remove live data and recovery points. Explicit reset/deletion does not promise forensic secure erasure. The browser cannot confirm final external file persistence.
+
+Generation is acknowledged only after successful commit. Receiving replacement notices does not reload or silently discard stale forms: the old input stays visible, writes fail, and an explicit reload warns about losing unsaved input. Persisted guards also work without BroadcastChannel delivery. Import notices are advisory independent 30-second leases; interrupted tabs cannot permanently lock the UI. IndexedDB locking/generation checks remain authoritative after a lease expires. Newer native schemas fail closed with a localized message; blocked upgrade attempts are abandoned without leaking a connection.
+
+Evidence and reproducible commands: `docs/RELEASE_CHECKLIST.md`, `src/storage/__tests__/stageM10.test.ts`, and `scripts/check-m10-browser.mjs`. Final PWA/deployment/device verification is outside M10.

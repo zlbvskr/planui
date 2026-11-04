@@ -291,3 +291,21 @@ M6 numbering note: legacy AT-M06-01/02/03 references in habit rows retain their 
 | Canonical project links, no generated tasks/events/transactions | Stable-ID move/unlink tests and browser checks confirming no task/event/session writes |
 | Safe local media/links and storage failure handling | Bounded raster helper, local browser decoding, atomic media/wish writes, shared/recovery retention, rollback tests and no external preview requests |
 | Disabled-module backup and archive compatibility | Real v8 ZIP replacement with disabled Wishlist, all statuses, legacy archive and exact local image bytes |
+
+
+## M10 coverage — integration/recovery (current scope)
+
+The latest approved mapping is **M9 = Wishlist**, **M10 = integration and recovery hardening**. Earlier M10 Wishlist references in historical rows are superseded by the M9/M10 checkpoint sections.
+
+| Requirement | Implementation / executed verification |
+|---|---|
+| C20 complete coherent ZIP, all M1–M9 history/associations/preferences and disabled modules | Existing 18-array serializer retained; Stage 11/M1–M9 full regressions and M10 canonical-projection/restore/re-export fixtures |
+| C20 validate container, limits, checksums, records/IDs/references/ownership/cycles/statuses/time/exact money/media | Bounded ZIP reader and strengthened domain/manifest validation; adversarial Stage 11/M10 tests and browser raster decode |
+| C20 controlled replacement and actual atomicity | Existing single IndexedDB transaction retained; snapshot captured under write lock; trusted private preview; native quota and simulated late-commit rollback |
+| C20 recovery ≤3 / quota / shared media / no recursive snapshots | Atomic retention and GC; clock-skew retention; immutable media identities; failed operations preserve existing points; old local snapshots migrate on export/restore |
+| C19/C20 stale tabs, open forms, unsupported schema, interruption | Schema 9 compatibility barrier; post-commit generation update; sticky stale UI; expiring per-tab advisory leases; native v1–v8 upgrade/restart/failure and two-tab browser checks |
+| C05/C08/C10/C12/C13 canonical completion/date/status/module integration | M3/M4/M5/M8 and combined M10 regression: shared records, zero roadmap occupancy, independent status changes, no module-driven data/session erasure |
+| Bounded work roster and non-retroactive templates | Existing Stage 8 generation/preview/range/copy and rollback suite rerun; infrastructure reused |
+| C20/C22 privacy, actual protection and explicit local deletion | Runtime source review found no analytics/remote previews/sensitive logging; existing local export and explicit reset/recovery deletion preserved; unencrypted/browser-origin/device and eviction limitations documented |
+
+Evidence: AT-M10-R01–R10 and RELEASE_CHECKLIST. Final PWA/deployment and physical-device release checks remain pending.

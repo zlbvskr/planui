@@ -107,16 +107,17 @@ describe('M8 context-aware habits and canonical sessions',()=>{
   it('keeps older v1–v6 records intact on migration and advances schema metadata only',async()=>{
     const {repos}=await fixture();const snap=await snapshot(repos);const exported=await exportFullBackupZip(repos,now);
     for(const version of [1,2,3,4,5,6]) {const old={...snap,settings:{...snap.settings,dbSchemaVersion:version}};const migrated=migrateSupportedDomainSnapshot(old,{...exported.manifest,backupVersion:version,dbSchemaVersion:version}).snapshot;assert.deepEqual(migrated.habits,snap.habits);assert.deepEqual(migrated.habitEntries,snap.habitEntries);assert.equal(migrated.settings.dbSchemaVersion,PLANUI_DB_SCHEMA_VERSION);validateDomainSnapshot(migrated);}
-    assert.equal(PLANUI_BACKUP_VERSION,PLANUI_DB_SCHEMA_VERSION);
+    assert.equal(exported.manifest.backupVersion,PLANUI_BACKUP_VERSION);
+    assert.equal(exported.manifest.dbSchemaVersion,PLANUI_DB_SCHEMA_VERSION);
   });
   it('explicit permanent habit deletion removes only its own canonical sessions and entries',async()=>{
     const {repos}=await fixture();await plan(repos,'session');await repos.saveHabit(habit('other'));await repos.recordHabitEntryForDateTransactionally({habitId:'other',localDate:day,input:{kind:'complete'},nowIso:now});await repos.deleteHabitWithHistoryTransactionally('habit',now);const snap=await snapshot(repos);assert.equal(snap.habits.length,1);assert.equal(snap.habitEntries.length,1);assert.equal(snap.habitEntries[0].habitId,'other');assert.equal(snap.reservations.length,0);validateDomainSnapshot(snap);
   });
   it('cancels one selected session without completing or releasing sibling sessions',async()=>{
     const {repos}=await fixture();const one=await plan(repos,'one');await plan(repos,'two',day,'16:00');const before=await snapshot(repos);
-    await repos.cancelHabitSession(one.id,one.revision);const after=await snapshot(repos);
+    await repos.cancelHabitSession(one.id,one.revision,now);const after=await snapshot(repos);
     assert.equal(after.reservations.find(r=>r.id==='one')?.state,'released');assert.deepEqual(after.reservations.find(r=>r.id==='two'),before.reservations.find(r=>r.id==='two'));assert.deepEqual(after.habitEntries,before.habitEntries);
-    await assert.rejects(repos.cancelHabitSession(one.id,one.revision));
+    await assert.rejects(repos.cancelHabitSession(one.id,one.revision,now));
   });
   it('reassigns direct direction references safely when a direction is removed',async()=>{
     const {repos}=await fixture();await repos.saveFolder({id:'folder',name:'Напрям',parentId:null,lifeAreaId:null,order:0,createdAt:now,updatedAt:now,revision:1});const h=(await snapshot(repos)).habits[0];await repos.saveHabit({...h,folderId:'folder'},h.revision);await repos.deleteFolderTransactionally('folder','rehome_to_parent',now);const after=await snapshot(repos);assert.equal(after.habits[0].folderId,null);validateDomainSnapshot(after);

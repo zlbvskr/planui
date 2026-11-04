@@ -1,3 +1,4 @@
+import { PlanuiError } from './i18n/errorsUk';
 import { HabitSessionSheet } from './components/habits/HabitSessionSheet';
 import { restoreTodayInteraction } from './domain/today';
 import React, {
@@ -125,10 +126,12 @@ export function App() {
     string | null
   >(null);
 
+  const [externalReplacement, setExternalReplacement] = useState(false);
+  const [storageError, setStorageError] = useState<string | null>(null);
+
   const hydratedNextDayPrefRef = useRef(false);
 
   const reloadLocalData = useCallback(async () => {
-    repositories.acknowledgeExternalGenerationChange();
     const { snapshot: snap, mediaBlobs: blobs } =
       await repositories.captureCoherentSnapshot();
     const recoveries = await repositories.listRecoverySnapshots();
@@ -153,10 +156,19 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    void reloadLocalData();
+    const reloadSafely = () => reloadLocalData().catch(error => {
+      if (error instanceof PlanuiError && error.code === 'STALE_DB_GENERATION_CONFLICT') setExternalReplacement(true);
+      else setStorageError(error instanceof PlanuiError ? error.message : 'Не вдалося прочитати локальні дані. Перезавантажте застосунок; дані не видалено.');
+    });
+    void reloadSafely();
     const unsubscribe = repositories.tabSync.subscribe((msg) => {
       if (msg.type === 'ENTITY_MUTATED' || msg.type === 'IMPORT_FINISHED') {
-        void reloadLocalData();
+        const known = repositories.getKnownDbGeneration();
+        if (known !== null && msg.dbGeneration !== known) {
+          setExternalReplacement(true);
+          return;
+        }
+        void reloadSafely();
       }
     });
     return unsubscribe;
@@ -508,6 +520,13 @@ export function App() {
         isBackgroundInert={Boolean(habitOccurrence) || isEditorOpen || isLocalModalOpen || Boolean(activeGapForPicker) || Boolean(inspectedEvent)}
       >
         <div className="space-y-6">
+          {storageError && <FeedbackBanner tone="error" message={storageError} />}
+          {externalReplacement && <div role="alert" className="rounded-2xl border border-amber-400 p-4 space-y-3">
+            <p>В іншій вкладці замінено локальні дані. Незбережене введення залишено на екрані, але збереження заблоковано. Скопіюйте потрібний текст перед перезавантаженням.</p>
+            <button type="button" onClick={() => {
+              if (window.confirm('Перезавантажити застосунок? Незбережене введення буде втрачено. Спочатку скопіюйте потрібні дані.')) window.location.reload();
+            }}>Перезавантажити застосунок</button>
+          </div>}
           {toastMessage && (
             <FeedbackBanner
               tone="success"

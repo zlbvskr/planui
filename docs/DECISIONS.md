@@ -124,3 +124,14 @@ The active product revision `PLANUI-LIFE-ALIGNMENT-1` supersedes earlier product
 - Preserve ExactPrice storage and supported per-item currencies. Use BigInt intermediates; reject ambiguous spacing, mixed separators, excess precision and overflow. Keep zero separate from missing. Preserve unchanged historical note/title and decimal-string values when editing other fields.
 - Existing-price currency changes require acknowledgement that the entered number is being expressed in a different currency without conversion. Preferred currency affects new entry defaults only.
 - Reuse bounded local raster validation, browser decoding and media stores. Save attachment and wish atomically, and retain assets referenced by any live wish/inspiration or recovery snapshot. Open only user-entered HTTP/S links on explicit action, without automatic previews.
+
+
+## M10 — Harden existing replacement rather than introduce storage infrastructure
+
+Retain the single IndexedDB database, existing stores, ZIP format 8 and bounded local recovery design. Advance native schema to 9 as a write-protocol compatibility barrier: M9's unguarded replacement code must not stay able to reopen the newer database. The migration updates settings metadata only. No entity splitting, data reset, reseeding or new encryption/access-control layer is introduced.
+
+Validate ZIP/media outside the write transaction and retain a private validation result. Capture the protective live snapshot only after acquiring the replacement write lock. The same persisted schema/generation checks now protect import/restore/reset and ordinary writes; acknowledge generation after commit. Always retain the newly created recovery point despite equal/retrograde clocks. Refuse a conflicting media ID rather than overwrite bytes needed by recovery. Atomicity covers stores in this database only, not browser caches, theme hints or external downloads.
+
+Do not automatically acknowledge another tab's replacement while forms are open. Preserve the visible input, block writes and require an explicit reload that warns about unsaved input. Broadcast notices are advisory expiring leases; IndexedDB serialization and persisted guards are authoritative. This keeps interruption and missed-message handling safe without adding cross-database locks.
+
+Use the existing conservative runtime security limits as the documented limits (100 MiB archive, 120 MiB expansion, 20 MiB data JSON, 2 MiB manifest, 500 entries, ratio 50 for >64 KiB entries, 15 MiB image and 25 million pixels). Correct the previous document mismatch without increasing limits. Repetitive text uses ZIP store when deflate would violate the reader's ratio limit.

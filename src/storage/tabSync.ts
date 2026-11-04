@@ -23,9 +23,9 @@ export class TabSyncCoordinator {
   public readonly tabId: string;
   private channel: BroadcastChannel | null = null;
   private listeners = new Set<(msg: TabSyncMessage) => void>();
-  private remoteImportLockTabId: string | null = null;
+  private remoteImportLeases = new Map<string, number>();
 
-  constructor(channelName = 'planui_tab_sync_v1') {
+  constructor(channelName = 'planui_tab_sync_v1', private readonly now = () => Date.now()) {
     this.tabId =
       typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
         ? crypto.randomUUID()
@@ -38,12 +38,11 @@ export class TabSyncCoordinator {
           const msg = event.data;
           if (!msg || typeof msg !== 'object') return;
           if (msg.type === 'IMPORT_STARTED' && msg.tabId !== this.tabId) {
-            this.remoteImportLockTabId = msg.tabId;
+            this.remoteImportLeases.set(msg.tabId, this.now() + 30_000);
           } else if (
-            msg.type === 'IMPORT_FINISHED' &&
-            this.remoteImportLockTabId === msg.tabId
+            msg.type === 'IMPORT_FINISHED'
           ) {
-            this.remoteImportLockTabId = null;
+            this.remoteImportLeases.delete(msg.tabId);
           }
           for (const listener of this.listeners) {
             listener(msg);
@@ -57,7 +56,12 @@ export class TabSyncCoordinator {
   }
 
   public assertNoRemoteImportInProgress(): void {
-    if (this.remoteImportLockTabId !== null) {
+    // Advisory lease only: an interrupted tab must not lock the app forever.
+    // IndexedDB serialization and the persisted generation are the write authority.
+    for (const [tabId, expires] of this.remoteImportLeases) {
+      if (expires <= this.now()) this.remoteImportLeases.delete(tabId);
+    }
+    if (this.remoteImportLeases.size > 0) {
       throw new PlanuiError('IMPORT_ALREADY_IN_PROGRESS');
     }
   }

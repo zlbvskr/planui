@@ -1,12 +1,15 @@
 import type { PlanuiDomainSnapshot, Task } from './types';
+import { getLocalDateBoundariesInZone } from './temporal';
 import { resolveEffectiveLifeArea } from './plans';
 
 /** Read-only projections retain the canonical task objects; never write derived lists. */
 export function selectProjectTasks(snapshot: PlanuiDomainSnapshot, projectId: string): Task[] {
   return snapshot.tasks.filter(task => task.ownership.kind === 'project' && task.ownership.projectId === projectId);
 }
-export function selectDateTasks(snapshot: PlanuiDomainSnapshot, date: string): Task[] {
-  return snapshot.tasks.filter(task => task.plannedDate === date);
+export function selectDateTasks(snapshot: PlanuiDomainSnapshot, date: string, zone = snapshot.settings.lastDetectedTimeZone): Task[] {
+  const bounds = getLocalDateBoundariesInZone(date, zone);
+  const timedIds = new Set(snapshot.reservations.filter(session => session.state === 'active' && Date.parse(session.interval.startInstant) < bounds.endMs && Date.parse(session.interval.endInstant) > bounds.startMs).map(session => session.taskId));
+  return snapshot.tasks.filter(task => task.plannedDate === date || timedIds.has(task.id));
 }
 export const selectTodayTasks = selectDateTasks;
 export const selectCalendarTasks = selectDateTasks;

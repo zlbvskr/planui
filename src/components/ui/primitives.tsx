@@ -291,9 +291,10 @@ export const Card: React.FC<CardProps> = ({
   return (
     <section
       data-testid={dataTestId}
-      className={`rounded-2xl p-4 sm:p-5 ${className}`}
+      className={`rounded-3xl p-4 sm:p-6 ${className}`}
       style={{
-        backgroundColor: 'var(--bg-surface)',
+        backgroundColor: 'var(--surface-card-elevated)',
+        boxShadow: 'inset 0 0 0 1px var(--border-subtle)',
         border: '1px solid var(--border-subtle)',
       }}
     >
@@ -344,7 +345,8 @@ export const EmptyStateCard: React.FC<EmptyStateCardProps> = ({
     <div
       className="rounded-2xl p-6 text-left flex flex-col items-start gap-3"
       style={{
-        backgroundColor: 'var(--bg-surface)',
+        backgroundColor: 'var(--surface-card-elevated)',
+        boxShadow: 'inset 0 0 0 1px var(--border-subtle)',
         border: '1px solid var(--border-subtle)',
       }}
     >
@@ -489,6 +491,7 @@ export interface ModalSheetProps {
   isOpen: boolean;
   title: string;
   subtitle?: string;
+  transitionName?: string;
   isDirty?: boolean;
   onClose: () => void;
   children: React.ReactNode;
@@ -498,6 +501,7 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
   isOpen,
   title,
   subtitle,
+  transitionName,
   isDirty = false,
   onClose,
   children,
@@ -514,7 +518,7 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
       const timer = window.setTimeout(() => {
         const root = dialogRef.current;
         if (!root) return;
-        const focusable = root.querySelector<HTMLElement>(
+        const focusable = root.querySelector<HTMLElement>('[data-testid="create-task-title-input"]') ?? root.querySelector<HTMLElement>(
           'input:not([disabled]), textarea:not([disabled]), select:not([disabled]), button:not([disabled])'
         );
         if (focusable) {
@@ -559,7 +563,7 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
           dialogRef.current.querySelectorAll<HTMLElement>(
             'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
           )
-        );
+        ).filter(element => element.getClientRects().length > 0);
         if (focusables.length === 0) return;
         const first = focusables[0];
         const last = focusables[focusables.length - 1];
@@ -594,9 +598,10 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className="w-full sm:max-w-[540px] max-h-[92dvh] flex flex-col rounded-t-3xl sm:rounded-3xl overflow-hidden planui-transition-modal"
+        className="planui-floating-capsule w-full sm:max-w-[540px] max-h-[92dvh] flex flex-col rounded-t-3xl sm:rounded-3xl overflow-hidden planui-transition-modal"
         style={{
-          backgroundColor: 'var(--bg-surface)',
+          viewTransitionName: transitionName,
+          backgroundColor: 'var(--glass-bg)',
           border: '1px solid var(--border-strong)',
           boxShadow: 'var(--glass-shadow)',
         }}

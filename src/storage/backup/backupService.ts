@@ -90,8 +90,8 @@ export function migrateSupportedDomainSnapshot(
   }
   if (
     manifest.format !== PLANUI_BACKUP_FORMAT ||
-    (![1, 2, 3, 4, 5, 6, 7, 8].includes(manifest.backupVersion)) ||
-    (![1, 2, 3, 4, 5, 6, 7, 8, 9].includes(manifest.dbSchemaVersion))
+    (![1, 2, 3, 4, 5, 6, 7, 8, 9].includes(manifest.backupVersion)) ||
+    (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10].includes(manifest.dbSchemaVersion))
   ) {
     throw new PlanuiError('BACKUP_UNSUPPORTED_VERSION');
   }
@@ -138,6 +138,8 @@ export function migrateSupportedDomainSnapshot(
   if (manifest.dbSchemaVersion < 9 && obj.settings && typeof obj.settings === 'object') {
     obj.settings = { ...obj.settings, dbSchemaVersion: PLANUI_DB_SCHEMA_VERSION };
   }
+
+  if (manifest.dbSchemaVersion < 10 && obj.settings && typeof obj.settings === 'object') obj.settings = {...obj.settings, dbSchemaVersion:PLANUI_DB_SCHEMA_VERSION};
 
   // M1: Ensure goals collection exists and task ownership format is migrated from v1
   if (manifest.dbSchemaVersion === 1 && obj.goals === undefined) {

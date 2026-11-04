@@ -70,7 +70,7 @@ describe('M5: Today working space', () => {
     const repos = await fixture();
     await repos.saveTask({ ...task('optional-high'), priority: 'high', planningState: 'date_only', plannedDate: day });
     await repos.saveTask({ ...task('due-low'), priority: 'low', deadline: { kind: 'date_only', localDate: day } });
-    await repos.saveTask({ ...task('focus'), planningState: 'date_only', plannedDate: day });
+    await repos.saveTask({ ...task('focus'), effort: 'small', planningState: 'date_only', plannedDate: day });
     await repos.saveReservationTransactionally(reservation('session', '12:00', '13:00'));
     const { snapshot: before } = await repos.captureCoherentSnapshot();
     const plan: DailyPlan = { focusTaskIds: ['focus'], minimalDay: true, focusNoteUk: null };

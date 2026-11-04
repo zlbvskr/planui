@@ -31,7 +31,7 @@ export function DailyFocusPanel({ date, zone, plan, tasks, reservations, reposit
           {tasks.filter(t => t.state !== 'canceled' && (ids.includes(t.id) || (t.state === 'open' && t.title.toLocaleLowerCase('uk').includes(query.toLocaleLowerCase('uk'))))).map(task => <label key={task.id} className="min-h-[44px] flex items-center gap-2"><input type="checkbox" checked={ids.includes(task.id)} onChange={() => setIds(ids.includes(task.id) ? ids.filter(id => id !== task.id) : [...ids, task.id])} /><span className="break-words">{task.title}</span></label>)}
         </fieldset>
         <label className="min-h-[44px] flex items-center gap-2"><input type="checkbox" checked={minimal} onChange={e => setMinimal(e.target.checked)} />Мінімальний день</label>
-        <p>Це допомагає спростити план, а не стерти зобов’язання. Приховуються лише справи поза фокусом без термінів і сеансів. Терміни, робота, події та зайнятий час залишаються видимими. Пріоритет не визначає обов’язковість. Розклад не змінюється.</p>
+        <p>Це допомагає спростити план, а не стерти зобов’язання. Залишається не більше одного малого кроку з фокусу без терміну й сеансу. Терміни, робота, події та зайнятий час залишаються видимими. Пріоритет не визначає обов’язковість. Розклад не змінюється.</p>
         {error && <p role="alert">{error}</p>}
         <Button type="submit" disabled={busy} variant="primary">Зберегти фокус і вигляд дня</Button>
       </form>

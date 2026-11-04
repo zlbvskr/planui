@@ -372,10 +372,12 @@ export function resolveEffectiveLifeArea(
     lifeAreaId?: EntityId | null;
     ownership?: TaskOwnership;
     goalId?: EntityId | null;
+    folderId?: EntityId | null;
   },
   context: {
     goalsById: ReadonlyMap<EntityId, Goal>;
     projectsById: ReadonlyMap<EntityId, Project>;
+    foldersById?: ReadonlyMap<EntityId, Folder>;
   }
 ): ResolvedLifeAreaContext {
   const directLifeAreaId = entity.lifeAreaId ?? null;
@@ -401,6 +403,14 @@ export function resolveEffectiveLifeArea(
     inheritedLifeAreaId = parentGoal?.lifeAreaId ?? null;
   }
 
+  if (!inheritedLifeAreaId && context.foldersById) {
+    const owner = entity.ownership;
+    const project = owner?.kind === 'project' ? context.projectsById.get(owner.projectId) : undefined;
+    const goalId = owner?.kind === 'goal' ? owner.goalId : project?.goalId ?? entity.goalId;
+    const goal = goalId ? context.goalsById.get(goalId) : undefined;
+    const folderId = owner?.kind === 'folder' || owner?.kind === 'standalone' ? owner.folderId : entity.folderId ?? project?.folderId ?? goal?.folderId;
+    inheritedLifeAreaId = folderId ? context.foldersById.get(folderId)?.lifeAreaId ?? null : null;
+  }
   const effectiveLifeAreaId = directLifeAreaId ?? inheritedLifeAreaId;
 
   return {

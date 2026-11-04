@@ -1,3 +1,4 @@
+import {previewStageShift,validateStageDependencies} from '../domain/stageDependencies';
 import { LifeLinkKind, LifeLinkSource, STARTER_LIFE_AREAS, directMergeLinks, lifeAreaMergeSignature } from '../domain/lifeAreas';
 import { DailyPlan, TaskEffort } from '../domain/types';
 import { validateDailyPlans } from '../domain/today';
@@ -577,6 +578,17 @@ export class PlanuiRepositories {
     });
   }
 
+  public async updateStageGraph(id:string, patch:Partial<ProjectStage>, expected:Record<string,number>, shiftDependents:boolean):Promise<void> {
+    this.tabSync.assertNoRemoteImportInProgress();
+    await this.engine.runTransaction([STORE_NAMES.stages],'readwrite',async tx=>{
+      const stages=await tx.getAll<ProjectStage>(STORE_NAMES.stages);const root=stages.find(stage=>stage.id===id);if(!root)throw new PlanuiError('ENTITY_NOT_FOUND');
+      const next={...root,...patch,id:root.id,projectId:root.projectId,goalId:root.goalId};
+      const graph=stages.map(stage=>stage.id===id?next:stage);validateStageDependencies(graph);
+      const affected=shiftDependents?previewStageShift(stages.map(stage=>stage.id===id?{...stage,dependsOnStageIds:next.dependsOnStageIds}:stage),id,next.roadmapPeriod??null).map(stage=>stage.id===id?next:stage):[next];
+      for(const stage of affected){const current=stages.find(record=>record.id===stage.id)!;if(expected[stage.id]===undefined)throw new PlanuiError('STALE_WRITE_CONFLICT');const revision=this.assertRevisionMatch(current,expected[stage.id]);validateRoadmapMetadata(stage);await tx.put(STORE_NAMES.stages,{...stage,revision,updatedAt:new Date().toISOString()});}
+    });
+  }
+
   public async reorderRoadmapStages(owner: { kind: 'goal' | 'project'; id: string }, ids: readonly string[]): Promise<void> {
     this.tabSync.assertNoRemoteImportInProgress();
     await this.engine.runTransaction([STORE_NAMES.stages], 'readwrite', async tx => {
@@ -802,8 +814,9 @@ export class PlanuiRepositories {
           stage.id
         );
         const nextRev = this.assertRevisionMatch(existing, expectedRevision);
-        const record: ProjectStage = { ...stage, revision: nextRev };
+        const record: ProjectStage = { ...stage, ...(stage.dependsOnStageIds === undefined && existing?.dependsOnStageIds !== undefined ? { dependsOnStageIds: existing.dependsOnStageIds } : {}), revision: nextRev };
         validateStageRecord(record, projectIds, new Set((await tx.getAll<Goal>(STORE_NAMES.goals)).map(g => g.id)));
+        validateStageDependencies([...(await tx.getAll<ProjectStage>(STORE_NAMES.stages)).filter(existing=>existing.id!==record.id),record]);
         await tx.put(STORE_NAMES.stages, record);
         return record;
       }
@@ -1737,6 +1750,7 @@ export class PlanuiRepositories {
             });
           }
         }
+        for(const stage of await tx.getAll<ProjectStage>(STORE_NAMES.stages))if(stage.dependsOnStageIds?.includes(stageId))await tx.put(STORE_NAMES.stages,{...stage,dependsOnStageIds:stage.dependsOnStageIds.filter(id=>id!==stageId),revision:stage.revision+1,updatedAt:nowIso});
         await tx.delete(STORE_NAMES.stages, stageId);
         return { unlinkedTaskCount };
       }

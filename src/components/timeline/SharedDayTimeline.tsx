@@ -552,7 +552,7 @@ export function SharedDayTimeline({
                       style={{
                         backgroundColor: 'var(--bg-surface)',
                         border: pos.hasConflict
-                          ? '1.5px solid var(--color-brand)'
+                          ? '1.5px solid #b7791f'
                           : `1px solid ${palette.accentVar}`,
                         opacity:
                           pos.visualState === 'released'
@@ -753,7 +753,7 @@ export function SharedDayTimeline({
       </Card>
 
       {/* Availability & Unoccupied Windows Summary Card with Gap Picker Actions (C10 / 5.6 / 6.4) */}
-      {!compactMode && (
+      {!compactMode && !testIdPrefix.startsWith('today') && (
         <Card
           title={UK_STRINGS.scheduling.availabilityCardTitle}
           data-testid={`${testIdPrefix}-availability-card`}

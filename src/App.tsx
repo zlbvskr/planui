@@ -1,3 +1,5 @@
+import { selectAmbientContext } from './domain/projections';
+import { transitionCreation } from './components/shell/creationTransition';
 import { PlanuiError } from './i18n/errorsUk';
 import { HabitSessionSheet } from './components/habits/HabitSessionSheet';
 import { usePwaLifecycle } from './pwa/pwaController';
@@ -106,6 +108,7 @@ export function App() {
   >([]);
   const [habitFilter, setHabitFilter] = useState<'active' | 'paused' | 'archived'>('active');
   const [habitOccurrence, setHabitOccurrence] = useState<{habitId: string; date: string} | null>(null);
+  const [quickAdd, setQuickAdd] = useState(false);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   useEffect(() => { if (habitOccurrence && snapshot && !snapshot.habits.some(h => h.id === habitOccurrence.habitId)) setHabitOccurrence(null); }, [habitOccurrence, snapshot]);
   const [isLocalModalOpen, setIsLocalModalOpen] = useState(false);
@@ -340,6 +343,7 @@ export function App() {
   const openGlobalCreation = (
     preferredAction?: ImplementedCreationActionKind
   ) => {
+    setQuickAdd(false);
     setEditorInitialAction(preferredAction);
     setIsEditorOpen(true);
   };
@@ -518,9 +522,10 @@ export function App() {
   return (
     <>
       <FloatingShell
+        ambient={selectAmbientContext({ events }, nowMs, activeDestination === 'directions' ? folders.find(folder => folder.id === directionsCtx.activeFolderId)?.name : '')}
         activeDestination={activeDestination}
         onSelectDestination={handleSelectDestination}
-        onOpenGlobalCreate={() => openGlobalCreation()}
+        onOpenGlobalCreate={() => transitionCreation(() => { openGlobalCreation('task'); setQuickAdd(true); })}
         isModalOpen={anyModalOpen}
         isBackgroundInert={Boolean(habitOccurrence) || isEditorOpen || isLocalModalOpen || Boolean(activeGapForPicker) || Boolean(inspectedEvent)}
       >
@@ -782,10 +787,11 @@ export function App() {
 
       {habitOccurrence && snapshot && habits.some(h => h.id === habitOccurrence.habitId) && <HabitSessionSheet habit={habits.find(h => h.id === habitOccurrence.habitId)!} date={habitOccurrence.date} zone={activeZone} tasks={tasks} events={events} reservations={reservations} entries={habitEntries} repositories={repositories} allowPlanning={snapshot.settings.modules?.habitsEnabled !== false} onChanged={reloadLocalData} onClose={() => setHabitOccurrence(null)} />}
       <SharedEditorHost
+        globalQuickAdd={quickAdd}
         isOpen={isEditorOpen}
         activeDestination={activeDestination}
         contexts={contexts}
-        initialContext={buildInitialCreationContext(
+        initialContext={quickAdd ? { ...buildInitialCreationContext(activeDestination, contexts), targetDate: null, folderId: null, goalId: null, projectId: null, stageId: null } : buildInitialCreationContext(
           activeDestination,
           contexts
         )}
@@ -806,7 +812,7 @@ export function App() {
           snapshot?.settings.preferredWishlistCurrency ?? null
         }
         repositories={repositories}
-        onClose={() => setIsEditorOpen(false)}
+        onClose={() => transitionCreation(() => setIsEditorOpen(false))}
         onEntityCreated={async (msg) => {
           await reloadLocalData();
           setToastMessage(msg);

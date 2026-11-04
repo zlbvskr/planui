@@ -533,7 +533,7 @@ export function HabitsWorkspaceView({
         />
       ) : (
         <div className="space-y-4" data-testid="habits-list-container">
-          {filteredHabits.map((habit) => {
+          {[...filteredHabits].sort((a,b)=>(a.contextCueUk ?? a.ruleRevisions.at(-1)?.rule.kind ?? '').localeCompare(b.contextCueUk ?? b.ruleRevisions.at(-1)?.rule.kind ?? '')).map((habit) => {
             const entriesForHabit = entriesByHabitId.get(habit.id) ?? [];
             const dayEval = evaluateHabitOnDate({
               habit,
@@ -585,6 +585,7 @@ export function HabitsWorkspaceView({
                 key={habit.id}
                 data-testid={`habit-card-${habit.id}`}
                 title={habit.name}
+                className="border-l-4"
                 subtitle={formatHabitRuleSummaryUk(rev.rule, rev.target)}
                 headerRight={
                   <div className="flex flex-wrap items-center gap-1.5">
@@ -604,6 +605,7 @@ export function HabitsWorkspaceView({
                 }
               >
                 <div className="space-y-4">
+                  <p className="text-sm font-medium">{habit.contextCueUk || (rev.rule.kind === 'days_off' ? 'У вихідні від змін' : rev.rule.kind === 'weekly_frequency' ? `${rev.rule.timesPerWeek} разів на тиждень` : 'Щоденний контекст')}</p>
                   {habit.folderId && <p>Напрям: {folders.find(f => f.id === habit.folderId)?.name}</p>}
                   {habit.contextCueUk && <p>Контекст: {habit.contextCueUk}</p>}
                   {habit.reminderIntentionUk && <p>Мій намір нагадати собі: {habit.reminderIntentionUk}</p>}

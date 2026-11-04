@@ -1,3 +1,6 @@
+import { detectScheduleConflicts, projectScheduleForDate } from '../../domain/scheduling';
+import { sessionFromDuration } from '../../domain/today';
+import type { CalendarEvent } from '../../domain/types';
 import { classifyTaskTemporalNotice } from '../../domain/plans';
 import React, { useState } from 'react';
 import { DailyPlan, Task, TaskEffort, TaskReservation } from '../../domain/types';
@@ -6,10 +9,11 @@ import { formatUkrainianDateHeading, formatInstantInZone } from '../../domain/te
 import { PlanuiRepositories } from '../../storage/repositories';
 import { Button, Card, SelectField } from '../ui/primitives';
 
-export function TodayTasksPanel({ date, actualTodayDate, nowMs, zone, plan, tasks, reservations, repositories, onChanged, onToggle, onPlan }: { date: string; actualTodayDate: string; nowMs: number; zone: string; plan: DailyPlan; tasks: readonly Task[]; reservations: readonly TaskReservation[]; repositories: PlanuiRepositories; onChanged: () => Promise<void> | void; onToggle: (id: string) => Promise<void> | void; onPlan: (task: Task) => void }) {
+export function TodayTasksPanel({ date, actualTodayDate, nowMs, zone, plan, tasks, events, reservations, repositories, onChanged, onToggle, onPlan }: { date: string; actualTodayDate: string; nowMs: number; zone: string; plan: DailyPlan; tasks: readonly Task[]; events: readonly CalendarEvent[]; reservations: readonly TaskReservation[]; repositories: PlanuiRepositories; onChanged: () => Promise<void> | void; onToggle: (id: string) => Promise<void> | void; onPlan: (task: Task) => void }) {
   const [all, setAll] = useState(false);
   const [error, setError] = useState('');
   const projection = projectTodayTasks(tasks, reservations, date, zone, plan);
+  const gaps = projectScheduleForDate({localDate:date,displayZone:zone,tasks,events,reservations,dayOffAnnotations:[]}).availability.unoccupiedGaps;
   const visible = all ? tasks.filter(t => t.state !== 'canceled') : projection.visible;
   return <Card className="space-y-3" data-testid="today-tasks-mode">
     <div className="flex flex-wrap gap-2 items-center"><h2 className="font-semibold">{all ? 'Загальний список завдань' : 'Завдання обраного дня'}</h2><Button aria-pressed={all} onClick={() => setAll(!all)}>{all ? 'Повернутися до дня' : 'Відкрити загальний список'}</Button></div>
@@ -29,7 +33,8 @@ export function TodayTasksPanel({ date, actualTodayDate, nowMs, zone, plan, task
         {notice.isElapsedTimedPlanning && <p>Сеанси закінчилися; це не завершує справу.</p>}
         <p>Сеанси: {sessions.length} · Оцінка: {task.estimatedDurationMinutes === null ? 'Не задана' : `${task.estimatedDurationMinutes} хв`}</p>
         <SelectField label={`Зусилля: ${task.title}`} value={task.effort ?? ''} options={[{ value: '', label: 'Не задані' }, ...Object.entries(EFFORT_LABELS_UK).map(([value, label]) => ({ value, label }))]} onChange={async e => { try { setError(''); await repositories.setTaskEffort(task.id, (e.target.value || null) as TaskEffort | null, task.revision); await onChanged(); } catch { setError('Не вдалося змінити зусилля. Оновіть дані й повторіть.'); } }} />
-        <div className="flex flex-wrap gap-2"><Button onClick={() => onPlan(task)}>Дата й сеанси</Button><Button onClick={() => void onToggle(task.id)}>{task.state === 'completed' ? 'Відкрити знову' : 'Завершити'}</Button></div>
+        {task.state === 'open' && <details><summary>У вільне вікно</summary><div className="flex flex-wrap gap-2">{gaps.filter(gap => gap.endMs > nowMs && gap.durationMinutes >= (task.estimatedDurationMinutes ?? 15)).slice(0,3).map(gap => <Button key={gap.startInstant} onClick={async () => {try {const interval=sessionFromDuration(date,gap.startLocalTime,task.estimatedDurationMinutes ?? 15,zone);const fresh=(await repositories.captureCoherentSnapshot()).snapshot;const warning=detectScheduleConflicts({candidateStartInstant:interval.startInstant,candidateEndInstant:interval.endInstant,displayZone:zone,tasks:fresh.tasks,events:fresh.events,reservations:fresh.reservations});if(warning.hasConflicts) throw new Error('Вікно змінилося. Перегляньте розклад.');const now=new Date().toISOString();await repositories.saveReservationTransactionally({id:crypto.randomUUID(),taskId:task.id,interval,state:'active',releaseMetadata:null,createdAt:now,updatedAt:now,revision:1},undefined,task.revision);await onChanged();}catch {setError('Не вдалося зайняти вікно. Оновіть розклад.');}}}>{gap.startLocalTime} · {task.estimatedDurationMinutes ?? 15} хв</Button>)}</div></details>}
+        <div className="flex flex-wrap gap-2">{plan.minimalDay && task.state === 'open' && !task.deadline && <Button onClick={async () => {try {await repositories.setTaskDateOnlyPlanningTransactionally(task.id,null,new Date().toISOString(),task.revision);await repositories.saveDailyPlan(date,{...plan,focusTaskIds:plan.focusTaskIds.filter(id=>id!==task.id)},plan);await onChanged();}catch {setError('Не вдалося повернути справу до списку. Оновіть дані.');}}}>Повернути до списку</Button>}<Button onClick={() => onPlan(task)}>Дата й сеанси</Button><Button onClick={() => void onToggle(task.id)}>{task.state === 'completed' ? 'Відкрити знову' : 'Завершити'}</Button></div>
       </article>;
     })}
   </Card>;

@@ -23,6 +23,7 @@ import {
   EditableCreationContext,
   ImplementedCreationActionKind,
   getContextualCreationActions,
+  CREATION_ACTION_REGISTRY,
 } from '../../state/shellStore';
 import {
   CalendarEvent,
@@ -84,6 +85,7 @@ import {
 
 export interface SharedEditorHostProps {
   isOpen: boolean;
+  globalQuickAdd?: boolean;
   activeDestination: PrimaryDestinationId;
   contexts?: DestinationContextMap;
   initialContext: EditableCreationContext;
@@ -113,6 +115,7 @@ export interface SharedEditorHostProps {
 
 export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
   isOpen,
+  globalQuickAdd = false,
   activeDestination,
   contexts,
   initialContext,
@@ -134,7 +137,8 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
   onClose,
   onEntityCreated,
 }) => {
-  const availableActions = getContextualCreationActions(
+  const quickKinds: ImplementedCreationActionKind[] = ['task', 'shift', 'event', 'goal', 'project', ...(enabledModules?.habitsEnabled !== false ? ['habit' as const] : []), ...(enabledModules?.stateCheckInsEnabled !== false ? ['personal_record' as const] : []), ...(enabledModules?.wishlistEnabled !== false ? ['wish' as const] : [])];
+  const availableActions = globalQuickAdd ? quickKinds.map(kind => CREATION_ACTION_REGISTRY.find(action => action.kind === kind)!) : getContextualCreationActions(
     activeDestination,
     contexts,
     enabledModules
@@ -156,6 +160,8 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
     useState<EditableCreationContext>(initialContext);
 
   // Task fields
+  const [taskEffort, setTaskEffort] = useState<Task['effort']>(null);
+  const [taskLifeArea, setTaskLifeArea] = useState('');
   const [taskTitle, setTaskTitle] = useState('');
   const [taskDescription, setTaskDescription] = useState('');
   const [taskPriority, setTaskPriority] = useState<TaskPriority>('normal');
@@ -313,6 +319,8 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
       });
 
       setTaskTitle('');
+      setTaskEffort(null);
+      setTaskLifeArea('');
       setTaskDescription('');
       setTaskPriority('normal');
       setTaskEstimate('');
@@ -425,6 +433,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
 
   // Compute whether the user has entered unsaved changes (C17 dirty input protection)
   const isDirty =
+    taskEffort !== null || taskLifeArea !== '' ||
     taskTitle.trim().length > 0 ||
     taskDescription.trim().length > 0 ||
     goalTitle.trim().length > 0 ||
@@ -697,6 +706,8 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
             description: taskDescription.trim() ? taskDescription.trim() : null,
             state: 'open',
             priority: taskPriority,
+            effort: taskEffort,
+            lifeAreaId: taskLifeArea || null,
             deadline: parsedDeadline,
             estimatedDurationMinutes: parsedEstimate,
             planningState: 'unplanned',
@@ -733,6 +744,8 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
             description: taskDescription.trim() ? taskDescription.trim() : null,
             state: 'open',
             priority: taskPriority,
+            effort: taskEffort,
+            lifeAreaId: taskLifeArea || null,
             deadline: parsedDeadline,
             estimatedDurationMinutes: parsedEstimate,
             planningState: hasTargetDate ? 'date_only' : 'unplanned',
@@ -1189,18 +1202,29 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
 
   return (
     <ModalSheet
+      transitionName="planui-create"
       isOpen={isOpen}
-      title={UK_STRINGS.creation.sheetTitleChooseAction}
-      subtitle={UK_STRINGS.creation.sheetSubtitleContext}
+      title={globalQuickAdd ? 'Швидке додавання' : UK_STRINGS.creation.sheetTitleChooseAction}
+      subtitle={globalQuickAdd ? 'Достатньо назви. Решту можна додати пізніше.' : UK_STRINGS.creation.sheetSubtitleContext}
       isDirty={isDirty}
       onClose={onClose}
     >
       <form onSubmit={handleSave} className="space-y-4" noValidate>
+        {selectedAction === 'task' && (            <InputField
+              label={UK_STRINGS.creation.taskForm.titleLabel}
+              placeholder={UK_STRINGS.creation.taskForm.titlePlaceholder}
+              value={taskTitle}
+              onChange={(e) => setTaskTitle(e.target.value)}
+              data-testid="create-task-title-input"
+              autoFocus
+              required
+            />
+)}
         {/* Contextual Action Switcher — Only shows implemented actions, prioritized by active destination */}
         <div
           role="radiogroup"
           aria-label={UK_STRINGS.creation.sheetTitleChooseAction}
-          className="grid grid-cols-1 sm:grid-cols-2 gap-2"
+          className="flex gap-2 overflow-x-auto pb-2"
         >
           {availableActions.map((act) => {
             const active = selectedAction === act.kind;
@@ -1261,7 +1285,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
                   }
                   setErrorMessage(null);
                 }}
-                className="min-h-[52px] p-3 rounded-xl flex items-start gap-2.5 text-left planui-transition-micro cursor-pointer"
+                className="min-h-[44px] shrink-0 px-3 py-2 rounded-full flex items-center gap-2 text-left planui-transition-micro cursor-pointer"
                 style={{
                   backgroundColor: active
                     ? 'var(--bg-pressed)'
@@ -1281,7 +1305,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
                     {act.labelUk}
                   </div>
                   <div
-                    className="text-[12px] mt-0.5 leading-snug"
+                    className="hidden"
                     style={{ color: 'var(--text-secondary)' }}
                   >
                     {act.descriptionUk}
@@ -1292,6 +1316,8 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
           })}
         </div>
 
+        <details open={selectedAction !== 'task'}>
+          <summary className="min-h-[44px] py-3 cursor-pointer">Дата / час · Напрям / проєкт</summary>
         {/* Editable Prefilled Context Block (C04: Prefilled date/folder/project/stage must be visible and editable) */}
         <div
           className="p-3.5 rounded-2xl space-y-3"
@@ -1773,17 +1799,14 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
           )}
         </div>
 
+        </details>
+        {selectedAction === 'task' && <div className="flex flex-wrap gap-2">
+          <SelectField label="Зусилля" value={taskEffort ?? ''} onChange={e => setTaskEffort((e.target.value || null) as Task['effort'])} options={[{value:'',label:'Не задано'},{value:'small',label:'•'},{value:'medium',label:'••'},{value:'large',label:'•••'}]} />
+          <SelectField label="Сфера життя" value={taskLifeArea} onChange={e => setTaskLifeArea(e.target.value)} options={[{value:'',label:'Успадкувати'},...lifeAreaQuestions.filter(area => !area.archived && !area.mergedIntoId).map(area => ({value:area.id,label:area.questionTextUk}))]} />
+        </div>}
         {/* Specific Form Fields by Action */}
         {selectedAction === 'task' && (
-          <div className="space-y-3.5">
-            <InputField
-              label={UK_STRINGS.creation.taskForm.titleLabel}
-              placeholder={UK_STRINGS.creation.taskForm.titlePlaceholder}
-              value={taskTitle}
-              onChange={(e) => setTaskTitle(e.target.value)}
-              data-testid="create-task-title-input"
-              required
-            />
+          <details className="space-y-3.5"><summary className="min-h-[44px] py-3 cursor-pointer">Тривалість · Дедлайн · Деталі</summary>
             <TextAreaField
               label={UK_STRINGS.creation.taskForm.descriptionLabel}
               placeholder={UK_STRINGS.creation.taskForm.descriptionPlaceholder}
@@ -1875,12 +1898,13 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
                 data-testid="create-task-deadline-instant-input"
               />
             )}
-          </div>
+          </details>
         )}
 
         {/* 5.3 / 8.2 Shared Event & Work Shift Form */}
         {(selectedAction === 'event' || selectedAction === 'shift') && (
           <div className="space-y-3.5" data-testid="create-event-shift-form">
+            {selectedAction === 'event' && <div className="flex flex-wrap gap-2" aria-label="Особисті блоки">{[{title:'Сон',type:'sleep'},{title:'Відновлення',type:'rest'},{title:'Дорога',type:'travel'},{title:'Підготовка до зміни',type:'personal'},{title:'Особистий час після роботи',type:'rest'}].map(preset => <Button key={preset.title} onClick={() => {setEventTitle(preset.title);setEventType(preset.type as CalendarEventType);setEventIsBlocking(true);setEventColor('rest');}}>{preset.title}</Button>)}</div>}
             {selectedAction === 'shift' && shiftTemplates.length > 0 && (
               <SelectField
                 label="Заповнити за шаблоном зміни (необов’язково)"

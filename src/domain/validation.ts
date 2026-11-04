@@ -1,3 +1,4 @@
+import {validateStageDependencies} from './stageDependencies';
 import { validateDailyPlans } from './today';
 import { validateRoadmapMetadata } from './roadmap';
 import { PlanuiError } from '../i18n/errorsUk';
@@ -1131,6 +1132,7 @@ export function validateDomainSnapshot(
 
   const stageProjectMap = new Map<string, string>();
   const stageIds = new Set<string>();
+  validateStageDependencies(snapshot.stages);
   for (const s of snapshot.stages) {
     validateStageRecord(s, projectIds, goalIds);
     if (stageIds.has(s.id)) throw new PlanuiError('INVALID_ID', s.id);

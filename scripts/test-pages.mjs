@@ -58,11 +58,13 @@ try {
   await page.getByTestId('mobile-global-create-button').click();
   await page.getByTestId('create-task-title-input').pressSequentially('Перевірка Pages', {delay: 30});
   assert.equal(await page.getByTestId('create-task-title-input').inputValue(), 'Перевірка Pages');
-  await page.getByTestId('shared-editor-submit-button').click();
+  await page.waitForFunction(() => document.activeElement?.getAttribute('data-testid') === 'create-task-title-input');
+  await page.getByTestId('create-task-title-input').press('Enter');
   await page.getByTestId('create-task-title-input').waitFor({state:'hidden'}).catch(async error=>{console.error(await page.locator('body').innerText());throw error;});
   const getData=()=>page.evaluate(()=>new Promise((resolve,reject)=>{const req=indexedDB.open('planui_local_db');req.onerror=()=>reject(req.error);req.onsuccess=()=>{const db=req.result,tx=db.transaction(['tasks','settings']);const result={};for(const name of ['tasks','settings']){const q=tx.objectStore(name).getAll();q.onsuccess=()=>result[name]=q.result;}tx.oncomplete=()=>{db.close();resolve(result);};};}));
   console.log('PASS: navigation and task creation');
   let saved=await getData(); assert(saved.tasks.some(t=>t.title==='Перевірка Pages'));
+  const quickTask=saved.tasks.find(t=>t.title==='Перевірка Pages'); assert.equal(quickTask.plannedDate,null); assert.equal(quickTask.deadline,null); assert.equal(quickTask.ownership.kind,'standalone');
   await page.evaluate(()=>localStorage.setItem('pages-test','збережено'));
   await page.reload(); assert.equal(await page.evaluate(()=>localStorage.getItem('pages-test')),'збережено'); assert.deepEqual((await getData()).tasks,saved.tasks);
   await page.goto(`${origin}/planui/#/settings`);
@@ -81,8 +83,10 @@ try {
   const broken=await page.evaluate(async()=>{const reg=await navigator.serviceWorker.ready;const changed=new Promise(resolve=>reg.addEventListener('updatefound',()=>{const sw=reg.installing;sw.addEventListener('statechange',()=>{if(sw.state==='redundant')resolve(sw.state);});},{once:true}));await reg.update();return changed;});assert.equal(broken,'redundant');
   console.log('PASS: failed worker rejected');
   version='v2';
-  await page.evaluate(async()=>{const reg=await navigator.serviceWorker.ready;const installed=new Promise(resolve=>reg.addEventListener('updatefound',()=>{const sw=reg.installing;sw.addEventListener('statechange',()=>{if(sw.state==='installed')resolve();});},{once:true}));await reg.update();await installed;});
+  await page.evaluate(async()=>{const reg=await navigator.serviceWorker.ready;await reg.update();});
+  await page.waitForFunction(async()=>Boolean((await navigator.serviceWorker.ready).waiting),undefined,{timeout:90000});
   console.log('PASS: update worker staged');
+  await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
   await page.getByTestId('pwa-update-banner').waitFor();assert.equal(await page.locator('meta[name=pages-test-version]').count(),0);
   await page.getByTestId('mobile-nav-item-today').click();
   await page.getByTestId('mobile-global-create-button').click();

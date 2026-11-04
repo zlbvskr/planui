@@ -290,8 +290,8 @@ export class IndexedDbStorageEngine implements StorageEngine {
           };
         }
 
-        // v5–v9 advance metadata only. v9 also prevents older unguarded replacement clients from reopening.
-        if (oldVersion >= 4 && oldVersion < 9 && req.transaction) {
+        // v5–v10 advance metadata only. Dependency lists are optional; legacy records retain all fields.
+        if (oldVersion >= 4 && oldVersion < 10 && req.transaction) {
           const request = req.transaction.objectStore(STORE_NAMES.settings).openCursor();
           request.onsuccess = () => {
             const cursor = request.result;

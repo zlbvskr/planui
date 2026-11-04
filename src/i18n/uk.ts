@@ -607,7 +607,7 @@ export const UK_STRINGS = {
     progressTransparentTasks: (completed: number, total: number) => `Виконано ${completed} з ${total} справ`,
     starterDirectionsTitle: 'Початок роботи з напрямами',
     starterDirectionsPrompt: 'У цьому просторі ще немає напрямів. Ви можете додати базовий набір орієнтирів або створювати власні контейнери за потреби.',
-    starterDirectionsButton: 'Додати базові напрями (Дім, Робота, Самовдосконалення)',
+    starterDirectionsButton: 'Додати базові напрями',
     starterDirectionsSuccess: 'Базові напрями успішно додано.',
     checklistHeading: 'Чекліст (кроки справи)',
     checklistEmpty: 'У цієї справи ще немає підкроків.',

@@ -483,7 +483,7 @@ export const PlansView: React.FC<PlansViewProps> = ({
   const handleCreateStarterDirections = async () => {
     setModalError(null);
     const nowIso = new Date().toISOString();
-    const starters = ['Дім', 'Робота', 'Самовдосконалення'];
+    const starters = ['Творчість', 'Університет', 'Поточна робота', 'Перехід на іншу роботу', 'Англійська мова'];
     try {
       for (let i = 0; i < starters.length; i++) {
         const id =
@@ -601,9 +601,11 @@ export const PlansView: React.FC<PlansViewProps> = ({
   }, [folders, plansContext.activeFolderId, plansContext.searchQuery]);
 
   // Projects in current container
+  const [directionStatus,setDirectionStatus]=useState<'active'|'idea'|'paused'|'completed'>('active');
   const containerProjects = useMemo(() => {
     const q = plansContext.searchQuery.trim().toLowerCase();
     return projects.filter((p) => {
+      if (p.state !== directionStatus) return false;
       if (!plansContext.showArchivedProjects && p.archived) {
         return false;
       }
@@ -617,6 +619,7 @@ export const PlansView: React.FC<PlansViewProps> = ({
       return p.folderId === plansContext.activeFolderId;
     });
   }, [
+    directionStatus,
     projects,
     plansContext.activeFolderId,
     plansContext.showArchivedProjects,
@@ -627,6 +630,7 @@ export const PlansView: React.FC<PlansViewProps> = ({
   const containerGoals = useMemo(() => {
     const q = plansContext.searchQuery.trim().toLowerCase();
     return goals.filter((g) => {
+      if (g.state !== directionStatus) return false;
       if (!plansContext.showArchivedProjects && g.archived) {
         return false;
       }
@@ -641,6 +645,7 @@ export const PlansView: React.FC<PlansViewProps> = ({
       return g.folderId === plansContext.activeFolderId;
     });
   }, [
+    directionStatus,
     goals,
     plansContext.activeFolderId,
     plansContext.showArchivedProjects,
@@ -1701,8 +1706,10 @@ export const PlansView: React.FC<PlansViewProps> = ({
 
   return (
     <div className="space-y-4" data-testid="destination-view-plans">
-      <Button aria-expanded={showRoadmap} onClick={() => setShowRoadmap(!showRoadmap)}>Дорожня карта</Button>
-      {showRoadmap && <RoadmapView source={{ folders, goals, projects, stages, tasks }} repositories={repositories} onChanged={onDataChanged} initialOwner={activeProject ? { kind: 'project', id: activeProject.id } : activeGoal ? { kind: 'goal', id: activeGoal.id } : null} onInspect={owner => onUpdatePlansContext(owner.kind === 'goal' ? { activeGoalId: owner.id, activeProjectId: null } : { activeProjectId: owner.id })} />}
+      <nav className="planui-floating-header flex gap-2" aria-label="Простір напрямів"><Button aria-pressed={!showRoadmap} onClick={() => setShowRoadmap(false)}>Напрями</Button><Button aria-pressed={showRoadmap} onClick={() => setShowRoadmap(true)}>Глобальна дорожня карта</Button></nav>
+      {!showRoadmap && <nav aria-label="Статус планів напряму" className="flex flex-wrap gap-2">{([{id:'active',label:'Активні'},{id:'idea',label:'Ідеї'},{id:'paused',label:'На паузі'},{id:'completed',label:'Завершені'}] as const).map(option=><Button key={option.id} aria-pressed={directionStatus===option.id} onClick={()=>setDirectionStatus(option.id)}>{option.label}</Button>)}</nav>}
+      {showRoadmap && <RoadmapView source={{ folders, goals, projects, stages, tasks }} repositories={repositories} onChanged={onDataChanged} initialOwner={activeProject ? { kind: 'project', id: activeProject.id } : activeGoal ? { kind: 'goal', id: activeGoal.id } : null} onInspect={owner => {setShowRoadmap(false);onUpdatePlansContext(owner.kind === 'goal' ? { activeGoalId: owner.id, activeProjectId: null } : { activeProjectId: owner.id });}} />}
+      <div hidden={showRoadmap} className="space-y-4">
       <header className="space-y-1">
         <h1 className="text-[32px] font-bold tracking-tight leading-tight m-0">
           {UK_STRINGS.destinations.plans.title}
@@ -5289,6 +5296,7 @@ export const PlansView: React.FC<PlansViewProps> = ({
           </div>
         )}
       </ModalSheet>
+      </div>
     </div>
   );
 };

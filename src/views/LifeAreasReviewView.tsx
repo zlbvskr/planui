@@ -1,3 +1,5 @@
+import { WeeklyReviewSheet } from '../components/today/WeeklyReviewSheet';
+import { OptionalSlider } from '../components/ui/OptionalSlider';
 import { PlanuiError } from '../i18n/errorsUk';
 import React, { useEffect, useState } from 'react';
 import { LifeAreaQuestion, PlanuiDomainSnapshot, Project, Task, RoadmapOwner } from '../domain/types';
@@ -27,7 +29,8 @@ function AreaEditor({ area, repositories, onChanged }: { area: LifeAreaQuestion;
 export function LifeAreasReviewView({ snapshot, zone, today, repositories, onChanged, onOpenPlan, onInspectEvent, onModalStateChange, initialPlanningReview }: { snapshot: PlanuiDomainSnapshot; zone: string; today: string; repositories: PlanuiRepositories; onChanged: () => Promise<void> | void; onOpenPlan: (kind: 'goal' | 'project', id: string) => void; onInspectEvent: (id: string) => void; onModalStateChange?: (open: boolean) => void; initialPlanningReview?: boolean }) {
   const areas = [...snapshot.lifeAreaQuestions].sort((a, b) => a.order - b.order);
   const active = areas.filter(a => !a.archived && !a.mergedIntoId);
-  const [start, setStart] = useState(today), [end, setEnd] = useState(today);
+  const [start, setStart] = useState(addDaysToLocalDate(today,-13)), [end, setEnd] = useState(today);
+  const [reviewRhythm,setReviewRhythm]=useState('14');
   const [reviewDirty, setReviewDirty] = useState(false);
   const [leavePlan, setLeavePlan] = useState<{ kind: 'goal' | 'project'; id: string } | null>(null);
   const [drafts, setDrafts] = useState<Record<string, ReviewAnswerDraft>>({});
@@ -46,7 +49,9 @@ export function LifeAreasReviewView({ snapshot, zone, today, repositories, onCha
   const links = projectLifeAreaLinks(snapshot);
   const related = links.filter(link => link.effectiveId === areaId);
   const missing = STARTER_LIFE_AREAS.filter(([key]) => !areas.some(a => a.starterKeys?.includes(key)));
-  const modalOpen = !!(merge || pause || linkPreview || planning || leavePlan);
+  const [lifeReviewOpen,setLifeReviewOpen]=useState(false);
+  const [weeklyOpen,setWeeklyOpen]=useState(false);
+  const modalOpen = lifeReviewOpen || weeklyOpen || !!(merge || pause || linkPreview || planning || leavePlan);
   useEffect(() => { onModalStateChange?.(modalOpen); return () => onModalStateChange?.(false); }, [modalOpen]);
   async function act(work: () => Promise<unknown>, close?: () => void) {
     setError(''); setBusy(true);
@@ -57,6 +62,8 @@ export function LifeAreasReviewView({ snapshot, zone, today, repositories, onCha
   return <div className="space-y-4" data-testid="life-areas-review">
     <p>Сфери життя є редагованою рамкою для планування, а не валідованим психологічним тестом. Загальний бал життя й рейтинг сфер не обчислюються.</p>
     {error && <p role="alert">{error}</p>}
+    <Button onClick={()=>setWeeklyOpen(true)}>Щотижневий огляд · 4 кроки</Button>
+    {weeklyOpen && <WeeklyReviewSheet snapshot={snapshot} today={today} repositories={repositories} onClose={()=>setWeeklyOpen(false)} onOpenPlan={openPlan} onPause={setPause} onInspectEvent={onInspectEvent} onChanged={onChanged} />}
     <PlanningReviewPanel snapshot={snapshot} zone={zone} today={today} initiallyOpen={initialPlanningReview} onOpenPlan={openPlan} onPause={setPause} onInspectEvent={onInspectEvent} onPlanTask={(id, reservationId) => { const task = snapshot.tasks.find(t => t.id === id); if (task) setPlanning({ task, reservationId }); }} />
     <Card className="space-y-3"><details><summary className="font-semibold min-h-[44px] cursor-pointer">Налаштувати сфери та базову рамку</summary>
       <label className="flex gap-2 items-center min-h-[44px]"><input type="checkbox" checked={showHidden} onChange={e => setShowHidden(e.target.checked)} />Показати приховані й об’єднані сфери</label>
@@ -70,7 +77,9 @@ export function LifeAreasReviewView({ snapshot, zone, today, repositories, onCha
         <Button disabled={!starterKey || busy} onClick={() => void act(() => repositories.addOrMapStarterArea(starterKey, mapping || null), () => { setStarterKey(''); setMapping(''); })}>Підтвердити додавання або зіставлення</Button>
       </div>}
     </details></Card>
-    <Card className="space-y-3"><h2 className="font-semibold">Новий огляд сфер життя</h2>
+    <Button onClick={()=>setLifeReviewOpen(true)}>Новий огляд сфер життя</Button><ModalSheet isOpen={lifeReviewOpen} title="Огляд сфер життя" isDirty={reviewDirty} onClose={()=>setLifeReviewOpen(false)}>
+      <SelectField label="Ритм огляду (днів)" value={reviewRhythm} options={[7,14,30].map(days=>({value:String(days),label:`Кожні ${days} днів`}))} onChange={event=>{setReviewRhythm(event.target.value);setStart(addDaysToLocalDate(today,1-Number(event.target.value)));setEnd(today);setReviewDirty(true);}} />
+      <p>Ритм задає період поточного огляду; нагадування не створюються.</p>
       <form className="space-y-4" onSubmit={e => { e.preventDefault(); void act(() => repositories.saveLifeAreaAssessment(buildLifeReview(crypto.randomUUID(), active, drafts, start, end, new Date().toISOString())), () => { setDrafts({}); setReviewDirty(false); }); }}>
         <fieldset disabled={busy} className="space-y-4">
         <div className="grid sm:grid-cols-2 gap-2"><InputField label="Початок періоду" type="date" required value={start} onChange={e => { setStart(e.target.value); setReviewDirty(true); }} /><InputField label="Кінець періоду (включно)" type="date" required value={end} onChange={e => { setEnd(e.target.value); setReviewDirty(true); }} /></div>
@@ -78,7 +87,7 @@ export function LifeAreasReviewView({ snapshot, zone, today, repositories, onCha
         <p>Усі відповіді необов’язкові. «Без відповіді» відрізняється від 0, «Ні» та навмисно порожнього тексту.</p>
         {active.map(area => { const answer = drafts[area.id] ?? EMPTY_ANSWER; return <fieldset key={area.id} className="border rounded-xl p-3 space-y-2" style={{ borderColor: 'var(--border-subtle)' }}><legend className="font-semibold break-words">{area.questionTextUk}</legend>
           {area.goodEnoughUk && <p>Достатньо добре для мене: {area.goodEnoughUk}</p>}
-          <SelectField label={SATISFACTION_QUESTION_UK} value={answer.score === null ? '' : String(answer.score)} options={[{ value: '', label: 'Без відповіді' }, ...Array.from({ length: 11 }, (_, n) => ({ value: String(n), label: `${n} / 10` }))]} onChange={e => update(area.id, { score: e.target.value === '' ? null : Number(e.target.value) as ReviewAnswerDraft['score'] })} />
+          <OptionalSlider label={SATISFACTION_QUESTION_UK} max={10} value={answer.score} onChange={score => update(area.id, {score:score as ReviewAnswerDraft['score']})} />
           <SelectField label="Хочу приділити цій сфері увагу зараз?" value={answer.attentionNow === null ? '' : answer.attentionNow ? 'yes' : 'no'} options={[{ value: '', label: 'Без відповіді' }, { value: 'yes', label: 'Так' }, { value: 'no', label: 'Ні' }]} onChange={e => update(area.id, { attentionNow: e.target.value === '' ? null : e.target.value === 'yes' })} />
           <TextAreaField label="Одна потенційно корисна зміна" value={answer.usefulChangeUk ?? ''} onChange={e => update(area.id, { usefulChangeUk: e.target.value })} />
           <p>{answer.usefulChangeUk === null ? 'Без відповіді' : answer.usefulChangeUk === '' ? 'Відповідь залишено порожньою' : 'Відповідь додано'}</p><div className="flex flex-wrap gap-2"><Button onClick={() => update(area.id, { usefulChangeUk: null })}>Залишити зміну без відповіді</Button><Button onClick={() => update(area.id, { usefulChangeUk: '' })}>Позначити порожню відповідь</Button></div>
@@ -88,7 +97,7 @@ export function LifeAreasReviewView({ snapshot, zone, today, repositories, onCha
 
         </fieldset>
       </form>
-    </Card>
+    </ModalSheet>
     <Card className="space-y-3"><h2 className="font-semibold">Від огляду до явної дії</h2>
       <SelectField label="Сфера для перегляду зв’язків і наступного кроку" value={selected?.id ?? ''} onChange={e => { setAreaId(e.target.value); setMergeTarget(''); }} options={[{ value: '', label: 'Оберіть сферу' }, ...areas.filter(a => !a.mergedIntoId).map(a => ({ value: a.id, label: a.questionTextUk }))]} />
       {selected && <>

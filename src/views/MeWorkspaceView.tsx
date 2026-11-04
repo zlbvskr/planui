@@ -1294,7 +1294,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
       {/* =====================================================================
           10.2 PERSONAL RECORDS SUBVIEW
          ===================================================================== */}
-      {subView === 'records' && <StateCheckInsView records={personalRecords} today={actualTodayDate} zone={activeZone} enabled={(settings.modules?.stateCheckInsEnabled ?? false)} repositories={repositories} onChanged={() => onDataChanged()} />}
+      {subView === 'records' && <StateCheckInsView events={snapshot.events} records={personalRecords} today={actualTodayDate} zone={activeZone} enabled={(settings.modules?.stateCheckInsEnabled ?? false)} repositories={repositories} onChanged={() => onDataChanged()} />}
 
       {/* =====================================================================
           10.3 LIFE AREAS SUBVIEW
@@ -1364,7 +1364,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
           ) : (
             <div
               className="grid grid-cols-1 sm:grid-cols-2 gap-3.5"
-              data-testid="inspiration-items-grid"
+              data-testid="inspiration-items-grid" style={{gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))'}}
             >
               {filteredInspirationItems.map((item) => {
                 const linkedProject = item.projectId
@@ -1396,6 +1396,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
                     }}
                   >
                     <div className="space-y-2">
+                      {item.goalId && <Button onClick={()=>onOpenPlan('goal',item.goalId!)}>Ціль: {snapshot.goals.find(goal=>goal.id===item.goalId)?.title??'Відкрити'}</Button>}
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex items-center gap-1.5 text-[12px] font-medium">
                           {item.kind === 'quote' ? (

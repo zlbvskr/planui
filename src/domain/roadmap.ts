@@ -102,3 +102,8 @@ export function roadmapWarnings(item: RoadmapItem, items: readonly RoadmapItem[]
   }
   return warnings;
 }
+
+/** Date changes involving sibling stages always require a deliberate review. */
+export function requiresStageDateReview(item: RoadmapItem, related: readonly RoadmapItem[], period: RoadmapPeriod | null): boolean {
+ return item.owner.kind === 'stage' && JSON.stringify(period) !== JSON.stringify(item.record.roadmapPeriod ?? null) && related.some(other => other.owner.kind === 'stage' && other.owner.id !== item.owner.id && other.parent?.id === item.parent?.id && other.parent?.kind === item.parent?.kind);
+}

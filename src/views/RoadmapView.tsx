@@ -1,6 +1,8 @@
+import {previewStageShift} from '../domain/stageDependencies';
+import type {ProjectStage} from '../domain/types';
 import React, { useState } from 'react';
 import { Folder, PlanningEntityState, RoadmapCheckpoint, RoadmapPeriod, RoadmapOwner, Task } from '../domain/types';
-import { RoadmapItem, RoadmapSource, projectRoadmap, periodLabelUk, dateLabelUk, roadmapWarnings, periodInterval } from '../domain/roadmap';
+import { RoadmapItem, RoadmapSource, projectRoadmap, periodLabelUk, dateLabelUk, roadmapWarnings, periodInterval, requiresStageDateReview } from '../domain/roadmap';
 import { addDaysToLocalDate } from '../domain/temporal';
 import { PlanuiRepositories } from '../storage/repositories';
 import { Button, Card, InputField, SelectField } from '../components/ui/primitives';
@@ -9,6 +11,8 @@ const stateLabels: Record<PlanningEntityState, string> = { active: 'Активн
 const kindLabels = { goal: 'Ціль', project: 'Проєкт', stage: 'Етап' };
 
 export function RoadmapItemEditor({ item, repositories, onChanged, onCancel, relatedItems = [], relatedTasks = [] }: { item: RoadmapItem; repositories: PlanuiRepositories; onChanged: () => Promise<void> | void; onCancel: () => void; relatedItems?: RoadmapItem[]; relatedTasks?: readonly Task[] }) {
+  const [dependencies,setDependencies]=useState<string[]>((item.record as ProjectStage).dependsOnStageIds??[]);
+  const stageRecords=relatedItems.filter(record=>record.owner.kind==='stage').map(record=>record.record as ProjectStage);
   const period = item.record.roadmapPeriod;
   const [precision, setPrecision] = useState(period?.precision ?? 'undated');
   const [month, setMonth] = useState(period?.precision === 'month' ? period.month : '');
@@ -20,6 +24,7 @@ export function RoadmapItemEditor({ item, repositories, onChanged, onCancel, rel
   const [points, setPoints] = useState<RoadmapCheckpoint[]>([...(item.record.checkpoints ?? [])].sort((a, b) => a.order - b.order));
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [reviewSubsequent, setReviewSubsequent] = useState(false);
   function draftPeriod(): RoadmapPeriod | null {
     if (precision === 'month') return { precision, month };
     if (precision === 'quarter') return { precision, year: Number(year), quarter: Number(quarter) as 1 | 2 | 3 | 4 };
@@ -33,12 +38,14 @@ export function RoadmapItemEditor({ item, repositories, onChanged, onCancel, rel
     const related = [...relatedItems.filter(i => i.owner.kind !== item.owner.kind || i.owner.id !== item.owner.id), preview];
     warnings = related.filter(i => (i.owner.kind === preview.owner.kind && i.owner.id === preview.owner.id) || (i.parent?.kind === preview.owner.kind && i.parent.id === preview.owner.id)).flatMap(i => roadmapWarnings(i, related, relatedTasks).map(w => `${i.title}: ${w}`));
   } catch { /* Incomplete input is validated on submit. */ }
-  async function save(e: React.FormEvent) {
+  async function save(e: React.FormEvent, keepSubsequent = false, shiftDependents = false) {
     e.preventDefault(); setError(''); setBusy(true);
     try {
       const roadmapPeriod = draftPeriod();
       if (roadmapPeriod) periodInterval(roadmapPeriod);
-      await repositories.updateRoadmapItem(item.owner, { roadmapPeriod, deadline: deadline || null, checkpoints: points.map((c, order) => ({ ...c, order })) }, item.record.revision);
+      if (!keepSubsequent && requiresStageDateReview(item, relatedItems, roadmapPeriod)) { setReviewSubsequent(true); return; }
+      if(item.owner.kind==='stage') await repositories.updateStageGraph(item.owner.id,{roadmapPeriod,targetDate:deadline||null,checkpoints:points.map((c,order)=>({...c,order})),dependsOnStageIds:dependencies},Object.fromEntries(stageRecords.map(stage=>[stage.id,stage.revision])),shiftDependents);
+      else await repositories.updateRoadmapItem(item.owner, { roadmapPeriod, deadline: deadline || null, checkpoints: points.map((c, order) => ({ ...c, order })) }, item.record.revision);
       await onChanged(); onCancel();
     } catch { setError('Не вдалося зберегти. Перевірте дати, порядок меж і назви контрольних точок. Якщо запис змінився, закрийте форму та відкрийте знову.'); }
     finally { setBusy(false); }
@@ -49,6 +56,7 @@ export function RoadmapItemEditor({ item, repositories, onChanged, onCancel, rel
     {precision === 'month' && <InputField label="Місяць" type="month" required value={month} onChange={e => setMonth(e.target.value)} />}
     {precision === 'quarter' && <div className="grid grid-cols-2 gap-2"><InputField label="Рік" type="number" min="1" max="9998" required value={year} onChange={e => setYear(e.target.value)} /><SelectField label="Квартал" value={quarter} onChange={e => setQuarter(e.target.value)} options={[1, 2, 3, 4].map(q => ({ value: String(q), label: `${q} квартал` }))} /></div>}
     {precision === 'range' && <div className="grid sm:grid-cols-2 gap-2"><InputField label="Початок" type="date" required value={start} onChange={e => setStart(e.target.value)} /><InputField label="Останній день (включно)" type="date" required value={end} onChange={e => setEnd(e.target.value)} /></div>}
+    {item.owner.kind==='stage'&&<fieldset><legend>Залежить від етапів</legend>{stageRecords.filter(stage=>stage.id!==item.owner.id).map(stage=><label key={stage.id} className="flex min-h-[44px] gap-2 items-center"><input type="checkbox" checked={dependencies.includes(stage.id)} onChange={()=>setDependencies(dependencies.includes(stage.id)?dependencies.filter(id=>id!==stage.id):[...dependencies,stage.id])}/>{stage.title}</label>)}</fieldset>}
     <InputField label="Термін завершення" type="date" value={deadline} onChange={e => setDeadline(e.target.value)} hint="Окремо від приблизного періоду. Час для роботи планується окремо у справі." />
     <fieldset className="space-y-3"><legend className="font-semibold">Контрольні точки</legend>
       {points.map((point, index) => <div key={point.id} className="space-y-2 border rounded-xl p-3">
@@ -58,8 +66,9 @@ export function RoadmapItemEditor({ item, repositories, onChanged, onCancel, rel
       </div>)}
       <Button onClick={() => setPoints([...points, { id: crypto.randomUUID(), title: '', localDate: null, order: points.length }])}>Додати контрольну точку</Button>
     </fieldset>
-    <p className="text-sm">Зміна дат не переносить інші етапи, терміни справ, бронювання, події чи зміни.</p>
+    <p className="text-sm">Без окремого підтвердження інші етапи не переносяться. Терміни справ, бронювання, події та робочі зміни залишаються незмінними.</p>
     {warnings.length > 0 && <div role="status"><p className="font-semibold">Перевірте узгодженість плану:</p><ul>{warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul><p>Пов’язані елементи можна відкрити в напрямах і змінити окремо.</p></div>}
+    {reviewSubsequent && <div role="status" className="rounded-2xl border p-4 space-y-2"><p>Перевірте наступні етапи. Їхні дати не зміщуються автоматично.</p><ul>{relatedItems.filter(other => other.owner.kind === 'stage' && other.owner.id !== item.owner.id && other.parent?.id === item.parent?.id).map(other => <li key={other.owner.id}>{other.title} · {periodLabelUk(other.record.roadmapPeriod)}</li>)}</ul><Button onClick={e => void save(e,true,true)}>Підтвердити перенесення залежних етапів</Button><ul>{(()=>{try{return previewStageShift(stageRecords,item.owner.id,draftPeriod()).filter(stage=>stage.id!==item.owner.id).map(stage=><li key={stage.id}>{stage.title}: {periodLabelUk(stage.roadmapPeriod)}</li>);}catch{return <li>Перевірте дати й залежності.</li>;}})()}</ul><Button onClick={e => void save(e, true)}>Залишити їхні дати й зберегти</Button><Button onClick={() => setReviewSubsequent(false)}>Повернутися до перегляду</Button></div>}
     {error && <p role="alert">{error}</p>}
     <div className="flex flex-wrap gap-2"><Button type="submit" variant="primary" disabled={busy}>Зберегти дати</Button><Button disabled={busy} onClick={onCancel}>Скасувати</Button></div>
   </form>;

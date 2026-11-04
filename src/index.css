@@ -197,3 +197,87 @@ button, a, [role="button"], [role="tab"] {
   transition-duration: var(--dur-modal);
   transition-timing-function: var(--ease-out-quart);
 }
+
+/* Shared Liquid Glass control material; content remains opaque. */
+:root {
+  --surface-card-elevated: var(--bg-surface);
+  --space-unit: 8px;
+  --ease-out-quart: cubic-bezier(0.22, 1, 0.36, 1);
+  --glass-shadow: inset 0 1px 0.5px rgba(255,255,255,.45), inset 1px 0 0.5px rgba(255,255,255,.25), 0 12px 32px rgba(0,0,0,.18);
+  --floating-scroll-clearance: calc(104px + env(safe-area-inset-bottom, 0px));
+}
+.planui-floating-capsule {
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  transition: min-height var(--dur-modal) var(--ease-out-quart);
+}
+.planui-selection {
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  bottom: 6px;
+  width: calc((100% - 12px) / 4);
+  border-radius: 24px;
+  background: var(--bg-pressed);
+  box-shadow: inset 0 1px .5px rgba(255,255,255,.45);
+  transition: transform var(--dur-modal) var(--ease-out-quart);
+  pointer-events: none;
+}
+[data-collapsed="true"] { min-height: 56px; }
+[data-collapsed="true"] button { min-height: 44px; }
+[data-collapsed="true"] button span { display: none; }
+button:active { filter: brightness(1.08); }
+@media (prefers-reduced-transparency: reduce) {
+  .planui-floating-capsule { background: var(--bg-surface) !important; backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
+:root[data-reduced-transparency="true"] .planui-floating-capsule { background: var(--bg-surface) !important; backdrop-filter: none; -webkit-backdrop-filter: none; }
+@media (prefers-contrast: more) {
+  :root { --border-subtle: currentColor; --glass-border: currentColor; }
+  .planui-floating-capsule { border: 2px solid; }
+}
+
+:root {
+  --radius-card: 24px;
+  --color-night-shift: #595eaa;
+  --color-day-shift: #ad7934;
+  --color-recovery: #42846b;
+  --color-deadline: #b93e4b;
+}
+main { padding-top: max(24px, env(safe-area-inset-top)); }
+button, [role="button"], summary { min-height: 44px; }
+.planui-transition-modal { transform-origin: bottom right; animation: planui-sheet-in var(--dur-modal) var(--ease-out-quart); }
+@keyframes planui-sheet-in { from { opacity: 0; transform: translateY(32px) scale(.96); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .planui-transition-modal { animation: none; } }
+:root[data-reduced-motion="true"] .planui-transition-modal { animation: none; }
+::view-transition-group(planui-create) { animation-duration: 320ms; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+::view-transition-old(planui-create), ::view-transition-new(planui-create) { height: 100%; overflow: clip; border-radius: 28px; }
+::view-transition-group(root) { animation: none; }
+@media (prefers-reduced-motion: reduce) { ::view-transition-group(*) { animation-duration: 0s; } }
+:root[data-reduced-motion="true"]::view-transition-group(*) { animation-duration: 0s; }
+.planui-canvas { background-image: radial-gradient(ellipse at 15% 0%, rgba(129,143,173,.10), transparent 65%); }
+.planui-canvas[data-ambient="night"] { background-image: radial-gradient(ellipse at 15% 0%, rgba(49,46,129,.20), transparent 70%); }
+.planui-canvas[data-ambient="creative"] { background-image: radial-gradient(ellipse at 15% 0%, rgba(245,158,11,.18), transparent 70%); }
+.dark .planui-canvas[data-ambient="night"] { background-image: radial-gradient(ellipse at 15% 0%, #242052, transparent 80%); }
+.planui-selection { background: color-mix(in srgb, var(--bg-pressed) 65%, transparent); }
+/* Edge-only progressive enhancement. The main control material remains the blur/rim fallback. */
+@supports (backdrop-filter: url("#planui-edge-refraction")) and (mask-composite: exclude) {
+  .planui-edge-refraction::before {
+    content: ''; position: absolute; inset: 0; padding: 10px; border-radius: inherit; pointer-events: none;
+    backdrop-filter: url("#planui-edge-refraction");
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask-composite: exclude;
+  }
+}
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) { .planui-edge-refraction::before { display: none; } }
+:root[data-reduced-transparency="true"] .planui-edge-refraction::before { display: none; }
+input[type="range"]:active, input[type="checkbox"]:active { filter: drop-shadow(0 1px 2px rgba(255,255,255,.45)); }
+
+/* Part 2: shared floating controls stay separate from opaque content. */
+.planui-floating-header { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 8px); z-index: 20; border-radius: 24px; padding: 16px; background: var(--glass-bg); border: 1px solid var(--glass-border); box-shadow: var(--glass-shadow); backdrop-filter: blur(20px) saturate(180%); -webkit-backdrop-filter: blur(20px) saturate(180%); }
+.planui-deadline-badge { padding: 8px 12px; border-radius: 16px; color: var(--color-brand-text); background: var(--surface-card-elevated); border: 1px solid var(--color-deadline); font-size: 13px; }
+@media (prefers-reduced-transparency: reduce) { .planui-floating-header { background: var(--bg-surface); backdrop-filter: none; -webkit-backdrop-filter: none; } }
+:root[data-reduced-transparency="true"] .planui-floating-header { background: var(--bg-surface); backdrop-filter: none; -webkit-backdrop-filter: none; }
+@media (prefers-contrast: more) { .planui-floating-header { border: 2px solid currentColor; } }
+.planui-slider { accent-color: var(--color-brand); min-height: 44px; }
+.planui-slider::-webkit-slider-thumb { transition: filter var(--dur-micro); }
+.planui-slider:active::-webkit-slider-thumb { filter: drop-shadow(0 1px 2px rgba(255,255,255,.7)) drop-shadow(0 3px 8px rgba(0,0,0,.2)); }
+.planui-slider:active::-moz-range-thumb { box-shadow: inset 0 1px 1px rgba(255,255,255,.7),0 3px 8px rgba(0,0,0,.2); }

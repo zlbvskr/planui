@@ -83,7 +83,8 @@ try {
   const broken=await page.evaluate(async()=>{const reg=await navigator.serviceWorker.ready;const changed=new Promise(resolve=>reg.addEventListener('updatefound',()=>{const sw=reg.installing;sw.addEventListener('statechange',()=>{if(sw.state==='redundant')resolve(sw.state);});},{once:true}));await reg.update();return changed;});assert.equal(broken,'redundant');
   console.log('PASS: failed worker rejected');
   version='v2';
-  await page.evaluate(async()=>{const reg=await navigator.serviceWorker.ready;const installed=new Promise(resolve=>reg.addEventListener('updatefound',()=>{const sw=reg.installing;sw.addEventListener('statechange',()=>{if(sw.state==='installed')resolve();});},{once:true}));await reg.update();await installed;});
+  await page.evaluate(async()=>{const reg=await navigator.serviceWorker.ready;await reg.update();});
+  await page.waitForFunction(async()=>Boolean((await navigator.serviceWorker.ready).waiting),undefined,{timeout:90000});
   console.log('PASS: update worker staged');
   await page.getByTestId('pwa-update-banner').waitFor();assert.equal(await page.locator('meta[name=pages-test-version]').count(),0);
   await page.getByTestId('mobile-nav-item-today').click();

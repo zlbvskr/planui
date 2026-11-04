@@ -32,7 +32,8 @@ export function projectTodayTasks(tasks: readonly Task[], reservations: readonly
     const due = deadlineDate(t, zone);
     return t.state !== 'canceled' && (t.plannedDate === date || sessionIds.has(t.id) || due === date || (t.state === 'open' && due !== null && due < date) || plan.focusTaskIds.includes(t.id));
   });
-  const visible = plan.minimalDay ? relevant.filter(t => plan.focusTaskIds.includes(t.id) || !!t.deadline || sessionIds.has(t.id)) : relevant;
+  const optional = relevant.find(t => t.state === 'open' && t.effort === 'small' && plan.focusTaskIds.includes(t.id) && !t.deadline && !sessionIds.has(t.id));
+  const visible = plan.minimalDay ? relevant.filter(t => !!t.deadline || sessionIds.has(t.id) || t.id === optional?.id) : relevant;
   return { relevant, visible, hiddenCount: relevant.length - visible.length };
 }
 

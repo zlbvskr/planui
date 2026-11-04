@@ -263,8 +263,9 @@ export function TodayWorkspaceView({
         </div>
       </header>
 
-      <nav aria-label="Режими Сьогодні" className="flex flex-wrap gap-2">
+      <nav aria-label="Режими Сьогодні" className="planui-floating-header flex flex-wrap gap-2">
         {([{ value: 'day', label: 'День' }, { value: 'tasks', label: 'Завдання' }, ...(habitsEnabled ? [{ value: 'habits', label: 'Звички' }] : [])] as { value: TodayMode; label: string }[]).map(option => <Button key={option.value} aria-pressed={effectiveMode === option.value} variant={effectiveMode === option.value ? 'primary' : 'secondary'} onClick={() => onChangeMode(option.value)}>{option.label}</Button>)}
+        <Button aria-pressed={dailyPlan.minimalDay} onClick={async () => { try { await repositories.saveDailyPlan(selectedDate, { ...dailyPlan, minimalDay: !dailyPlan.minimalDay }, dailyPlan); await onDataChanged(); } catch { window.alert('Не вдалося змінити вигляд дня. Оновіть дані й повторіть.'); } }}>Мінімальний день</Button>
         {selectedDate === actualTodayDate && effectiveMode === 'day' && <Button onClick={revealCurrentTime}>До поточного часу</Button>}
       </nav>
       {selectedDate === actualTodayDate && tasks.some(task => selectTaskReviewState(task, actualTodayDate, reservations, activeZone) === 'needs_triage') && <details className="rounded-3xl p-4" style={{ background: 'var(--surface-card-elevated)', border: '1px solid var(--border-subtle)' }}>
@@ -375,7 +376,7 @@ export function TodayWorkspaceView({
 
       </>}
       {effectiveMode === 'habits' && habitsEnabled && habitsContent}
-      {effectiveMode === 'tasks' && <TodayTasksPanel actualTodayDate={actualTodayDate} nowMs={nowMs} date={selectedDate} zone={activeZone} plan={dailyPlan} tasks={tasks} reservations={reservations} repositories={repositories} onChanged={() => onDataChanged()} onToggle={onToggleTaskState} onPlan={task => setPlanningTask({ task })} />}
+      {effectiveMode === 'tasks' && <TodayTasksPanel events={events} actualTodayDate={actualTodayDate} nowMs={nowMs} date={selectedDate} zone={activeZone} plan={dailyPlan} tasks={tasks} reservations={reservations} repositories={repositories} onChanged={() => onDataChanged()} onToggle={onToggleTaskState} onPlan={task => setPlanningTask({ task })} />}
       {effectiveMode === 'day' && <>
       {/* 5. Main Proportional Timeline for Selected Date (6.1 / 6.5) */}
       <SharedDayTimeline

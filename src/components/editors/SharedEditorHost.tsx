@@ -1196,11 +1196,21 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
       onClose={onClose}
     >
       <form onSubmit={handleSave} className="space-y-4" noValidate>
+        {selectedAction === 'task' && (            <InputField
+              label={UK_STRINGS.creation.taskForm.titleLabel}
+              placeholder={UK_STRINGS.creation.taskForm.titlePlaceholder}
+              value={taskTitle}
+              onChange={(e) => setTaskTitle(e.target.value)}
+              data-testid="create-task-title-input"
+              autoFocus
+              required
+            />
+)}
         {/* Contextual Action Switcher — Only shows implemented actions, prioritized by active destination */}
         <div
           role="radiogroup"
           aria-label={UK_STRINGS.creation.sheetTitleChooseAction}
-          className="grid grid-cols-1 sm:grid-cols-2 gap-2"
+          className="flex gap-2 overflow-x-auto pb-2"
         >
           {availableActions.map((act) => {
             const active = selectedAction === act.kind;
@@ -1261,7 +1271,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
                   }
                   setErrorMessage(null);
                 }}
-                className="min-h-[52px] p-3 rounded-xl flex items-start gap-2.5 text-left planui-transition-micro cursor-pointer"
+                className="min-h-[44px] shrink-0 px-3 py-2 rounded-full flex items-center gap-2 text-left planui-transition-micro cursor-pointer"
                 style={{
                   backgroundColor: active
                     ? 'var(--bg-pressed)'
@@ -1281,7 +1291,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
                     {act.labelUk}
                   </div>
                   <div
-                    className="text-[12px] mt-0.5 leading-snug"
+                    className="hidden"
                     style={{ color: 'var(--text-secondary)' }}
                   >
                     {act.descriptionUk}
@@ -1776,14 +1786,6 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
         {/* Specific Form Fields by Action */}
         {selectedAction === 'task' && (
           <div className="space-y-3.5">
-            <InputField
-              label={UK_STRINGS.creation.taskForm.titleLabel}
-              placeholder={UK_STRINGS.creation.taskForm.titlePlaceholder}
-              value={taskTitle}
-              onChange={(e) => setTaskTitle(e.target.value)}
-              data-testid="create-task-title-input"
-              required
-            />
             <TextAreaField
               label={UK_STRINGS.creation.taskForm.descriptionLabel}
               placeholder={UK_STRINGS.creation.taskForm.descriptionPlaceholder}

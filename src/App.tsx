@@ -520,7 +520,7 @@ export function App() {
       <FloatingShell
         activeDestination={activeDestination}
         onSelectDestination={handleSelectDestination}
-        onOpenGlobalCreate={() => openGlobalCreation()}
+        onOpenGlobalCreate={() => openGlobalCreation('task')}
         isModalOpen={anyModalOpen}
         isBackgroundInert={Boolean(habitOccurrence) || isEditorOpen || isLocalModalOpen || Boolean(activeGapForPicker) || Boolean(inspectedEvent)}
       >

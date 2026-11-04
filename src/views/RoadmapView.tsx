@@ -20,6 +20,7 @@ export function RoadmapItemEditor({ item, repositories, onChanged, onCancel, rel
   const [points, setPoints] = useState<RoadmapCheckpoint[]>([...(item.record.checkpoints ?? [])].sort((a, b) => a.order - b.order));
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [reviewSubsequent, setReviewSubsequent] = useState(false);
   function draftPeriod(): RoadmapPeriod | null {
     if (precision === 'month') return { precision, month };
     if (precision === 'quarter') return { precision, year: Number(year), quarter: Number(quarter) as 1 | 2 | 3 | 4 };
@@ -33,11 +34,12 @@ export function RoadmapItemEditor({ item, repositories, onChanged, onCancel, rel
     const related = [...relatedItems.filter(i => i.owner.kind !== item.owner.kind || i.owner.id !== item.owner.id), preview];
     warnings = related.filter(i => (i.owner.kind === preview.owner.kind && i.owner.id === preview.owner.id) || (i.parent?.kind === preview.owner.kind && i.parent.id === preview.owner.id)).flatMap(i => roadmapWarnings(i, related, relatedTasks).map(w => `${i.title}: ${w}`));
   } catch { /* Incomplete input is validated on submit. */ }
-  async function save(e: React.FormEvent) {
+  async function save(e: React.FormEvent, keepSubsequent = false) {
     e.preventDefault(); setError(''); setBusy(true);
     try {
       const roadmapPeriod = draftPeriod();
       if (roadmapPeriod) periodInterval(roadmapPeriod);
+      if (!keepSubsequent && item.owner.kind === 'stage' && JSON.stringify(roadmapPeriod) !== JSON.stringify(item.record.roadmapPeriod ?? null) && relatedItems.some(other => other.owner.kind === 'stage' && other.owner.id !== item.owner.id && other.parent?.id === item.parent?.id)) { setReviewSubsequent(true); return; }
       await repositories.updateRoadmapItem(item.owner, { roadmapPeriod, deadline: deadline || null, checkpoints: points.map((c, order) => ({ ...c, order })) }, item.record.revision);
       await onChanged(); onCancel();
     } catch { setError('Не вдалося зберегти. Перевірте дати, порядок меж і назви контрольних точок. Якщо запис змінився, закрийте форму та відкрийте знову.'); }
@@ -60,6 +62,7 @@ export function RoadmapItemEditor({ item, repositories, onChanged, onCancel, rel
     </fieldset>
     <p className="text-sm">Зміна дат не переносить інші етапи, терміни справ, бронювання, події чи зміни.</p>
     {warnings.length > 0 && <div role="status"><p className="font-semibold">Перевірте узгодженість плану:</p><ul>{warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul><p>Пов’язані елементи можна відкрити в напрямах і змінити окремо.</p></div>}
+    {reviewSubsequent && <div role="status" className="rounded-2xl border p-4 space-y-2"><p>Перевірте наступні етапи. Їхні дати не зміщуються автоматично.</p><ul>{relatedItems.filter(other => other.owner.kind === 'stage' && other.owner.id !== item.owner.id && other.parent?.id === item.parent?.id).map(other => <li key={other.owner.id}>{other.title} · {periodLabelUk(other.record.roadmapPeriod)}</li>)}</ul><Button onClick={e => void save(e, true)}>Залишити їхні дати й зберегти</Button><Button onClick={() => setReviewSubsequent(false)}>Повернутися до перегляду</Button></div>}
     {error && <p role="alert">{error}</p>}
     <div className="flex flex-wrap gap-2"><Button type="submit" variant="primary" disabled={busy}>Зберегти дати</Button><Button disabled={busy} onClick={onCancel}>Скасувати</Button></div>
   </form>;

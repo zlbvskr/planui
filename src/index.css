@@ -258,3 +258,15 @@ button, [role="button"], summary { min-height: 44px; }
 .planui-canvas[data-ambient="night"] { background-image: radial-gradient(ellipse at 15% 0%, rgba(49,46,129,.20), transparent 70%); }
 .planui-canvas[data-ambient="creative"] { background-image: radial-gradient(ellipse at 15% 0%, rgba(245,158,11,.18), transparent 70%); }
 .dark .planui-canvas[data-ambient="night"] { background-image: radial-gradient(ellipse at 15% 0%, #242052, transparent 80%); }
+.planui-selection { background: color-mix(in srgb, var(--bg-pressed) 65%, transparent); }
+/* Edge-only progressive enhancement. The main control material remains the blur/rim fallback. */
+@supports (backdrop-filter: url("#planui-edge-refraction")) and (mask-composite: exclude) {
+  .planui-edge-refraction::before {
+    content: ''; position: absolute; inset: 0; padding: 10px; border-radius: inherit; pointer-events: none;
+    backdrop-filter: url("#planui-edge-refraction");
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask-composite: exclude;
+  }
+}
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) { .planui-edge-refraction::before { display: none; } }
+:root[data-reduced-transparency="true"] .planui-edge-refraction::before { display: none; }
+input[type="range"]:active, input[type="checkbox"]:active { filter: drop-shadow(0 1px 2px rgba(255,255,255,.45)); }

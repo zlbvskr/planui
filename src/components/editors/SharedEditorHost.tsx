@@ -23,6 +23,7 @@ import {
   EditableCreationContext,
   ImplementedCreationActionKind,
   getContextualCreationActions,
+  CREATION_ACTION_REGISTRY,
 } from '../../state/shellStore';
 import {
   CalendarEvent,
@@ -84,6 +85,7 @@ import {
 
 export interface SharedEditorHostProps {
   isOpen: boolean;
+  globalQuickAdd?: boolean;
   activeDestination: PrimaryDestinationId;
   contexts?: DestinationContextMap;
   initialContext: EditableCreationContext;
@@ -113,6 +115,7 @@ export interface SharedEditorHostProps {
 
 export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
   isOpen,
+  globalQuickAdd = false,
   activeDestination,
   contexts,
   initialContext,
@@ -134,7 +137,8 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
   onClose,
   onEntityCreated,
 }) => {
-  const availableActions = getContextualCreationActions(
+  const quickKinds: ImplementedCreationActionKind[] = ['task', 'shift', 'event', 'goal', 'project', ...(enabledModules?.habitsEnabled !== false ? ['habit' as const] : []), ...(enabledModules?.stateCheckInsEnabled !== false ? ['personal_record' as const] : []), ...(enabledModules?.wishlistEnabled !== false ? ['wish' as const] : [])];
+  const availableActions = globalQuickAdd ? quickKinds.map(kind => CREATION_ACTION_REGISTRY.find(action => action.kind === kind)!) : getContextualCreationActions(
     activeDestination,
     contexts,
     enabledModules
@@ -429,6 +433,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
 
   // Compute whether the user has entered unsaved changes (C17 dirty input protection)
   const isDirty =
+    taskEffort !== null || taskLifeArea !== '' ||
     taskTitle.trim().length > 0 ||
     taskDescription.trim().length > 0 ||
     goalTitle.trim().length > 0 ||
@@ -1199,8 +1204,8 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
     <ModalSheet
       transitionName="planui-create"
       isOpen={isOpen}
-      title={UK_STRINGS.creation.sheetTitleChooseAction}
-      subtitle={UK_STRINGS.creation.sheetSubtitleContext}
+      title={globalQuickAdd ? 'Швидке додавання' : UK_STRINGS.creation.sheetTitleChooseAction}
+      subtitle={globalQuickAdd ? 'Достатньо назви. Решту можна додати пізніше.' : UK_STRINGS.creation.sheetSubtitleContext}
       isDirty={isDirty}
       onClose={onClose}
     >

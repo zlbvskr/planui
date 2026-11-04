@@ -109,6 +109,9 @@ export const FloatingShell: React.FC<FloatingShellProps> = ({
       aria-hidden={isBackgroundInert ? 'true' : undefined}
       data-testid="shell-background-root"
     >
+      <svg aria-hidden="true" width="0" height="0" className="absolute pointer-events-none">
+        <defs><filter id="planui-edge-refraction" x="-10%" y="-10%" width="120%" height="120%" colorInterpolationFilters="sRGB"><feTurbulence type="fractalNoise" baseFrequency="0.025" numOctaves="1" seed="7" result="rim-map" /><feDisplacementMap in="SourceGraphic" in2="rim-map" scale="5" xChannelSelector="R" yChannelSelector="G" /></filter></defs>
+      </svg>
       <a
         href="#planui-main-content"
         className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:px-4 focus:py-2 focus:rounded-xl"
@@ -259,7 +262,7 @@ export const FloatingShell: React.FC<FloatingShellProps> = ({
               data-collapsed={collapsed}
               onFocusCapture={() => setCollapsed(false)}
               style={{ position: 'relative' }}
-              className="pointer-events-auto w-full min-h-[64px] px-1.5 py-1.5 rounded-[28px] planui-floating-capsule grid grid-cols-4 items-stretch gap-1"
+              className="pointer-events-auto w-full min-h-[64px] px-1.5 py-1.5 rounded-[28px] planui-floating-capsule planui-edge-refraction grid grid-cols-4 items-stretch gap-1"
             >
               <span aria-hidden="true" className="planui-selection" style={{ transform: `translateX(${PRIMARY_NAV_ITEMS.findIndex(item => item.id === activeDestination) * 100}%)` }} />
               {PRIMARY_NAV_ITEMS.map((item) => {

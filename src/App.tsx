@@ -787,6 +787,7 @@ export function App() {
 
       {habitOccurrence && snapshot && habits.some(h => h.id === habitOccurrence.habitId) && <HabitSessionSheet habit={habits.find(h => h.id === habitOccurrence.habitId)!} date={habitOccurrence.date} zone={activeZone} tasks={tasks} events={events} reservations={reservations} entries={habitEntries} repositories={repositories} allowPlanning={snapshot.settings.modules?.habitsEnabled !== false} onChanged={reloadLocalData} onClose={() => setHabitOccurrence(null)} />}
       <SharedEditorHost
+        globalQuickAdd={quickAdd}
         isOpen={isEditorOpen}
         activeDestination={activeDestination}
         contexts={contexts}

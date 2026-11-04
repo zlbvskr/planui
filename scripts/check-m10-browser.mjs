@@ -5,7 +5,7 @@ const base = process.env.PLANUI_TEST_URL || 'http://localhost:3006';
 const browser = await chromium.launch({executablePath:process.env.CHROMIUM_PATH || '/usr/bin/chromium',headless:true,args:['--no-sandbox']});
 try {
   // Exercise every supported native old-version entry point, plus an aborted versionchange.
-  for (const oldVersion of [1,2,3,4,5,6,7,8]) {
+  for (const oldVersion of [1,2,3,4,5,6,7,8,9]) {
     const context = await browser.newContext(); const page = await context.newPage();
     await page.goto(`${base}/icon.svg`);
     const result = await page.evaluate(async ({oldVersion}) => {
@@ -50,11 +50,11 @@ try {
     },{oldVersion});
     assert.equal(result.olderBlocked,true);assert.deepEqual(result.first,result.second);assert.deepEqual(result.checked,result.first);
     assert.deepEqual(result.first.personalRecords,[result.text,result.scored]);assert.deepEqual(result.first.tasks,[result.task]);assert.deepEqual(result.first.habits,[result.habit]);assert.deepEqual(result.first.habitEntries,[result.entry]);assert.deepEqual(result.first.inspirationItems,[result.inspiration]);assert.deepEqual(result.first.wishes,[result.wish]);assert.deepEqual(result.first.folders,[result.folder]);
-    assert.equal(result.first.settings.dbSchemaVersion,9);
+    assert.equal(result.first.settings.dbSchemaVersion,10);
     if(oldVersion===1){assert.equal(result.aborted,true);assert.equal(result.oldPreserved,true);assert.equal(result.blockedCode,'DB_VERSION_BLOCKED');assert.equal(result.abandonedVersion,1);}
     await context.close();
   }
-  console.log('PASS: native v1–v8 → v9 entry points, aborted v1 migration rollback/retry, repeated startup and ZIP export preserve legacy records and exact money.');
+  console.log('PASS: native v1–v9 → v10 entry points, aborted v1 migration rollback/retry, repeated startup and ZIP export preserve legacy records and exact money.');
 
   const images=await browser.newContext(), imagePage=await images.newPage();await imagePage.goto(`${base}/icon.svg`);
   const imageCheck=await imagePage.evaluate(async()=>{
@@ -118,7 +118,7 @@ try {
   await context.close();
 
   const newer=await browser.newContext(), p=await newer.newPage();await p.goto(`${base}/icon.svg`);
-  await p.evaluate(()=>new Promise((resolve,reject)=>{const r=indexedDB.open('planui_local_db',10);r.onupgradeneeded=()=>r.result.createObjectStore('sentinel',{keyPath:'id'});r.onsuccess=()=>{const db=r.result,tx=db.transaction('sentinel','readwrite');tx.objectStore('sentinel').put({id:'keep',text:'Нова схема'});tx.oncomplete=()=>{db.close();resolve();};};r.onerror=()=>reject(r.error);}));
+  await p.evaluate(()=>new Promise((resolve,reject)=>{const r=indexedDB.open('planui_local_db',11);r.onupgradeneeded=()=>r.result.createObjectStore('sentinel',{keyPath:'id'});r.onsuccess=()=>{const db=r.result,tx=db.transaction('sentinel','readwrite');tx.objectStore('sentinel').put({id:'keep',text:'Нова схема'});tx.oncomplete=()=>{db.close();resolve();};};r.onerror=()=>reject(r.error);}));
   await p.goto(`${base}/#/settings`);await p.getByRole('alert').filter({hasText:/новіш|нової|несуміс|версі/}).waitFor();
   const preserved=await p.evaluate(()=>new Promise(resolve=>{const r=indexedDB.open('planui_local_db');r.onsuccess=()=>{const db=r.result,tx=db.transaction('sentinel'),q=tx.objectStore('sentinel').get('keep');q.onsuccess=()=>resolve(q.result.text);tx.oncomplete=()=>db.close();};}));assert.equal(preserved,'Нова схема');await newer.close();
   console.log('PASS: older app displays a localized newer-schema error and preserves the database.');

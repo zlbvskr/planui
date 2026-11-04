@@ -3,9 +3,9 @@
  */
 
 export const PLANUI_APP_VERSION = '0.3.0';
-export const PLANUI_DB_SCHEMA_VERSION = 9;
+export const PLANUI_DB_SCHEMA_VERSION = 10;
 export const PLANUI_BACKUP_FORMAT = 'planui-backup-zip' as const;
-export const PLANUI_BACKUP_VERSION = 8;
+export const PLANUI_BACKUP_VERSION = 9;
 
 export type EntityId = string;
 export type IsoInstantString = string;
@@ -111,6 +111,7 @@ export interface Project extends RoadmapMetadata {
 }
 
 export interface ProjectStage extends RoadmapMetadata {
+  dependsOnStageIds?: EntityId[];
   id: EntityId;
   projectId: EntityId | null;
   goalId?: EntityId | null;

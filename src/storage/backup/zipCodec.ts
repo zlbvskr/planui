@@ -87,24 +87,15 @@ async function deflateRawCompress(data: Uint8Array): Promise<Uint8Array> {
   }
   const cs = new CompressionStream('deflate-raw');
   const writer = cs.writable.getWriter();
-  await writer.write(data as BufferSource);
-  await writer.close();
-  const reader = cs.readable.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-    total += value.byteLength;
-  }
-  const out = new Uint8Array(total);
-  let offset = 0;
-  for (const c of chunks) {
-    out.set(c, offset);
-    offset += c.byteLength;
-  }
-  return out;
+  // Drain concurrently: browsers can backpressure even a small write/close until
+  // the readable side is consumed. Awaiting close before reading can deadlock.
+  const reading = new Response(cs.readable).arrayBuffer();
+  const writing = (async () => {
+    await writer.write(data as BufferSource);
+    await writer.close();
+  })();
+  const [, bytes] = await Promise.all([writing, reading]);
+  return new Uint8Array(bytes);
 }
 
 async function deflateRawDecompressBounded(

@@ -11,7 +11,7 @@ export function RoadmapCalendarLayer({ source, settings, repositories, startDate
   const [error, setError] = useState('');
   const layer = settings.roadmapLayer ?? 'hidden';
   const items = projectRoadmap(source);
-  const groups = [];
+  const groups: { date: string; markers: ReturnType<typeof roadmapMarkers> }[] = [];
   for (let date = startDate; date < endDateExclusive; date = addDaysToLocalDate(date, 1)) {
     const markers = roadmapMarkers(items, date, layer);
     if (markers.length) groups.push({ date, markers });

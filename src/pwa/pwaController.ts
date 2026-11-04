@@ -197,27 +197,37 @@ export function usePwaLifecycle(
       return;
     }
 
+    // Development uses Vite HMR directly, without a persistent asset worker.
+    if (import.meta.env.DEV) { setSwStatus('unsupported'); return; }
+
     let isMounted = true;
+    let registration: ServiceWorkerRegistration | null = null;
+    const checkUpdate = () => { if (document.visibilityState === 'visible') void registration?.update().catch(() => {}); };
 
     const registerSw = async () => {
       try {
-        const reg = await navigator.serviceWorker.register('/sw.js', {
-          scope: '/',
+        const reg = await navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`, {
+          scope: import.meta.env.BASE_URL,
+          updateViaCache: 'none',
         });
         if (!isMounted) return;
+        registration = reg;
+        window.addEventListener('online', checkUpdate);
+        document.addEventListener('visibilitychange', checkUpdate);
 
         if (reg.waiting) {
           setWaitingWorker(reg.waiting);
           setSwStatus('update_available');
-        } else if (reg.active || reg.installing) {
+        } else if (reg.active) {
           setSwStatus('cached_ready');
         }
 
-        reg.addEventListener('updatefound', () => {
+        const observeInstalling = () => {
           const installing = reg.installing;
           if (!installing) return;
-          installing.addEventListener('statechange', () => {
+          const inspectState = () => {
             if (!isMounted) return;
+            if (installing.state === 'redundant' && !reg.active) setSwStatus('error');
             if (installing.state === 'installed') {
               if (navigator.serviceWorker.controller) {
                 setWaitingWorker(reg.waiting ?? installing);
@@ -226,8 +236,13 @@ export function usePwaLifecycle(
                 setSwStatus('cached_ready');
               }
             }
-          });
-        });
+          };
+          installing.addEventListener('statechange', inspectState);
+          inspectState();
+        };
+        reg.addEventListener('updatefound', observeInstalling);
+        observeInstalling();
+
       } catch {
         if (isMounted) {
           setSwStatus('error');
@@ -239,6 +254,8 @@ export function usePwaLifecycle(
 
     return () => {
       isMounted = false;
+      window.removeEventListener('online', checkUpdate);
+      document.removeEventListener('visibilitychange', checkUpdate);
     };
   }, []);
 

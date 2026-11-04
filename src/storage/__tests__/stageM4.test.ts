@@ -151,7 +151,7 @@ describe('M4: canonical informational roadmap', () => {
       const data = new TextEncoder().encode(JSON.stringify(legacy));
       const exported = await exportFullBackupZip(repos, now);
       const manifest = { ...exported.manifest, backupVersion: version, dbSchemaVersion: version, entityCounts: { ...exported.manifest.entityCounts, stages: 2, goals: version === 1 ? 0 : 1 }, files: [{ path: 'data.json', byteSize: data.length, sha256Hex: await sha256Hex(data), mimeType: 'application/json' }] };
-      if (version === 1) delete manifest.entityCounts.goals;
+      if (version === 1) Reflect.deleteProperty(manifest.entityCounts, 'goals');
       const zip = await createZipArchive([{ path: 'manifest.json', bytes: new TextEncoder().encode(JSON.stringify(manifest)) }, { path: 'data.json', bytes: data }]);
       const preview = await validateBackupArchive(zip);
       const target = new PlanuiRepositories(new InMemoryTransactionalEngine());

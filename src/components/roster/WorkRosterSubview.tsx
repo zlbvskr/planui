@@ -207,6 +207,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
       '0'
     )}-14`
   );
+  const [cycleEveryDays, setCycleEveryDays] = useState('');
   const [periodWeekdays, setPeriodWeekdays] = useState<number[]>([0, 2, 4]);
   const [periodActionKind, setPeriodActionKind] = useState<
     'template_shift' | 'custom_shift' | 'day_off'
@@ -431,6 +432,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
       const preview = generateFinitePeriodRosterPreview({
         startDate: periodStart,
         endDate: periodEnd,
+        cycleEveryDays: cycleEveryDays ? Number(cycleEveryDays) : undefined,
         selectedWeekdaysMondayFirst: periodWeekdays,
         action: actionSpec,
         lockedZoneId: displayZone,
@@ -462,6 +464,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
     periodStart,
     periodEnd,
     periodWeekdays,
+    cycleEveryDays,
     displayZone,
     events,
     reservations,
@@ -1964,7 +1967,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
 
           <div className="space-y-1.5">
             <span className="block text-sm font-medium">
-              Дні тижня в межах періоду
+              Дні тижня (якщо цикл не задано)
             </span>
             <div className="flex flex-wrap gap-1.5">
               {WEEKDAY_OPTIONS_MONDAY_FIRST.map((w) => {
@@ -2002,6 +2005,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
             </div>
           </div>
 
+          <InputField label="Повтор кожні N днів (необов’язково)" type="number" min="1" max="366" value={cycleEveryDays} onChange={e => setCycleEveryDays(e.target.value)} hint="Цикл розгортається лише в обраному періоді. Редагування однієї зміни не змінює решту." />
           <SelectField
             label="Дія для відібраних дат періоду"
             value={periodActionKind}

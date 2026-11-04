@@ -645,6 +645,7 @@ export function prepareMultiDateRosterBatch(params: {
 export function generateFinitePeriodRosterPreview(params: {
   startDate: LocalDateString;
   endDate: LocalDateString;
+  cycleEveryDays?: number;
   selectedWeekdaysMondayFirst?: readonly number[]; // 0 = Monday .. 6 = Sunday
   explicitDatesFilter?: readonly LocalDateString[];
   action: Exclude<MultiDateBatchActionSpec, { kind: 'clear_date' }>;
@@ -673,6 +674,7 @@ export function generateFinitePeriodRosterPreview(params: {
     );
   }
 
+  if (params.cycleEveryDays !== undefined && (!Number.isInteger(params.cycleEveryDays) || params.cycleEveryDays < 1 || params.cycleEveryDays > 366)) throw new PlanuiError('ROSTER_PERIOD_INVALID_RANGE');
   const allDatesInPeriod = enumerateLocalDatesInclusive(
     params.startDate,
     params.endDate
@@ -685,7 +687,8 @@ export function generateFinitePeriodRosterPreview(params: {
     ? new Set(params.selectedWeekdaysMondayFirst)
     : null;
 
-  const matchedDates = allDatesInPeriod.filter((d) => {
+  const matchedDates = allDatesInPeriod.filter((d, index) => {
+    if (params.cycleEveryDays !== undefined) return index % params.cycleEveryDays === 0;
     if (explicitSet && !explicitSet.has(d)) return false;
     if (weekdaySet) {
       const wkIdx = getMondayFirstWeekdayIndex(d);

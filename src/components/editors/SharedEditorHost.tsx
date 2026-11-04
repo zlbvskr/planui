@@ -1904,6 +1904,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
         {/* 5.3 / 8.2 Shared Event & Work Shift Form */}
         {(selectedAction === 'event' || selectedAction === 'shift') && (
           <div className="space-y-3.5" data-testid="create-event-shift-form">
+            {selectedAction === 'event' && <div className="flex flex-wrap gap-2" aria-label="Особисті блоки">{[{title:'Сон',type:'sleep'},{title:'Відновлення',type:'rest'},{title:'Дорога',type:'travel'},{title:'Підготовка до зміни',type:'personal'},{title:'Особистий час після роботи',type:'rest'}].map(preset => <Button key={preset.title} onClick={() => {setEventTitle(preset.title);setEventType(preset.type as CalendarEventType);setEventIsBlocking(true);setEventColor('rest');}}>{preset.title}</Button>)}</div>}
             {selectedAction === 'shift' && shiftTemplates.length > 0 && (
               <SelectField
                 label="Заповнити за шаблоном зміни (необов’язково)"

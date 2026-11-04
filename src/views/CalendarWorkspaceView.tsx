@@ -1,3 +1,4 @@
+import { deadlineDate } from '../domain/today';
 import { RoadmapCalendarLayer } from './RoadmapCalendarLayer';
 import { RoadmapSource, projectRoadmap, roadmapMarkers } from '../domain/roadmap';
 import { PlanuiSettings } from '../domain/types';
@@ -947,7 +948,7 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
   return (
     <div className="space-y-4">
       {/* Top Calendar Mode & Secondary Filter Bar */}
-      <Card className="space-y-3">
+      <div className="planui-floating-header space-y-3" data-testid="calendar-floating-header">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="min-w-[260px] flex-1 sm:max-w-lg">
             <SegmentedControl<CalendarViewMode>
@@ -1085,7 +1086,8 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
             </strong>
           </span>
         </div>
-      </Card>
+        <div className="flex flex-wrap gap-2" aria-label="Терміни обраного дня">{tasks.filter(task => task.state === 'open' && deadlineDate(task, displayZone) === selectedDate).map(task => <span key={task.id} className="planui-deadline-badge">◆ {task.title}</span>)}</div>
+      </div>
 
       {/* =================================================================== */}
       {effectiveMode !== 'work_schedule' && <RoadmapCalendarLayer selectedDate={selectedDate} source={roadmapSource} settings={settings} repositories={repositories} startDate={effectiveMode === 'month' ? monthGrid.cells[0].localDate : effectiveMode === 'week' ? weekOverview.days[0].localDate : selectedDate} endDateExclusive={addDaysToLocalDate(effectiveMode === 'month' ? monthGrid.cells[monthGrid.cells.length - 1].localDate : effectiveMode === 'week' ? weekOverview.days[6].localDate : selectedDate, 1)} onChanged={() => onDataChanged()} />}

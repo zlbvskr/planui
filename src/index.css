@@ -270,3 +270,10 @@ button, [role="button"], summary { min-height: 44px; }
 @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) { .planui-edge-refraction::before { display: none; } }
 :root[data-reduced-transparency="true"] .planui-edge-refraction::before { display: none; }
 input[type="range"]:active, input[type="checkbox"]:active { filter: drop-shadow(0 1px 2px rgba(255,255,255,.45)); }
+
+/* Part 2: shared floating controls stay separate from opaque content. */
+.planui-floating-header { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 8px); z-index: 20; border-radius: 24px; padding: 16px; background: var(--glass-bg); border: 1px solid var(--glass-border); box-shadow: var(--glass-shadow); backdrop-filter: blur(20px) saturate(180%); -webkit-backdrop-filter: blur(20px) saturate(180%); }
+.planui-deadline-badge { padding: 8px 12px; border-radius: 16px; color: var(--color-brand-text); background: var(--surface-card-elevated); border: 1px solid var(--color-deadline); font-size: 13px; }
+@media (prefers-reduced-transparency: reduce) { .planui-floating-header { background: var(--bg-surface); backdrop-filter: none; -webkit-backdrop-filter: none; } }
+:root[data-reduced-transparency="true"] .planui-floating-header { background: var(--bg-surface); backdrop-filter: none; -webkit-backdrop-filter: none; }
+@media (prefers-contrast: more) { .planui-floating-header { border: 2px solid currentColor; } }

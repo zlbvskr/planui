@@ -67,3 +67,22 @@ it('overnight shift is one record on both dates; daytime sleep uses quiet ambien
  assert.equal(selectAmbientContext(state,Date.parse('2026-11-11T12:00:00Z')),'night');
  assert.equal(selectShiftCount(state),0);
 });
+
+it('timed-only tasks need review after all sessions elapsed, but future sessions are retained', async () => {
+ const { sessionFromDuration }=await import('../../domain/today');
+ const repos=new PlanuiRepositories(new InMemoryTransactionalEngine());
+ const now='2026-11-01T00:00:00Z';
+ const task=await repos.saveTask({id:'timed-review',title:'Session',state:'open',priority:'normal',description:null,deadline:null,estimatedDurationMinutes:null,planningState:'unplanned',plannedDate:null,ownership:{kind:'standalone'},checklist:[],createdAt:now,updatedAt:now,completedAt:null,canceledAt:null,revision:1});
+ await repos.saveReservationTransactionally({id:'past',taskId:task.id,interval:sessionFromDuration('2026-11-02','10:00',60,'UTC'),state:'active',releaseMetadata:null,createdAt:now,updatedAt:now,revision:1});
+ let state=(await repos.captureCoherentSnapshot()).snapshot;
+ assert.equal(selectTaskReviewState(state.tasks[0],'2026-11-04',state.reservations,'UTC'),'needs_triage');
+ await repos.saveReservationTransactionally({id:'future',taskId:task.id,interval:sessionFromDuration('2026-11-05','10:00',60,'UTC'),state:'active',releaseMetadata:null,createdAt:now,updatedAt:now,revision:1});
+ state=(await repos.captureCoherentSnapshot()).snapshot;
+ assert.equal(selectTaskReviewState(state.tasks[0],'2026-11-04',state.reservations,'UTC'),'open');
+});
+it('state CSV preserves Unicode/quotes and protects spreadsheet formula text', async()=>{
+ const {exportSelectedRecordsCsv}=await import('../../domain/stateCheckIns');
+ const now='2026-11-04T00:00:00Z';
+ const csv=exportSelectedRecordsCsv([{id:'record',localDate:'2026-11-04',recordedAt:now,zoneId:'UTC',text:'=2+2, "сон"\nрядок',mood:null,energy:2,stress:null,tags:[],createdAt:now,updatedAt:now,revision:1}],['record']);
+ assert.ok(csv.startsWith('\uFEFF'));assert.ok(csv.includes('"\'=2+2, ""сон""\nрядок"'));assert.ok(csv.includes('energy_1_5'));
+});

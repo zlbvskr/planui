@@ -197,3 +197,41 @@ button, a, [role="button"], [role="tab"] {
   transition-duration: var(--dur-modal);
   transition-timing-function: var(--ease-out-quart);
 }
+
+/* Shared Liquid Glass control material; content remains opaque. */
+:root {
+  --surface-card-elevated: var(--bg-surface);
+  --space-unit: 8px;
+  --ease-out-quart: cubic-bezier(0.22, 1, 0.36, 1);
+  --glass-shadow: inset 0 1px 0.5px rgba(255,255,255,.45), inset 1px 0 0.5px rgba(255,255,255,.25), 0 12px 32px rgba(0,0,0,.18);
+  --floating-scroll-clearance: calc(104px + env(safe-area-inset-bottom, 0px));
+}
+.planui-floating-capsule {
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  transition: min-height var(--dur-modal) var(--ease-out-quart);
+}
+.planui-selection {
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  bottom: 6px;
+  width: calc((100% - 12px) / 4);
+  border-radius: 24px;
+  background: var(--bg-pressed);
+  box-shadow: inset 0 1px .5px rgba(255,255,255,.45);
+  transition: transform var(--dur-modal) var(--ease-out-quart);
+  pointer-events: none;
+}
+[data-collapsed="true"] { min-height: 56px; }
+[data-collapsed="true"] button { min-height: 44px; }
+[data-collapsed="true"] button span { display: none; }
+button:active { filter: brightness(1.08); }
+@media (prefers-reduced-transparency: reduce) {
+  .planui-floating-capsule { background: var(--bg-surface) !important; backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
+:root[data-reduced-transparency="true"] .planui-floating-capsule { background: var(--bg-surface) !important; backdrop-filter: none; -webkit-backdrop-filter: none; }
+@media (prefers-contrast: more) {
+  :root { --border-subtle: currentColor; --glass-border: currentColor; }
+  .planui-floating-capsule { border: 2px solid; }
+}

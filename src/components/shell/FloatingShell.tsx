@@ -33,6 +33,16 @@ export const FloatingShell: React.FC<FloatingShellProps> = ({
   isBackgroundInert = isModalOpen,
   children,
 }) => {
+  const [collapsed, setCollapsed] = useState(false);
+  useEffect(() => {
+    let previous = window.scrollY;
+    const onScroll = () => {
+      const next = window.scrollY;
+      if (Math.abs(next - previous) > 8) { setCollapsed(next > previous && next > 96); previous = next; }
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
   const [isInputFocusedOnMobile, setIsInputFocusedOnMobile] = useState(false);
 
   // C17: During keyboard entry, do not let both floating controls jump unpredictably above the keyboard.
@@ -144,8 +154,8 @@ export const FloatingShell: React.FC<FloatingShellProps> = ({
               data-testid="desktop-global-create-button"
               className="w-full min-h-[46px] px-4 py-2.5 rounded-2xl font-medium text-[15px] flex items-center justify-center gap-2 planui-transition-micro cursor-pointer active:scale-[0.98] dark:!text-[#111214]"
               style={{
-                backgroundColor: 'var(--color-brand)',
-                color: '#FFFFFF',
+                backgroundColor: 'var(--glass-bg)',
+                color: 'var(--color-brand)',
               }}
             >
               <Plus className="w-5 h-5 stroke-[2.25]" aria-hidden="true" />
@@ -219,17 +229,17 @@ export const FloatingShell: React.FC<FloatingShellProps> = ({
           }}
           data-testid="mobile-floating-zone"
         >
-          <div className="max-w-[520px] mx-auto flex flex-col items-end">
+          <div className="max-w-[520px] mx-auto flex flex-row-reverse items-center gap-2">
             {/* Separate Global Creation Button above the capsule on the right (48–52px target, 14px gap) */}
             <button
               type="button"
               onClick={onOpenGlobalCreate}
               aria-label={UK_STRINGS.app.globalCreateButtonAria}
               data-testid="mobile-global-create-button"
-              className="pointer-events-auto mb-[14px] w-[50px] h-[50px] min-w-[50px] min-h-[50px] rounded-full flex items-center justify-center planui-transition-micro cursor-pointer active:scale-95 dark:!text-[#111214]"
+              className="planui-floating-capsule pointer-events-auto w-[56px] h-[56px] min-w-[56px] min-h-[56px] rounded-full flex items-center justify-center planui-transition-micro cursor-pointer active:scale-95 dark:!text-[#111214]"
               style={{
-                backgroundColor: 'var(--color-brand)',
-                color: '#FFFFFF',
+                backgroundColor: 'var(--glass-bg)',
+                color: 'var(--color-brand)',
                 boxShadow: 'var(--glass-shadow)',
                 border: '1px solid rgba(255, 255, 255, 0.18)',
               }}
@@ -241,8 +251,12 @@ export const FloatingShell: React.FC<FloatingShellProps> = ({
             <nav
               aria-label={UK_STRINGS.app.mainNavigationAria}
               data-testid="mobile-floating-capsule"
+              data-collapsed={collapsed}
+              onFocusCapture={() => setCollapsed(false)}
+              style={{ position: 'relative' }}
               className="pointer-events-auto w-full min-h-[64px] px-1.5 py-1.5 rounded-[28px] planui-floating-capsule grid grid-cols-4 items-stretch gap-1"
             >
+              <span aria-hidden="true" className="planui-selection" style={{ transform: `translateX(${PRIMARY_NAV_ITEMS.findIndex(item => item.id === activeDestination) * 100}%)` }} />
               {PRIMARY_NAV_ITEMS.map((item) => {
                 const Icon = NAV_ICONS[item.id];
                 const isActive = activeDestination === item.id;
@@ -257,9 +271,8 @@ export const FloatingShell: React.FC<FloatingShellProps> = ({
                     data-center={item.isCenter ? 'true' : 'false'}
                     className="min-h-[50px] min-w-[44px] px-1 py-1.5 rounded-[22px] flex flex-col items-center justify-center gap-0.5 planui-transition-micro cursor-pointer select-none"
                     style={{
-                      backgroundColor: isActive
-                        ? 'var(--bg-pressed)'
-                        : 'transparent',
+                      backgroundColor: 'transparent',
+                      position: 'relative',
                       color: isActive
                         ? 'var(--color-brand)'
                         : 'var(--text-secondary)',

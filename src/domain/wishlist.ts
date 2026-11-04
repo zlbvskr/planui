@@ -7,6 +7,7 @@ import {
   SupportedCurrencyCode,
   WishFulfillmentState,
   WishItem,
+  WishPurchaseStatus,
   WishlistCategory,
   WishlistTimingGroup,
 } from './types';
@@ -27,7 +28,16 @@ export const WISHLIST_TIMING_ORDER: readonly WishlistTimingGroup[] = [
 
 export type WishlistCategoryFilter = 'all' | 'uncategorized' | EntityId;
 export type WishlistTimingFilter = 'all' | WishlistTimingGroup;
-export type WishlistViewScope = 'active' | 'fulfilled' | 'archived';
+export type WishlistViewScope = 'active' | 'purchased' | 'not_relevant' | 'fulfilled' | 'archived';
+
+export function getWishPurchaseStatus(wish: WishItem): WishPurchaseStatus | 'legacy_fulfilled' {
+  return wish.purchaseStatus ?? (wish.state === 'fulfilled' ? 'legacy_fulfilled' : 'want');
+}
+export const WISH_STATUS_LABELS_UK = {want:'Хочу', purchased:'Куплено', not_relevant:'Більше не актуально', legacy_fulfilled:'Здійснено раніше'} as const;
+export function setWishPurchaseStatus(wish: WishItem, status: WishPurchaseStatus, now: string): WishItem {
+  if (!['want','purchased','not_relevant'].includes(status)) throw new PlanuiError('WISHLIST_INVALID_STATE');
+  return {...wish,purchaseStatus:status,purchasedAt:status === 'purchased' ? wish.purchasedAt ?? now : wish.purchasedAt ?? null,updatedAt:now,revision:wish.revision+1};
+}
 
 export function isSupportedCurrencyCode(
   code: string
@@ -66,12 +76,15 @@ export function parseLocalizedPriceInput(
   if (rawInput === null || rawInput === undefined) {
     return null;
   }
-  const trimmed = rawInput.trim().replace(/[\s\u00A0]+/g, '');
+  if (typeof rawInput !== 'string') throw new PlanuiError('WISHLIST_PRICE_INVALID_AMOUNT');
+  const source = rawInput.trim();
+  if (/\s/.test(source) && !/^\d{1,3}(?:[ \u00A0\u202F]\d{3})+(?:[.,]\d+)?$/.test(source)) throw new PlanuiError('WISHLIST_PRICE_INVALID_AMOUNT', rawInput);
+  const trimmed = source.replace(/[ \u00A0\u202F]/g, '');
   if (trimmed.length === 0) {
     return null;
   }
 
-  if (!currencyCode || currencyCode.trim().length === 0) {
+  if (typeof currencyCode !== 'string' || currencyCode.trim().length === 0) {
     throw new PlanuiError('WISHLIST_PRICE_MISSING_CURRENCY');
   }
 
@@ -93,28 +106,12 @@ export function parseLocalizedPriceInput(
   }
 
   const paddedFrac = fracPartRaw.padEnd(spec.minorUnits, '0');
-  const scaleFactor = 10 ** spec.minorUnits;
-
-  const wholeInt = Number(wholePartRaw);
-  const fracInt = paddedFrac.length > 0 ? Number(paddedFrac) : 0;
-
-  if (!Number.isSafeInteger(wholeInt) || !Number.isSafeInteger(fracInt)) {
-    throw new PlanuiError('WISHLIST_PRICE_INVALID_AMOUNT', rawInput);
-  }
-
-  const amountMinor = wholeInt * scaleFactor + fracInt;
-  if (!Number.isSafeInteger(amountMinor) || amountMinor < 0) {
-    throw new PlanuiError('WISHLIST_PRICE_INVALID_AMOUNT', rawInput);
-  }
-
-  const canonicalWhole = String(Math.trunc(amountMinor / scaleFactor));
-  const canonicalDecimal =
-    spec.minorUnits === 0
-      ? canonicalWhole
-      : `${canonicalWhole}.${String(amountMinor % scaleFactor).padStart(
-          spec.minorUnits,
-          '0'
-        )}`;
+  const scale = 10n ** BigInt(spec.minorUnits);
+  const minor = BigInt(wholePartRaw) * scale + BigInt(paddedFrac || '0');
+  if (minor > BigInt(Number.MAX_SAFE_INTEGER)) throw new PlanuiError('WISHLIST_PRICE_INVALID_AMOUNT', rawInput);
+  const amountMinor = Number(minor); // exact safe integer, compatible with historical ZIPs
+  const canonicalWhole = String(minor / scale);
+  const canonicalDecimal = spec.minorUnits === 0 ? canonicalWhole : `${canonicalWhole}.${String(minor % scale).padStart(spec.minorUnits,'0')}`;
 
   return {
     amountMinor,
@@ -129,7 +126,7 @@ export function validateExactPriceObject(
   if (price === null || price === undefined) {
     return null;
   }
-  if (typeof price !== 'object') {
+  if (typeof price !== 'object' || typeof price.amountDecimal !== 'string' || typeof price.currency !== 'string' || !Number.isSafeInteger(price.amountMinor) || price.amountMinor < 0) {
     throw new PlanuiError('WISHLIST_PRICE_INVALID_AMOUNT');
   }
   const reparsed = parseLocalizedPriceInput(
@@ -153,20 +150,11 @@ export function validateExactPriceObject(
 export function formatExactPriceUk(price: ExactPrice | null): string | null {
   if (!price) return null;
   const spec = SUPPORTED_CURRENCIES[price.currency];
-  const scaleFactor = 10 ** spec.minorUnits;
-  const wholeInt = Math.trunc(price.amountMinor / scaleFactor);
-  const wholeFormatted = new Intl.NumberFormat('uk-UA', {
-    maximumFractionDigits: 0,
-  }).format(wholeInt);
-
-  if (spec.minorUnits === 0) {
-    return `${wholeFormatted} ${price.currency}`;
-  }
-
-  const minorPart = String(price.amountMinor % scaleFactor).padStart(
-    spec.minorUnits,
-    '0'
-  );
+  const scaleFactor = 10n ** BigInt(spec.minorUnits);
+  const amount = BigInt(price.amountMinor);
+  const wholeFormatted = new Intl.NumberFormat('uk-UA', { maximumFractionDigits:0 }).format(amount / scaleFactor);
+  if (spec.minorUnits === 0) return `${wholeFormatted} ${price.currency}`;
+  const minorPart = String(amount % scaleFactor).padStart(spec.minorUnits,'0');
   return `${wholeFormatted},${minorPart} ${price.currency}`;
 }
 
@@ -185,6 +173,10 @@ export function buildWishItemRecord(params: {
   preferredCurrency?: SupportedCurrencyCode | null;
   nowIso: IsoInstantString;
   existingWish?: WishItem;
+  linkUrl?: string | null;
+  mediaId?: EntityId | null;
+  projectId?: EntityId | null;
+  confirmCurrencyChange?: boolean;
 }): {
   wish: WishItem;
   explicitCurrencySelected: SupportedCurrencyCode | null;
@@ -203,23 +195,25 @@ export function buildWishItemRecord(params: {
     params.rawPriceAmount !== undefined &&
     params.rawPriceAmount.trim().length > 0;
 
-  let estimatedPrice: ExactPrice | null = null;
+  let estimatedPrice: ExactPrice | null = params.rawPriceAmount === undefined ? params.existingWish?.estimatedPrice ?? null : null;
   let explicitCurrencySelected: SupportedCurrencyCode | null = null;
 
   if (hasRawPrice) {
     const effectiveCurrency =
       params.currencyCode && params.currencyCode.trim().length > 0
         ? params.currencyCode.trim().toUpperCase()
-        : params.preferredCurrency ?? null;
+        : params.existingWish?.estimatedPrice?.currency ?? params.preferredCurrency ?? null;
 
     if (!effectiveCurrency) {
       throw new PlanuiError('WISHLIST_PRICE_MISSING_CURRENCY');
     }
 
+    if (params.existingWish?.estimatedPrice && params.existingWish.estimatedPrice.currency !== effectiveCurrency && !params.confirmCurrencyChange) throw new PlanuiError('WISHLIST_CURRENCY_CHANGE_CONFIRMATION');
     estimatedPrice = parseLocalizedPriceInput(
       params.rawPriceAmount,
       effectiveCurrency
     );
+    if (estimatedPrice && params.existingWish?.estimatedPrice && estimatedPrice.amountMinor === params.existingWish.estimatedPrice.amountMinor && estimatedPrice.currency === params.existingWish.estimatedPrice.currency) estimatedPrice = params.existingWish.estimatedPrice;
     if (estimatedPrice) {
       explicitCurrencySelected = estimatedPrice.currency;
     }
@@ -227,11 +221,15 @@ export function buildWishItemRecord(params: {
 
   const existing = params.existingWish;
   const wish: WishItem = {
+    ...(existing ?? {}),
+    ...(params.linkUrl !== undefined ? {linkUrl: params.linkUrl} : {}),
+    ...(params.mediaId !== undefined ? {mediaId: params.mediaId} : {}),
+    ...(params.projectId !== undefined ? {projectId: params.projectId} : {}),
     id: params.id,
-    title: trimmedTitle,
+    title: existing && params.title === existing.title ? existing.title : trimmedTitle,
     note:
-      params.note && params.note.trim().length > 0 ? params.note.trim() : null,
-    categoryId: params.categoryId ? params.categoryId : null,
+      params.note === undefined || params.note === existing?.note ? existing?.note ?? null : params.note && params.note.trim().length > 0 ? params.note.trim() : null,
+    categoryId: params.categoryId === undefined ? existing?.categoryId ?? null : params.categoryId || null,
     timing,
     estimatedPrice,
     state: existing ? existing.state : 'active',
@@ -340,9 +338,11 @@ export function filterAndGroupWishes(params: {
 
     // 1. Scope filter
     if (params.viewScope === 'active') {
-      if (w.archived || w.state !== 'active') continue;
+      if (w.archived || getWishPurchaseStatus(w) !== 'want') continue;
     } else if (params.viewScope === 'fulfilled') {
-      if (w.archived || w.state !== 'fulfilled') continue;
+      if (w.archived || getWishPurchaseStatus(w) !== 'legacy_fulfilled') continue;
+    } else if (params.viewScope === 'purchased' || params.viewScope === 'not_relevant') {
+      if (w.archived || getWishPurchaseStatus(w) !== params.viewScope) continue;
     } else if (params.viewScope === 'archived') {
       if (!w.archived) continue;
     }

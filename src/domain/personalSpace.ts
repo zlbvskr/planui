@@ -538,16 +538,20 @@ export function isMediaReferencedByLiveOrSnapshots(
   mediaId: EntityId,
   liveInspirationItems: readonly InspirationItem[],
   retainedSnapshots: readonly RecoverySnapshotRecord[],
-  excludeInspirationItemId?: EntityId
+  excludeInspirationItemId?: EntityId,
+  liveWishes: readonly import('./types').WishItem[] = [],
+  excludeWishId?: EntityId
 ): boolean {
   for (const item of liveInspirationItems) {
     if (item.id === excludeInspirationItemId) continue;
     if (item.mediaId === mediaId) return true;
   }
+  for (const wish of liveWishes) if (wish.id !== excludeWishId && wish.mediaId === mediaId) return true;
   for (const snap of retainedSnapshots) {
     for (const mm of snap.snapshot.mediaMeta) {
       if (mm.id === mediaId) return true;
     }
+    for (const wish of snap.snapshot.wishes ?? []) if (wish.mediaId === mediaId) return true;
     for (const item of snap.snapshot.inspirationItems) {
       if (item.mediaId === mediaId) return true;
     }

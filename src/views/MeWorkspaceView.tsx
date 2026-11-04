@@ -1,3 +1,6 @@
+import { WishExtrasFields, WishLocalImage, emptyWishExtras, resolveWishExtras } from '../components/wishlist/WishExtrasFields';
+import { getWishPurchaseStatus, setWishPurchaseStatus, WISH_STATUS_LABELS_UK } from '../domain/wishlist';
+import type { WishPurchaseStatus } from '../domain/types';
 import { StateCheckInsView } from './StateCheckInsView';
 import { LifeAreasReviewView } from './LifeAreasReviewView';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -74,8 +77,6 @@ import {
   computeWishlistCategoryDeleteImpact,
   filterAndGroupWishes,
   formatExactPriceUk,
-  fulfillWishItem,
-  reopenWishItem,
   setWishArchivedState,
   sortWishlistCategories,
 } from '../domain/wishlist';
@@ -125,6 +126,7 @@ export interface MeWorkspaceViewProps {
   onNavigateToWorkRoster: () => void;
   onNavigateToHabits: () => void;
   onModalStateChange?: (isOpen: boolean) => void;
+  onSettingsConfirmationChange?: (isOpen: boolean) => void;
 }
 
 export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
@@ -152,7 +154,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
   onDataChanged,
   onNavigateToWorkRoster,
   onNavigateToHabits,
-  onModalStateChange,
+  onModalStateChange, onSettingsConfirmationChange,
 }) => {
   const [initialPlanningReview, setInitialPlanningReview] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -225,6 +227,9 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
     useState<WishlistViewScope>('active');
 
   // Inline fast wish creation with progressive disclosure (10.6)
+  const [quickWishExtras,setQuickWishExtras] = useState(emptyWishExtras);
+  const [editWishExtras,setEditWishExtras] = useState(emptyWishExtras);
+  const [confirmWishCurrency,setConfirmWishCurrency] = useState(false);
   const [quickWishTitle, setQuickWishTitle] = useState<string>('');
   const [showQuickWishDetails, setShowQuickWishDetails] =
     useState<boolean>(false);
@@ -261,8 +266,6 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
   const [deletingCategory, setDeletingCategory] =
     useState<WishlistCategory | null>(null);
 
-  const [isSettingsModalOpen, setIsSettingsModalOpen] =
-    useState<boolean>(false);
 
   // Sync modal state upward so FloatingShell hides global button during sheet editing (C17)
   useEffect(() => {
@@ -271,8 +274,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
       isInspModalOpen ||
       Boolean(editingWish) ||
       Boolean(deletingWish) ||
-      isCategoryManagerOpen ||
-      isSettingsModalOpen;
+      isCategoryManagerOpen;
     onModalStateChange?.(anyModal);
   }, [
     editingQuestion,
@@ -280,8 +282,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
     editingWish,
     deletingWish,
     isCategoryManagerOpen,
-    isSettingsModalOpen,
-    onModalStateChange,
+    onModalStateChange, onSettingsConfirmationChange,
   ]);
 
   // Keep category filter in sync with shell context
@@ -338,11 +339,11 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
   );
 
   const activeWishCount = useMemo(
-    () => wishes.filter((w) => !w.archived && w.state === 'active').length,
+    () => wishes.filter((w) => !w.archived && getWishPurchaseStatus(w) === 'want').length,
     [wishes]
   );
   const fulfilledWishCount = useMemo(
-    () => wishes.filter((w) => !w.archived && w.state === 'fulfilled').length,
+    () => wishes.filter((w) => !w.archived && getWishPurchaseStatus(w) === 'legacy_fulfilled').length,
     [wishes]
   );
   const archivedWishCount = useMemo(
@@ -673,6 +674,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
       const built = buildWishItemRecord({
         id,
         title: quickWishTitle,
+        ...resolveWishExtras(quickWishExtras),
         note: quickWishNote,
         categoryId: quickWishCategoryId || null,
         timing: quickWishTiming,
@@ -682,7 +684,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
         nowIso,
       });
 
-      await repositories.saveWishItem(built.wish);
+      await repositories.saveWishItem(built.wish,undefined,{media:quickWishExtras.preparedMedia??undefined});
 
       // 10.7: Persist preferred currency when first chosen
       if (
@@ -695,9 +697,11 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
         onSettingsPatch(updatedSettings);
       }
 
+      setQuickWishExtras(emptyWishExtras());
       setQuickWishTitle('');
       setQuickWishNote('');
       setQuickWishPriceInput('');
+      setQuickWishCurrency('');
       setQuickWishTiming('later');
       setShowQuickWishDetails(false);
       await onDataChanged(`Бажання «${built.wish.title}» додано.`);
@@ -710,6 +714,8 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
   };
 
   const openEditWishModal = (wish: WishItem) => {
+    setLocalError(null);
+    setEditWishExtras({...emptyWishExtras(wish.projectId??''),linkUrl:wish.linkUrl??''}); setConfirmWishCurrency(false);
     setEditingWish(wish);
     setEditWishTitle(wish.title);
     setEditWishNote(wish.note ?? '');
@@ -735,6 +741,8 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
       const built = buildWishItemRecord({
         id: editingWish.id,
         title: editWishTitle,
+        ...resolveWishExtras(editWishExtras,editingWish.mediaId),
+        confirmCurrencyChange:confirmWishCurrency,
         note: editWishNote,
         categoryId: editWishCategoryId || null,
         timing: editWishTiming,
@@ -747,7 +755,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
         existingWish: editingWish,
       });
 
-      await repositories.saveWishItem(built.wish, editingWish.revision);
+      await repositories.saveWishItem(built.wish, editingWish.revision,{media:editWishExtras.preparedMedia??undefined,confirmCurrencyChange:confirmWishCurrency});
 
       if (
         built.explicitCurrencySelected &&
@@ -768,27 +776,10 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
     }
   };
 
-  const handleToggleWishFulfilled = async (wish: WishItem) => {
+  const handleWishPurchaseStatus = async (wish:WishItem,status:WishPurchaseStatus) => {
     setLocalError(null);
-    try {
-      const nowIso = new Date().toISOString();
-      const next =
-        wish.state === 'active'
-          ? fulfillWishItem(wish, nowIso)
-          : reopenWishItem(wish, nowIso);
-      await repositories.saveWishItem(next, wish.revision);
-      await onDataChanged(
-        next.state === 'fulfilled'
-          ? `Бажання «${wish.title}» позначено як здійснене (без запису фінансової витрати).`
-          : `Бажання «${wish.title}» повернуто до активних.`
-      );
-    } catch (err) {
-      setLocalError(
-        err instanceof Error
-          ? err.message
-          : 'Не вдалося змінити стан бажання.'
-      );
-    }
+    try {await repositories.saveWishItem(setWishPurchaseStatus(wish,status,new Date().toISOString()),wish.revision);await onDataChanged();}
+    catch(err){setLocalError(err instanceof Error?err.message:'Не вдалося змінити статус бажання.');}
   };
 
   const handleToggleWishArchived = async (wish: WishItem) => {
@@ -1599,7 +1590,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
                     onClick={() => setShowQuickWishDetails((prev) => !prev)}
                     data-testid="wishlist-toggle-progressive-disclosure"
                   >
-                    {showQuickWishDetails ? 'Згорнути деталі' : 'Деталі та ціна'}
+                    {showQuickWishDetails ? 'Згорнути деталі' : 'Додаткові відомості'}
                   </Button>
                   <Button
                     type="submit"
@@ -1611,6 +1602,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
                 </div>
               </div>
 
+              {showQuickWishDetails && <>
               {/* Visibly editable default timing ("Пізніше") and category */}
               <div className="flex flex-wrap items-center justify-between gap-2 text-[13px]">
                 <div className="flex flex-wrap items-center gap-2">
@@ -1665,6 +1657,8 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
                 </div>
               </div>
 
+              </>}
+
               {showQuickWishDetails && (
                 <div
                   className="pt-3 border-t space-y-3"
@@ -1704,6 +1698,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
                       data-testid="wishlist-quick-currency-select"
                     />
                   </div>
+                  <WishExtrasFields value={quickWishExtras} onChange={setQuickWishExtras} projects={projects} onError={setLocalError}/>
                   <TextAreaField
                     label="Нотатка (необов’язково)"
                     placeholder="Посилання, характеристики або нотатки..."
@@ -1779,11 +1774,13 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
                 options={[
                   {
                     value: 'active',
-                    label: `Активні (${activeWishCount})`,
+                    label: `Хочу (${activeWishCount})`,
                   },
+                  {value:'purchased',label:`Куплено (${wishes.filter(w=>!w.archived&&getWishPurchaseStatus(w)==='purchased').length})`},
+                  {value:'not_relevant',label:`Більше не актуально (${wishes.filter(w=>!w.archived&&getWishPurchaseStatus(w)==='not_relevant').length})`},
                   {
                     value: 'fulfilled',
-                    label: `Виконані (${fulfilledWishCount})`,
+                    label: `Здійснено раніше (${fulfilledWishCount})`,
                   },
                   {
                     value: 'archived',
@@ -1900,6 +1897,11 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
                                   </div>
                                 )}
 
+                                <p>{WISH_STATUS_LABELS_UK[getWishPurchaseStatus(wish)]}</p>
+                                {wish.linkUrl&&<a href={wish.linkUrl} target="_blank" rel="noopener noreferrer" className="underline break-all">Відкрити посилання</a>}
+                                {wish.projectId&&<p>Проєкт: {projects.find(p=>p.id===wish.projectId)?.title}</p>}
+                                {wish.mediaId&&<WishLocalImage meta={mediaMetaById.get(wish.mediaId)} bytes={mediaBlobs.get(wish.mediaId)} title={wish.title}/>}
+                                {wish.purchasedAt&&<p>Позначено купівлю: {new Intl.DateTimeFormat('uk-UA',{dateStyle:'long',timeStyle:'short',timeZone:activeZone}).format(new Date(wish.purchasedAt))}</p>}
                                 {wish.note && (
                                   <p
                                     className="text-[14px] m-0 leading-relaxed whitespace-pre-wrap"
@@ -1915,38 +1917,14 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
                                       className="text-[12px]"
                                       style={{ color: 'var(--color-day-off)' }}
                                     >
-                                      Здійснено: {wish.fulfilledAt.slice(0, 10)}{' '}
+                                      Здійснено раніше: {new Intl.DateTimeFormat('uk-UA',{dateStyle:'long',timeZone:activeZone}).format(new Date(wish.fulfilledAt))}{' '}
                                       (орієнтовна ціна збережена як довідкова)
                                     </div>
                                   )}
                               </div>
 
                               <div className="flex flex-wrap items-center gap-1.5">
-                                <Button
-                                  variant="secondary"
-                                  size="sm"
-                                  onClick={() => handleToggleWishFulfilled(wish)}
-                                  data-testid={`toggle-fulfill-wish-${wish.id}`}
-                                >
-                                  {wish.state === 'active' ? (
-                                    <>
-                                      <CheckCircle2
-                                        className="w-3.5 h-3.5"
-                                        aria-hidden="true"
-                                      />
-                                      <span>Здійснено</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <RotateCcw
-                                        className="w-3.5 h-3.5"
-                                        aria-hidden="true"
-                                      />
-                                      <span>Повернути в активні</span>
-                                    </>
-                                  )}
-                                </Button>
-
+                                <SelectField label="Статус бажання" value={getWishPurchaseStatus(wish)} onChange={e=>void handleWishPurchaseStatus(wish,e.target.value as WishPurchaseStatus)} options={[...(getWishPurchaseStatus(wish)==='legacy_fulfilled'?[{value:'legacy_fulfilled',label:'Здійснено раніше'}]:[]),{value:'want',label:'Хочу'},{value:'purchased',label:'Куплено'},{value:'not_relevant',label:'Більше не актуально'}]}/>
                                 <Button
                                   variant="subtle"
                                   size="sm"
@@ -2023,7 +2001,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
             onChangeSubView('wishlist');
             setIsCategoryManagerOpen(true);
           }}
-          onLocalModalOpenChange={setIsSettingsModalOpen}
+          onLocalModalOpenChange={onSettingsConfirmationChange}
         />
       )}
 
@@ -2209,6 +2187,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
           className="space-y-3.5"
           data-testid="edit-wish-modal-form"
         >
+          {localError&&<p role="alert">{localError}</p>}
           <InputField
             label="Назва бажання"
             value={editWishTitle}
@@ -2256,17 +2235,16 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
             <SelectField
               label="Валюта"
               value={editWishCurrency}
-              onChange={(e) =>
-                setEditWishCurrency(
-                  e.target.value as SupportedCurrencyCode | ''
-                )
-              }
+              onChange={(e) => {
+                setConfirmWishCurrency(false);
+                setEditWishCurrency(e.target.value as SupportedCurrencyCode | '');
+              }}
               options={[
                 {
                   value: '',
-                  label: settings.preferredWishlistCurrency
-                    ? `Використати ${settings.preferredWishlistCurrency}`
-                    : '— Оберіть валюту —',
+                  label: editingWish?.estimatedPrice
+                    ? `Зберегти ${editingWish.estimatedPrice.currency}`
+                    : settings.preferredWishlistCurrency ? `Використати ${settings.preferredWishlistCurrency}` : '— Оберіть валюту —',
                 },
                 ...currencySelectOptions,
               ]}
@@ -2274,6 +2252,8 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
             />
           </div>
 
+          <WishExtrasFields value={editWishExtras} onChange={setEditWishExtras} existingMediaId={editingWish?.mediaId} projects={projects} onError={setLocalError}/>
+          {editingWish?.estimatedPrice && editWishPriceInput.trim() && editWishCurrency && editWishCurrency!==editingWish.estimatedPrice.currency && <label><input type="checkbox" checked={confirmWishCurrency} onChange={e=>setConfirmWishCurrency(e.target.checked)}/> Підтверджую зміну валюти: введене число стане ціною в новій валюті. Конвертація не виконується.</label>}
           <TextAreaField
             label="Нотатка"
             value={editWishNote}

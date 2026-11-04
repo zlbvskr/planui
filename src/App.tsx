@@ -106,6 +106,7 @@ export function App() {
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   useEffect(() => { if (habitOccurrence && snapshot && !snapshot.habits.some(h => h.id === habitOccurrence.habitId)) setHabitOccurrence(null); }, [habitOccurrence, snapshot]);
   const [isLocalModalOpen, setIsLocalModalOpen] = useState(false);
+  const [isSettingsConfirmationOpen, setIsSettingsConfirmationOpen] = useState(false);
   const [editorInitialAction, setEditorInitialAction] = useState<
     ImplementedCreationActionKind | undefined
   >(undefined);
@@ -493,6 +494,7 @@ export function App() {
     isEditorOpen ||
     Boolean(habitOccurrence) ||
     isLocalModalOpen ||
+    isSettingsConfirmationOpen ||
     Boolean(activeGapForPicker) ||
     Boolean(inspectedEvent);
 
@@ -503,6 +505,7 @@ export function App() {
         onSelectDestination={handleSelectDestination}
         onOpenGlobalCreate={() => openGlobalCreation()}
         isModalOpen={anyModalOpen}
+        isBackgroundInert={Boolean(habitOccurrence) || isEditorOpen || isLocalModalOpen || Boolean(activeGapForPicker) || Boolean(inspectedEvent)}
       >
         <div className="space-y-6">
           {toastMessage && (
@@ -682,6 +685,7 @@ export function App() {
           {/* DESTINATION 4: Я (Me — Overview, Personal Records, Life Areas, Inspiration, Wishlist, Settings) */}
           {activeDestination === 'me' && snapshot && (
             <MeWorkspaceView
+              onSettingsConfirmationChange={setIsSettingsConfirmationOpen}
               onOpenPlan={(kind, id) => {
                 const entity = kind === 'goal' ? goals.find(g => g.id === id) : projects.find(p => p.id === id);
                 setContexts(prev => updateDestinationContext(prev, 'directions', { activeFolderId: entity?.folderId ?? null, activeGoalId: kind === 'goal' ? id : projects.find(p => p.id === id)?.goalId ?? null, activeProjectId: kind === 'project' ? id : null }));

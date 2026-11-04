@@ -3,9 +3,9 @@
  */
 
 export const PLANUI_APP_VERSION = '0.3.0';
-export const PLANUI_DB_SCHEMA_VERSION = 7;
+export const PLANUI_DB_SCHEMA_VERSION = 8;
 export const PLANUI_BACKUP_FORMAT = 'planui-backup-zip' as const;
-export const PLANUI_BACKUP_VERSION = 7;
+export const PLANUI_BACKUP_VERSION = 8;
 
 export type EntityId = string;
 export type IsoInstantString = string;
@@ -455,7 +455,13 @@ export interface WishlistCategory {
   revision: number;
 }
 
+export type WishPurchaseStatus = 'want' | 'purchased' | 'not_relevant';
 export interface WishItem {
+  purchaseStatus?: WishPurchaseStatus;
+  purchasedAt?: IsoInstantString | null;
+  linkUrl?: string | null;
+  mediaId?: EntityId | null;
+  projectId?: EntityId | null;
   id: EntityId;
   title: string;
   note: string | null;

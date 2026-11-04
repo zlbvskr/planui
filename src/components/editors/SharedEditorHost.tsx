@@ -1,3 +1,4 @@
+import { WishExtrasFields, emptyWishExtras, resolveWishExtras } from '../wishlist/WishExtrasFields';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   CheckSquare,
@@ -248,6 +249,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
   } | null>(null);
 
   // Wish & Wishlist Category fields (10.5 - 10.7)
+  const [wishExtras,setWishExtras] = useState(emptyWishExtras);
   const [wishTitle, setWishTitle] = useState('');
   const [wishNote, setWishNote] = useState('');
   const [wishTiming, setWishTiming] = useState<WishlistTimingGroup>('later');
@@ -382,6 +384,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
       setInspirationIsFavorite(false);
       setInspirationImageFile(null);
 
+      setWishExtras(emptyWishExtras(initialContext.projectId??''));
       setWishTitle('');
       setWishNote('');
       setWishTiming('later');
@@ -452,6 +455,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
     inspirationTextContent.trim().length > 0 ||
     inspirationSafeUrl.trim().length > 0 ||
     inspirationImageFile !== null ||
+    Boolean(wishExtras.linkUrl||wishExtras.projectId||wishExtras.preparedMedia||wishExtras.validating||wishExtras.imageError) ||
     wishTitle.trim().length > 0 ||
     wishNote.trim().length > 0 ||
     wishPriceInput.trim().length > 0 ||
@@ -1107,6 +1111,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
         const built = buildWishItemRecord({
           id,
           title: wishTitle,
+          ...resolveWishExtras(wishExtras),
           note: wishNote,
           categoryId: editableContext.wishlistCategoryId || null,
           timing: wishTiming,
@@ -1116,7 +1121,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
           nowIso,
         });
 
-        await repositories.saveWishItem(built.wish);
+        await repositories.saveWishItem(built.wish,undefined,{media:wishExtras.preparedMedia??undefined});
 
         // 10.7: When a price is entered and no preferred currency existed, save the explicit choice
         if (built.explicitCurrencySelected && !preferredWishlistCurrency) {
@@ -2947,7 +2952,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
               >
                 {showWishDetails
                   ? 'Сховати деталі'
-                  : 'Нотатка та орієнтовна ціна'}
+                  : 'Додаткові відомості'}
               </Button>
             </div>
 
@@ -2957,6 +2962,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
                 style={{ borderColor: 'var(--border-subtle)' }}
                 data-testid="wish-progressive-details-section"
               >
+                <WishExtrasFields value={wishExtras} onChange={setWishExtras} projects={projects} onError={setErrorMessage}/>
                 <TextAreaField
                   label="Нотатка (необов’язково)"
                   placeholder="Деталі, характеристики або роздуми..."

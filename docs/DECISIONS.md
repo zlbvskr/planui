@@ -115,3 +115,12 @@ The active product revision `PLANUI-LIFE-ALIGNMENT-1` supersedes earlier product
 - Explicit day-off markers are authoritative classification, independent of actual occupied intervals. Overnight carry-in may coexist with a valid day-off marker. Blank dates never imply days off. Logged rule/target/day-off interpretation is pinned; future unlogged opportunities reflect explicit effective revisions and current date markers.
 - Completion and intentional skip release only this occurrence's pending remainder, retaining elapsed occupancy and original timing metadata. Partial/minimum actions retain sessions; manual single-session release leaves completion untouched. Clearing a log retains referenced occurrence identity and never reactivates released sessions.
 - Pause/module disable preserve all definitions, logs, states, intervals and backup coverage. Disabled-module session completion remains an explicit calendar action. No automatic alarms, wake-time inference, repetition, allocations, progression or accumulated debt.
+
+## M9 latest approved scope (2026-11-04)
+
+- M9 now delivers the formerly planned M10 Wishlist extension; do not implement or reassign later stages. Continue on the preserved local M7/M8 baseline, keeping the Pages PR separate.
+- Add optional purchaseStatus rather than repurposing legacy fulfilled. An absent status uses an honest read-time legacy projection; no old completion is automatically a purchase. New purchase actions never rewrite legacy fulfilledAt/state or archive/timing metadata.
+- purchasedAt is the first explicit purchase-marking time. Retain it on subsequent status changes, labelled as the recorded marking, not a newly inferred historical transaction. No expense, budget or planning record is created.
+- Preserve ExactPrice storage and supported per-item currencies. Use BigInt intermediates; reject ambiguous spacing, mixed separators, excess precision and overflow. Keep zero separate from missing. Preserve unchanged historical note/title and decimal-string values when editing other fields.
+- Existing-price currency changes require acknowledgement that the entered number is being expressed in a different currency without conversion. Preferred currency affects new entry defaults only.
+- Reuse bounded local raster validation, browser decoding and media stores. Save attachment and wish atomically, and retain assets referenced by any live wish/inspiration or recovery snapshot. Open only user-entered HTTP/S links on explicit action, without automatic previews.

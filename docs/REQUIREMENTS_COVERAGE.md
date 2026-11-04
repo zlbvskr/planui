@@ -278,3 +278,16 @@ M6 numbering note: legacy AT-M06-01/02/03 references in habit rows retain their 
 | Immutable effective revisions and historic target/unit interpretation | append-only revisions, transactional legacy-log pinning, future revision display; M8 legacy numeric snapshot and equal-time revision tests |
 | Canonical sessions and once-only completion/shared lifecycle | Existing reservation store/projection + habitOccurrence pointers; multi-session, truncation, cancellation, clear/reopen, failure rollback and calendar completion tests |
 | Migration and backups | Metadata-only schema v7; v1–v7 import; exact native v6→v7 preservation and real ZIP replacement with disabled habits |
+
+## M9 coverage
+
+| Requirement | Implementation / verification |
+|---|---|
+| Minimal optional Wishlist with note/price/category/link/image/project | Existing inline/global forms plus shared progressive extras; real Chromium creation in both paths |
+| Three purchase statuses, separate legacy fulfillment and archive | Optional purchaseStatus + read-time projection; filter/status/archive tests and native legacy-history view |
+| IDs/notes/amounts/currencies/timing/fulfillment preserved | Metadata-only DB v8 and v1–v7 migration tests; native upgrade and exact ZIP replacement; unchanged-price/note edit preservation |
+| Flat arbitrary categories independent from timing | Existing manager, complete-ID reorder validation, category named Зараз with later timing, rename/reorder/delete tests and UI deletion |
+| Exact localized money, zero/missing/ambiguity, default and explicit currency changes | BigInt parser/formatter, safe-integer boundaries, comma/dot/grouping rejection tests, actual zero/error and currency-confirmation UI |
+| Canonical project links, no generated tasks/events/transactions | Stable-ID move/unlink tests and browser checks confirming no task/event/session writes |
+| Safe local media/links and storage failure handling | Bounded raster helper, local browser decoding, atomic media/wish writes, shared/recovery retention, rollback tests and no external preview requests |
+| Disabled-module backup and archive compatibility | Real v8 ZIP replacement with disabled Wishlist, all statuses, legacy archive and exact local image bytes |

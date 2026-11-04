@@ -916,10 +916,22 @@ export function validateWishlistCategoryRecord(
 
 export function validateWishItemRecord(
   wish: WishItem,
-  categoryIds?: ReadonlySet<string>
+  categoryIds?: ReadonlySet<string>,
+  mediaIds?: ReadonlySet<string>,
+  projectIds?: ReadonlySet<string>
 ): WishItem {
   assertNonEmptyString(wish.id, 'INVALID_ID');
   assertNonEmptyString(wish.title, 'REQUIRED_TITLE');
+  if (wish.purchaseStatus !== undefined && !['want','purchased','not_relevant'].includes(wish.purchaseStatus)) throw new PlanuiError('WISHLIST_INVALID_STATE');
+  if (wish.purchasedAt != null) assertValidIsoInstant(wish.purchasedAt);
+  if (wish.purchaseStatus === 'purchased' && !wish.purchasedAt) throw new PlanuiError('VALIDATION_FAILED');
+  if (wish.linkUrl != null) {
+    try { const url = new URL(wish.linkUrl); if (!['http:','https:'].includes(url.protocol)) throw new Error(); }
+    catch { throw new PlanuiError('UNSAFE_INSPIRATION_URL'); }
+  }
+  if (wish.mediaId != null) { assertNonEmptyString(wish.mediaId,'INVALID_ID'); if (mediaIds && !mediaIds.has(wish.mediaId)) throw new PlanuiError('MISSING_REFERENCED_MEDIA'); }
+  if (wish.projectId != null) { assertNonEmptyString(wish.projectId,'INVALID_ID'); if (projectIds && !projectIds.has(wish.projectId)) throw new PlanuiError('PROJECT_NOT_FOUND'); }
+
 
   if (wish.categoryId !== null) {
     assertNonEmptyString(wish.categoryId, 'INVALID_ID');
@@ -1258,7 +1270,7 @@ export function validateDomainSnapshot(
 
   const wishIds = new Set<string>();
   for (const w of snapshot.wishes) {
-    validateWishItemRecord(w, wishlistCategoryIds);
+    validateWishItemRecord(w, wishlistCategoryIds, mediaIds, projectIds);
     if (wishIds.has(w.id)) {
       throw new PlanuiError('INVALID_ID', w.id);
     }

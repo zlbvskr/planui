@@ -83,7 +83,7 @@ describe('M8 context-aware habits and canonical sessions',()=>{
     await repos.saveSettings({...settings,modules:{...settings.modules!,habitsEnabled:false,userConfigured:true}},settings.revision);
     const saved=await snapshot(repos);assert.deepEqual(saved.reservations,initial.reservations);assert.deepEqual(saved.habitEntries,initial.habitEntries);assert.equal(evaluateHabitOnDate({habit:saved.habits[0],entriesForHabit:saved.habitEntries,localDate:day}).cellStatus,'paused');
     await assert.rejects(plan(repos,'paused',tomorrow,'14:00',60,2));
-    const target=new PlanuiRepositories(new InMemoryTransactionalEngine());const zip=await exportFullBackupZip(repos,now);assert.equal(zip.manifest.backupVersion,7);await executeAtomicBackupReplacement(target,await validateBackupArchive(zip.zipBytes),{explicitUserConfirmation:true,nowIso:now});
+    const target=new PlanuiRepositories(new InMemoryTransactionalEngine());const zip=await exportFullBackupZip(repos,now);assert.equal(zip.manifest.backupVersion,PLANUI_BACKUP_VERSION);await executeAtomicBackupReplacement(target,await validateBackupArchive(zip.zipBytes),{explicitUserConfirmation:true,nowIso:now});
     const restored=await snapshot(target);assert.deepEqual(restored.reservations,saved.reservations);assert.deepEqual(restored.habits,saved.habits);assert.deepEqual(restored.habitEntries,saved.habitEntries);assert.equal(restored.settings.modules?.habitsEnabled,false);
     await target.recordHabitEntryForDateTransactionally({habitId:'habit',localDate:day,input:{kind:'complete'},nowIso:now});assert.equal((await snapshot(target)).reservations[0].state,'released');
   });
@@ -107,7 +107,7 @@ describe('M8 context-aware habits and canonical sessions',()=>{
   it('keeps older v1–v6 records intact on migration and advances schema metadata only',async()=>{
     const {repos}=await fixture();const snap=await snapshot(repos);const exported=await exportFullBackupZip(repos,now);
     for(const version of [1,2,3,4,5,6]) {const old={...snap,settings:{...snap.settings,dbSchemaVersion:version}};const migrated=migrateSupportedDomainSnapshot(old,{...exported.manifest,backupVersion:version,dbSchemaVersion:version}).snapshot;assert.deepEqual(migrated.habits,snap.habits);assert.deepEqual(migrated.habitEntries,snap.habitEntries);assert.equal(migrated.settings.dbSchemaVersion,PLANUI_DB_SCHEMA_VERSION);validateDomainSnapshot(migrated);}
-    assert.equal(PLANUI_BACKUP_VERSION,7);
+    assert.equal(PLANUI_BACKUP_VERSION,PLANUI_DB_SCHEMA_VERSION);
   });
   it('explicit permanent habit deletion removes only its own canonical sessions and entries',async()=>{
     const {repos}=await fixture();await plan(repos,'session');await repos.saveHabit(habit('other'));await repos.recordHabitEntryForDateTransactionally({habitId:'other',localDate:day,input:{kind:'complete'},nowIso:now});await repos.deleteHabitWithHistoryTransactionally('habit',now);const snap=await snapshot(repos);assert.equal(snap.habits.length,1);assert.equal(snap.habitEntries.length,1);assert.equal(snap.habitEntries[0].habitId,'other');assert.equal(snap.reservations.length,0);validateDomainSnapshot(snap);

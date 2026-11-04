@@ -85,6 +85,7 @@ export const ERRORS_UK = {
   WISHLIST_INVALID_STATE: 'Некоректний стан виконання бажання.',
   WISHLIST_FULFILLED_TIMESTAMP_MISMATCH:
     'Виконане бажання повинно мати час виконання, а активне — не може мати часу виконання.',
+  WISHLIST_CURRENCY_CHANGE_CONFIRMATION: 'Підтвердьте зміну валюти. Це не конвертація: введене число буде ціною в новій валюті.',
   WISHLIST_PRICE_MISSING_CURRENCY:
     'Для орієнтовної вартості бажання необхідно вказати код валюти (наприклад, UAH, EUR, USD).',
   WISHLIST_PRICE_UNSUPPORTED_CURRENCY: 'Вказаний код валюти не підтримується.',

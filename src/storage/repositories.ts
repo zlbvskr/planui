@@ -441,6 +441,7 @@ export class PlanuiRepositories {
       [
         STORE_NAMES.habits,
         STORE_NAMES.folders,
+        STORE_NAMES.wishes,
         STORE_NAMES.projects,
         STORE_NAMES.stages,
         STORE_NAMES.tasks,
@@ -457,6 +458,7 @@ export class PlanuiRepositories {
         const removedDirections = mode === 'recursive_delete' ? collectDescendantFolderIds(allFolders, folderId) : new Set([folderId]);
         const relatedProjects = await tx.getAll<Project>(STORE_NAMES.projects);
         const removedProjects = new Set(mode === 'recursive_delete' ? relatedProjects.filter(p => p.folderId && removedDirections.has(p.folderId)).map(p => p.id) : []);
+        for (const wish of await tx.getAll<WishItem>(STORE_NAMES.wishes)) if (wish.projectId && removedProjects.has(wish.projectId)) await tx.put(STORE_NAMES.wishes,{...wish,projectId:null,updatedAt:nowIso,revision:wish.revision+1});
         for (const habit of await tx.getAll<Habit>(STORE_NAMES.habits)) {
           if ((habit.folderId && removedDirections.has(habit.folderId)) || (habit.projectId && removedProjects.has(habit.projectId))) await tx.put(STORE_NAMES.habits, {...habit, folderId: habit.folderId && removedDirections.has(habit.folderId) ? (mode === 'rehome_to_parent' ? target.parentId : null) : habit.folderId, projectId: habit.projectId && removedProjects.has(habit.projectId) ? null : habit.projectId, updatedAt: nowIso, revision: habit.revision + 1});
         }
@@ -1920,6 +1922,7 @@ export class PlanuiRepositories {
 
     return this.engine.runTransaction(
       [
+        STORE_NAMES.wishes,
         STORE_NAMES.projects,
         STORE_NAMES.stages,
         STORE_NAMES.tasks,
@@ -1934,6 +1937,7 @@ export class PlanuiRepositories {
           throw new PlanuiError('ENTITY_NOT_FOUND', projectId);
         }
 
+        for (const wish of await tx.getAll<WishItem>(STORE_NAMES.wishes)) if (wish.projectId === projectId) await tx.put(STORE_NAMES.wishes,{...wish,projectId:null,updatedAt:nowIso,revision:wish.revision+1});
         const allStages = await tx.getAll<ProjectStage>(STORE_NAMES.stages);
         let deletedStages = 0;
         for (const st of allStages) {
@@ -3422,6 +3426,7 @@ export class PlanuiRepositories {
 
     const res = await this.engine.runTransaction(
       [
+        STORE_NAMES.wishes,
         STORE_NAMES.inspirationItems,
         STORE_NAMES.mediaMeta,
         STORE_NAMES.mediaBlobs,
@@ -3450,7 +3455,8 @@ export class PlanuiRepositories {
             existing.mediaId,
             allLiveInspiration,
             allSnapshots,
-            existing.id
+            existing.id,
+            await tx.getAll<WishItem>(STORE_NAMES.wishes)
           );
           if (!stillReferenced) {
             await tx.delete(STORE_NAMES.mediaMeta, existing.mediaId);
@@ -3520,6 +3526,7 @@ export class PlanuiRepositories {
         const allCategories = await tx.getAll<WishlistCategory>(
           STORE_NAMES.wishlistCategories
         );
+        if (orderedCategoryIds.length !== allCategories.length || new Set(orderedCategoryIds).size !== allCategories.length || allCategories.some(c=>!orderedCategoryIds.includes(c.id))) throw new PlanuiError('STALE_WRITE_CONFLICT');
         const byId = new Map(allCategories.map((c) => [c.id, c]));
         let order = 1;
         for (const id of orderedCategoryIds) {
@@ -3546,68 +3553,45 @@ export class PlanuiRepositories {
     });
   }
 
-  public async saveWishItem(
-    wish: WishItem,
-    expectedRevision?: number
-  ): Promise<WishItem> {
+  private async collectUnusedWishMedia(tx: StorageTransactionContext, mediaId: string): Promise<void> {
+    const referenced = isMediaReferencedByLiveOrSnapshots(mediaId, await tx.getAll<InspirationItem>(STORE_NAMES.inspirationItems), await tx.getAll<RecoverySnapshotRecord>(STORE_NAMES.recoverySnapshots), undefined, await tx.getAll<WishItem>(STORE_NAMES.wishes));
+    if (!referenced) { await tx.delete(STORE_NAMES.mediaMeta, mediaId); await tx.delete(STORE_NAMES.mediaBlobs, mediaId); }
+  }
+
+  public async saveWishItem(wish: WishItem, expectedRevision?: number, options: { media?: {meta: MediaAssetMeta; bytes: Uint8Array}; confirmCurrencyChange?: boolean } = {}): Promise<WishItem> {
     this.tabSync.assertNoRemoteImportInProgress();
-
-    const saved = await this.engine.runTransaction(
-      [
-        STORE_NAMES.wishes,
-        STORE_NAMES.wishlistCategories,
-        STORE_NAMES.settings,
-      ],
-      'readwrite',
-      async (tx) => {
-        const categories = await tx.getAll<WishlistCategory>(
-          STORE_NAMES.wishlistCategories
-        );
-        const categoryIds = new Set(categories.map((c) => c.id));
-        const existing = await tx.get<WishItem>(STORE_NAMES.wishes, wish.id);
-        const nextRev = this.assertRevisionMatch(existing, expectedRevision);
-        const record: WishItem = { ...wish, revision: nextRev };
-        validateWishItemRecord(record, categoryIds);
-        await tx.put(STORE_NAMES.wishes, record);
-        const settings = await this.ensureSettingsInTx(tx, record.updatedAt);
-        return { record, dbGeneration: settings.dbGeneration };
+    if (options.media) { validateMediaAssetMetaAndBytes(options.media.meta, options.media.bytes); if (wish.mediaId !== options.media.meta.id) throw new PlanuiError('MISSING_REFERENCED_MEDIA'); }
+    const saved = await this.engine.runTransaction([STORE_NAMES.wishes, STORE_NAMES.wishlistCategories, STORE_NAMES.settings, STORE_NAMES.projects, STORE_NAMES.mediaMeta, STORE_NAMES.mediaBlobs, STORE_NAMES.inspirationItems, STORE_NAMES.recoverySnapshots], 'readwrite', async tx => {
+      const existing = await tx.get<WishItem>(STORE_NAMES.wishes, wish.id);
+      if (!existing && expectedRevision !== undefined) throw new PlanuiError('STALE_WRITE_CONFLICT');
+      const revision = this.assertRevisionMatch(existing, expectedRevision);
+      if (existing?.estimatedPrice && wish.estimatedPrice && existing.estimatedPrice.currency !== wish.estimatedPrice.currency && !options.confirmCurrencyChange) throw new PlanuiError('WISHLIST_CURRENCY_CHANGE_CONFIRMATION');
+      if (options.media) {
+        if (await tx.get(STORE_NAMES.mediaMeta, options.media.meta.id)) throw new PlanuiError('STALE_WRITE_CONFLICT');
+        await tx.put(STORE_NAMES.mediaMeta, options.media.meta);
+        await tx.put(STORE_NAMES.mediaBlobs, {id:options.media.meta.id,mimeType:options.media.meta.mimeType,bytes:new Uint8Array(options.media.bytes)});
       }
-    );
-
-    this.tabSync.broadcast({
-      type: 'ENTITY_MUTATED',
-      stores: [STORE_NAMES.wishes],
-      dbGeneration: saved.dbGeneration,
-      timestamp: saved.record.updatedAt,
+      const record = {...wish,revision};
+      validateWishItemRecord(record, new Set((await tx.getAll<WishlistCategory>(STORE_NAMES.wishlistCategories)).map(c=>c.id)),new Set((await tx.getAll<MediaAssetMeta>(STORE_NAMES.mediaMeta)).map(m=>m.id)),new Set((await tx.getAll<Project>(STORE_NAMES.projects)).map(p=>p.id)));
+      await tx.put(STORE_NAMES.wishes,record);
+      if (existing?.mediaId && existing.mediaId !== record.mediaId) await this.collectUnusedWishMedia(tx,existing.mediaId);
+      const settings = await this.ensureSettingsInTx(tx,record.updatedAt);
+      return {record,dbGeneration:settings.dbGeneration};
     });
+    this.tabSync.broadcast({type:'ENTITY_MUTATED',stores:[STORE_NAMES.wishes,STORE_NAMES.mediaMeta],dbGeneration:saved.dbGeneration,timestamp:saved.record.updatedAt});
     return saved.record;
   }
 
-  public async deleteWishItemTransactionally(
-    wishId: EntityId,
-    nowIso: IsoInstantString = new Date().toISOString()
-  ): Promise<void> {
+  public async deleteWishItemTransactionally(wishId: EntityId, nowIso: IsoInstantString = new Date().toISOString()): Promise<void> {
     this.tabSync.assertNoRemoteImportInProgress();
-    const res = await this.engine.runTransaction(
-      [STORE_NAMES.wishes, STORE_NAMES.settings],
-      'readwrite',
-      async (tx) => {
-        const existing = await tx.get<WishItem>(STORE_NAMES.wishes, wishId);
-        if (!existing) {
-          throw new PlanuiError('ENTITY_NOT_FOUND', wishId);
-        }
-        await tx.delete(STORE_NAMES.wishes, wishId);
-        const settings = await this.ensureSettingsInTx(tx, nowIso);
-        return { dbGeneration: settings.dbGeneration };
-      }
-    );
-
-    this.tabSync.broadcast({
-      type: 'ENTITY_MUTATED',
-      stores: [STORE_NAMES.wishes],
-      dbGeneration: res.dbGeneration,
-      timestamp: nowIso,
+    const res = await this.engine.runTransaction([STORE_NAMES.wishes,STORE_NAMES.settings,STORE_NAMES.inspirationItems,STORE_NAMES.recoverySnapshots,STORE_NAMES.mediaMeta,STORE_NAMES.mediaBlobs], 'readwrite', async tx => {
+      const existing = await tx.get<WishItem>(STORE_NAMES.wishes,wishId);
+      if (!existing) throw new PlanuiError('ENTITY_NOT_FOUND',wishId);
+      await tx.delete(STORE_NAMES.wishes,wishId);
+      if (existing.mediaId) await this.collectUnusedWishMedia(tx,existing.mediaId);
+      return {dbGeneration:(await this.ensureSettingsInTx(tx,nowIso)).dbGeneration};
     });
+    this.tabSync.broadcast({type:'ENTITY_MUTATED',stores:[STORE_NAMES.wishes,STORE_NAMES.mediaMeta],dbGeneration:res.dbGeneration,timestamp:nowIso});
   }
 
   public async deleteWishlistCategoryTransactionally(

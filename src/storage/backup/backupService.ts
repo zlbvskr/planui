@@ -87,8 +87,8 @@ export function migrateSupportedDomainSnapshot(
   }
   if (
     manifest.format !== PLANUI_BACKUP_FORMAT ||
-    (![1, 2, 3, 4, 5, 6, 7].includes(manifest.backupVersion)) ||
-    (![1, 2, 3, 4, 5, 6, 7].includes(manifest.dbSchemaVersion))
+    (![1, 2, 3, 4, 5, 6, 7, 8].includes(manifest.backupVersion)) ||
+    (![1, 2, 3, 4, 5, 6, 7, 8].includes(manifest.dbSchemaVersion))
   ) {
     throw new PlanuiError('BACKUP_UNSUPPORTED_VERSION');
   }
@@ -130,7 +130,7 @@ export function migrateSupportedDomainSnapshot(
     obj.settings = { dailyPlans: {}, ...obj.settings, dbSchemaVersion: PLANUI_DB_SCHEMA_VERSION };
   }
 
-  if (manifest.dbSchemaVersion < 7 && obj.settings && typeof obj.settings === 'object') {
+  if (manifest.dbSchemaVersion < 8 && obj.settings && typeof obj.settings === 'object') {
     obj.settings = { ...obj.settings, dbSchemaVersion: PLANUI_DB_SCHEMA_VERSION };
   }
 

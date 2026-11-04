@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import type { PersonalRecord, Scale1To5 } from '../domain/types';
-import { STATE_SCALE_V1, isCheckIn, downloadPersonalRecords } from '../domain/stateCheckIns';
+import { STATE_SCALE_V1, isCheckIn, downloadPersonalRecordsCsv, printPersonalRecords, downloadPersonalRecords } from '../domain/stateCheckIns';
 import type { PlanuiRepositories } from '../storage/repositories';
 import { Button, Card, InputField, SelectField } from '../components/ui/primitives';
 export function StateCheckInsView({ records, today, zone, enabled, repositories, onChanged }: { records: PersonalRecord[]; today: string; zone: string; enabled: boolean; repositories: PlanuiRepositories; onChanged: () => Promise<unknown> }) {
@@ -29,6 +29,8 @@ export function StateCheckInsView({ records, today, zone, enabled, repositories,
     </form></Card>}
     <p>{archive ? 'Історичні тексти збережено разом із початковими оцінками й часом.' : 'Відмітки відображають ваші відповіді, без висновків про причини або здоров’я.'}</p>
     <Button disabled={!selected.length} onClick={() => downloadPersonalRecords(records, selected)}>Експортувати вибрані записи (JSON)</Button>
+    <Button disabled={!selected.length} onClick={() => downloadPersonalRecordsCsv(records, selected)}>Експортувати вибрані записи (CSV)</Button>
+    <Button disabled={!selected.length} onClick={() => { if (!printPersonalRecords(records, selected)) setError('Дозвольте відкриття вікна друку для експорту PDF.'); }}>Друк / PDF вибраних записів</Button>
     {[...records].filter(r => archive ? Boolean(r.text) : isCheckIn(r)).sort((a,b) => b.localDate.localeCompare(a.localDate) || b.recordedAt.localeCompare(a.recordedAt)).map(r => <Card key={r.id} title={`${new Intl.DateTimeFormat('uk-UA', {timeZone: 'UTC', dateStyle: 'long'}).format(new Date(r.localDate))} · ${new Intl.DateTimeFormat('uk-UA', {timeZone: r.zoneId, timeStyle: 'short'}).format(new Date(r.recordedAt))}`}>
       <label><input type="checkbox" checked={selected.includes(r.id)} onChange={e => setSelected(e.target.checked ? [...selected,r.id] : selected.filter(id => id !== r.id))} /> Обрати для експорту</label>
       {r.text && <><p className="whitespace-pre-wrap">{r.text}</p><Button onClick={async () => { try { await navigator.clipboard.writeText(r.text!); } catch { setError('Копіювання недоступне. Виділіть текст вручну.'); } }}>Копіювати текст</Button></>}

@@ -12,6 +12,7 @@ it('dependent date shift is atomic, rejects cycles/stale previews, and keeps ind
  await assert.rejects(repos.updateStageGraph('a',{roadmapPeriod:{precision:'month',month:'2026-12'}},{a:1,b:99,c:1},true));assert.deepEqual(await capture(),before);
  await repos.updateStageGraph('a',{roadmapPeriod:{precision:'month',month:'2026-12'}},{a:1,b:1,c:1},true);
  const after=await capture();assert.deepEqual(after.tasks,before.tasks);assert.deepEqual(after.events,before.events);assert.deepEqual(after.reservations,before.reservations);assert.equal(after.stages.find(s=>s.id==='b')!.roadmapPeriod?.precision,'range');assert.equal(after.stages.find(s=>s.id==='c')!.revision,2);
+ const legacyEdit={...after.stages.find(stage=>stage.id==='c')!,title:'Renamed'};delete legacyEdit.dependsOnStageIds;await repos.saveStage(legacyEdit,legacyEdit.revision);assert.deepEqual((await capture()).stages.find(stage=>stage.id==='c')!.dependsOnStageIds,['b']);
  await repos.deleteStageTransactionally('b',now);assert.deepEqual((await capture()).stages.find(s=>s.id==='c')!.dependsOnStageIds,[]);
 });
 it('v8/schema9 backup migration preserves old stage dates; new dependency/Ideal Life links round-trip',async()=>{

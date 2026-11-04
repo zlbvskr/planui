@@ -814,7 +814,7 @@ export class PlanuiRepositories {
           stage.id
         );
         const nextRev = this.assertRevisionMatch(existing, expectedRevision);
-        const record: ProjectStage = { ...stage, revision: nextRev };
+        const record: ProjectStage = { ...stage, ...(stage.dependsOnStageIds === undefined && existing?.dependsOnStageIds !== undefined ? { dependsOnStageIds: existing.dependsOnStageIds } : {}), revision: nextRev };
         validateStageRecord(record, projectIds, new Set((await tx.getAll<Goal>(STORE_NAMES.goals)).map(g => g.id)));
         validateStageDependencies([...(await tx.getAll<ProjectStage>(STORE_NAMES.stages)).filter(existing=>existing.id!==record.id),record]);
         await tx.put(STORE_NAMES.stages, record);

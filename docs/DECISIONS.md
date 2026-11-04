@@ -45,3 +45,55 @@ Per C02, C15, and Stage 1 Section 1.4, Wishlist is strictly bounded as a compact
 | **Temporal Implementation** | Pure TypeScript temporal module (`src/domain/temporal.ts`) wrapping standard `Intl.DateTimeFormat` IANA zone resolution + deterministic proleptic Gregorian calendar math (compatible with TC39 `Temporal` semantics) | Avoids heavy third-party moment/date-fns bloat while guaranteeing exact separation of `InstantISO`, `ZonedTimeRecord`, and `LocalDateString`, plus explicit DST gap/fold detection. |
 | **ZIP Archive Codec** | Deterministic client-side ZIP reader/writer (`src/storage/backup/zipCodec.ts`) using Web `CompressionStream` / `DecompressionStream` (`deflate-raw`) and `crypto.subtle.digest('SHA-256')` with strict streamed byte-counter guards | Native to modern Safari/Chromium/Node 22; requires zero native binary dependencies and enforces exact streamed decompression bomb limits before touching IndexedDB. |
 | **Exact Money Representation** | Integer minor units (`amountMinor: number`, `exponent: 0 | 2 | 3`) paired with canonical decimal string (`canonicalDecimal: string`) and `currency: IsoCurrencyCode` | Eliminates binary floating-point rounding defects while remaining trivial to serialize, validate, and format via `Intl.NumberFormat('uk-UA', ...)`. |
+
+---
+
+## 4. Product Revision: PLANUI-LIFE-ALIGNMENT-1 (Stage M0 Supersessions)
+
+The active product revision `PLANUI-LIFE-ALIGNMENT-1` supersedes earlier product decisions as follows:
+
+| Former Decision (Stages 1–11) | Superseding Decision (PLANUI-LIFE-ALIGNMENT-1) | Migration / Compatibility Rationale |
+|---|---|---|
+| **Five Primary Destinations** (`Календар`, `Плани`, `Сьогодні`, `Звички`, `Я`) | **Four Primary Destinations**: `Сьогодні` → `Календар` → `Напрями` → `Я`. Settings become secondary within `Я`. | Streamlines daily alignment. Habits and Settings move inside destinations without destroying data. |
+| **No Distinct Goals** (Goals were only project `desiredOutcome` fields) | **Distinct Goal Entity**: A Direction contains goals, projects, and direct tasks. A Goal contains projects or direct tasks. Projects do not require a goal. | Gives long-term intentions clear structure without recursive goal trees or nested projects. |
+| **"Плани" Destination Name** | **"Напрями" (Directions)**: Organizes active work (folders, goals, projects, tasks). | Preserves all existing folder trees (unbounded depth), project/task IDs. Directions organize activity; life areas describe parts of life (not interchangeable). |
+| **Mandatory Standalone "Звички" Primary Tab** | **Optional Habits Module in "Сьогодні"**: Habits become an embedded optional module with no top-level tab. | Can be disabled without deleting records or backup entries. Adds work-day context rules and minimum versions. |
+| **Continuing Standalone Diary in "Я"** | **Short Optional State Check-ins + Legacy Archive**: State check-ins focus on mood, energy, tension, optional sleep. | No new long diary prompts. All existing personal journal entries are preserved in an accessible legacy archive. |
+| **8 Life Area Questions** | **Editable 10-Area Starter Set + Reviews**: 10 life areas with optional 0–10 satisfaction, attention preference, and 1 change. | All historical 8-question records, wording, scales, and versions are preserved immutably. |
+| **Wishlist Buy/Fulfilled Binary** | **Extended Statuses**: `Хочу` (want), `Куплено` (bought), `Більше не актуально` (no longer relevant), optional links, images, project links. | Preserves legacy fulfilled/archived wishes without inventing purchases or dates. Preserves exact currencies and minor-unit amounts. |
+| **No Project Roadmap** | **"Дорожня карта" Projection**: Canonical view of goals, projects, stages, checkpoints. | Roadmap periods/checkpoints never occupy calendar hours. Only explicit reservations or blocking events occupy time. |
+| **Monolithic Module Presence** | **Safe Optional Module Disabling**: Modules (Habits, Wishlist, Reviews, Roadmap) can be toggled off. | Disabling never deletes data, never un-blocks calendar time, and never removes records from ZIP backups. |
+| **Psychological / Life Scoring** | **Anti-Diagnosis Invariant**: Non-judgmental life alignment framing only. | No therapeutic promises, psychological tests, life scores, or punitive debt calculations. |
+
+
+
+## M4 implementation decisions (2026-11-04)
+
+- Persist precision on canonical goals/projects/stages, not duplicate roadmap records. Preserve legacy free-text goal timing without interpreting it.
+- Reuse the existing flat stages store with mutually exclusive projectId/goalId ownership. Goal stages have no nested stages and do not alter task ownership.
+- Store ranges as half-open calendar dates; show an inclusive final day in the Ukrainian form. Months and quarters are approximate planning intervals, not deadlines. Checkpoints have independent exact dates or remain undated.
+- Keep deadline markers tied to their original canonical fields. Calendar and roadmap share the same revision-guarded editing operation.
+- Calendar roadmap visibility defaults to hidden and persists in settings; disabled layers keep all metadata and backups intact. Global roadmap shows active work initially; other states require explicit selection.
+- Use a separate bounded informational calendar lane and readable mobile lists with disclosure for overflow. Never add hidden all-day events, reduce free time, or infer overdue tasks.
+- Show clear period/parent, period/deadline and checkpoint inconsistencies. Related records move only through explicit user edits. Dependency graphs and automatic scheduling are omitted from this release; no placeholder controls.
+
+
+## M5 implementation decisions (2026-11-04)
+
+- Keep Today modes separate and reuse the existing shared timeline. The second date follows at the same scale; collapse is the existing persisted preference.
+- Store focus by calendar date as references, not task copies; retain an optional intention note. Suggest up to three already dated open tasks, never auto-select or limit the saved selection.
+- Minimal day is a manual visual preference. Keep deadline/session tasks and blocking schedule information visible regardless of priority, with explicit general-list access. It performs zero scheduling mutations.
+- Offer optional manually selected effort labels Невеликі / Середні / Значні. No energy/focus inference from personal check-ins.
+- Date assignment/without-date changes require an exact reviewed preview including every affected active reservation, retained historical intervals, current truncation and original bounds. Guard task and reservation revisions before applying. Single current cancellation releases only the remainder; future cancellation preserves its historical record.
+- Keep session context in sessionStorage and daily focus in authoritative settings/ZIP. Saved interaction overrides initial auto-reveal; date/mode switches and clock ticks do not repeatedly jump to now.
+- Keep dependency policy and all later migration stages outside M5.
+
+
+## M6 latest approved scope (2026-11-04)
+
+- The explicit user request assigns life areas and lightweight reviews to M6. It takes precedence over the earlier M6-habits/M7-life-areas plan. Do not claim habit minimum/context/work-day rules implemented; keep that work deferred without silently inventing a new stage assignment.
+- Fresh areas use the user's exact ten names. Existing/custom/eight-area IDs and names remain unchanged. Explicit starter mapping adds metadata without renaming; explicit addition creates an independent area. Similar names never cause a merge.
+- Reuse lifeAreaQuestions as canonical editable areas and lifeAreaAssessments for history. Optional metadata supports archive, merge alias, ordering and good-enough definition. A merge retains source identity, confirms reviewed links/revisions, updates direct references transactionally and never touches historical assessments.
+- New reviews use an explicit inclusive date period and 0–10 metadata. Null differs from zero, false or deliberately empty text. Missing legacy scale means 1–10, never conversion to zero-based values. Preserve original identity, wording, version, definitions, periods and answers; normal saved assessments are immutable.
+- Reuse M1 effective inheritance and direct precedence. Add optional direct links only where needed for directions/tasks/events; project habits and reservations dynamically. No duplicate assignments, total score, life ranking or automatic score changes from work completion.
+- Review-to-action steps use ordinary editors or explicit confirmation. Answers themselves have no scheduling effects. Manual planning review requires no report, recurrence, notification permission or journal.

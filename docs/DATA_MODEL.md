@@ -4,8 +4,8 @@
 
 - **Application Version**: `1.0.0` (semver string tracking application build).
 - **Database Name**: `planui_db` (isolated test runs use `planui_test_<uuid>`).
-- **Database Schema Version**: `1` (integer passed to `indexedDB.open('planui_db', 1)`).
-- **Backup Format Identifier & Version**: `format: "planui-backup"`, `backupFormatVersion: 1`.
+- **Database Schema Version**: `2` (integer passed to `indexedDB.open('planui_db', 2)`).
+- **Backup Format Identifier & Version**: `format: "planui-backup-zip"`, `backupVersion: 2` (v1 supported via backwards-compatible migration).
 - **Bootstrap Theme Cache**: `localStorage.getItem('planui_theme_bootstrap')` (`"system" | "light" | "dark"`) is the only permitted `localStorage` entry to prevent initial paint flash before IndexedDB opens. All canonical settings live in the `settings` object store.
 
 ---
@@ -20,6 +20,7 @@ export type LocalTimeString = string;   // Strict "HH:mm" 24-hour clock value ("
 export type IanaZoneId = string;        // Valid IANA time zone identifier, e.g. "Europe/Kyiv", "America/New_York"
 export type IsoCurrencyCode = string;   // Valid 3-letter uppercase ISO 4217 code, e.g. "UAH", "EUR", "USD", "PLN", "GBP", "JPY"
 export type RevisionNumber = number;    // Positive integer >= 1, incremented on every write
+export type PlanningEntityState = 'idea' | 'active' | 'paused' | 'completed';
 ```
 
 ---
@@ -27,7 +28,7 @@ export type RevisionNumber = number;    // Positive integer >= 1, incremented on
 ## 3. Object Stores & Entity Schemas
 
 ### 3.1 `folders` (KeyPath: `id`)
-Organizes subfolders, projects, and standalone tasks with unbounded depth and strict cycle prevention.
+Organizes subfolders (directions/sub-directions), goals, projects, and standalone tasks with unbounded depth and strict cycle prevention.
 - **Indexes**: `by_parentId` (`parentId`), `by_order` (`order`).
 
 ```ts
@@ -42,84 +43,120 @@ export interface FolderRecord {
 }
 ```
 
-### 3.2 `projects` (KeyPath: `id`)
-Represents concrete outcomes (replaces any separate global goal hierarchy).
-- **Indexes**: `by_folderId` (`folderId`), `by_state` (`state`), `by_archived` (`isArchived`), `by_lifeAreaId` (`lifeAreaId`).
+### 3.2 `goals` (KeyPath: `id`) — Added in M1
+Represents meaningful goals within directions or standalone.
+- **Indexes**: `by_folderId` (`folderId`), `by_lifeAreaId` (`lifeAreaId`), `by_state` (`state`), `by_archived` (`archived`).
 
 ```ts
-export type ProjectState = 'active' | 'paused' | 'completed';
+export interface GoalTimingMetadata {
+  targetDate: LocalDateString | null;
+  targetPeriodUk: string | null;
+}
 
-export interface ProjectStage {
+export interface GoalRecord {
   id: EntityId;
   title: string;
-  description?: string;            // Expected stage outcome / description
-  targetDate?: LocalDateString | null;
+  description: string | null;
+  purposeUk: string | null;              // "Навіщо це мені"
+  completionCriteriaUk: string | null;   // "Як я зрозумію, що ціль досягнуто"
+  nextActionTaskId: EntityId | null;     // Reference to canonical next-action task
+  timing: GoalTimingMetadata | null;
+  folderId: EntityId | null;             // Direction folder
+  lifeAreaId: EntityId | null;           // Direct life-area link
+  implementationIntentionUk: string | null; // "Якщо..., то..."
+  state: PlanningEntityState;            // 'idea' | 'active' | 'paused' | 'completed'
+  archived: boolean;                     // Orthogonal boolean flag
   order: number;
+  revision: RevisionNumber;
+  createdAt: InstantISO;
+  updatedAt: InstantISO;
+  completedAt: InstantISO | null;
+}
+```
+
+### 3.3 `projects` (KeyPath: `id`)
+Represents concrete outcomes. A project may belong directly to a direction folder or be associated with a goal (`goalId`).
+- **Indexes**: `by_folderId` (`folderId`), `by_goalId` (`goalId`), `by_state` (`state`), `by_archived` (`archived`), `by_lifeAreaId` (`lifeAreaId`).
+
+```ts
+export interface ProjectStage {
+  id: EntityId;
+  projectId: EntityId;
+  title: string;
+  expectedOutcome: string | null;
+  targetDate: LocalDateString | null;
+  order: number;
+  revision: RevisionNumber;
+  createdAt: InstantISO;
+  updatedAt: InstantISO;
 }
 
 export interface ProjectRecord {
   id: EntityId;
   title: string;
-  description?: string;
-  desiredOutcome: string;          // Concrete outcome description
-  completionCriteria?: string;
-  targetDate?: LocalDateString | null;
+  description: string | null;
+  desiredOutcome: string | null;
+  completionCriteria: string | null;
+  targetDate: LocalDateString | null;
   folderId: EntityId | null;
-  lifeAreaId?: string | null;
-  collaboratorsText?: string;      // Descriptive text only; never creates accounts/sharing
-  state: ProjectState;
-  isArchived: boolean;             // Separate from result state
-  stages: ProjectStage[];          // Flat single-level ordered array inside project
+  goalId?: EntityId | null;              // M1: Optional goal link
+  lifeAreaId: EntityId | null;
+  collaboratorText: string | null;
+  purposeUk?: string | null;             // M1: Purpose / sense
+  completionCriteriaUk?: string | null;  // M1: Completion criteria
+  nextActionTaskId?: EntityId | null;    // M1: Canonical next action
+  state: PlanningEntityState;            // 'idea' | 'active' | 'paused' | 'completed'
+  archived: boolean;                     // Separate from result state
   revision: RevisionNumber;
   createdAt: InstantISO;
   updatedAt: InstantISO;
-  completedAt?: InstantISO | null;
+  completedAt: InstantISO | null;
 }
 ```
 
-### 3.3 `tasks` (KeyPath: `id`)
-Represents specific actionable items.
-- **Indexes**: `by_folderId` (`folderId`), `by_projectId` (`projectId`), `by_state` (`state`), `by_plannedDate` (`plannedDate`), `by_planningMode` (`planningMode`).
+### 3.4 `tasks` (KeyPath: `id`)
+Represents specific actionable items with single canonical ownership context.
+- **Indexes**: `by_state` (`state`), `by_plannedDate` (`plannedDate`).
 
 ```ts
 export type TaskState = 'open' | 'completed' | 'canceled';
 export type TaskPriority = 'high' | 'normal' | 'low';
-export type TaskPlanningMode = 'undated' | 'date_only' | 'timed';
+export type TaskPlanningState = 'unplanned' | 'date_only' | 'timed';
 
 export type TaskDeadline =
-  | { kind: 'date_only'; date: LocalDateString }
-  | { kind: 'instant'; instant: InstantISO; timeZone: IanaZoneId };
+  | { kind: 'date_only'; localDate: LocalDateString }
+  | { kind: 'exact_instant'; instant: InstantISO; zoneId: IanaZoneId };
+
+export type TaskOwnership =
+  | { kind: 'standalone'; folderId?: EntityId | null }
+  | { kind: 'folder'; folderId: EntityId }
+  | { kind: 'goal'; goalId: EntityId }
+  | { kind: 'project'; projectId: EntityId; stageId: EntityId | null };
 
 export interface ChecklistItem {
   id: EntityId;
   title: string;
   order: number;
-  isCompleted: boolean;
+  completed: boolean;
 }
 
 export interface TaskRecord {
   id: EntityId;
   title: string;
-  description?: string;
+  description: string | null;
   state: TaskState;
-  priority: TaskPriority;          // Default: 'normal'; never auto-escalated
-  deadline?: TaskDeadline | null;
-  estimatedMinutes?: number | null;// Positive integer minutes when provided
-  planningMode: TaskPlanningMode;
-  plannedDate?: LocalDateString | null; // Populated ONLY when planningMode === 'date_only'
-  // Ownership invariant:
-  // Either standalone (projectId = null, stageId = null, folderId = string | null)
-  // Or project-owned (projectId = string, stageId = valid stage ID in project | null, folderId = null)
-  folderId: EntityId | null;
-  projectId: EntityId | null;
-  stageId: EntityId | null;
-  checklist: ChecklistItem[];      // Flat single level; supports promotion to TaskRecord
-  order: number;
+  priority: TaskPriority;
+  deadline: TaskDeadline | null;
+  estimatedDurationMinutes: number | null;
+  planningState: TaskPlanningState;
+  plannedDate: LocalDateString | null;
+  ownership: TaskOwnership;
+  checklist: ChecklistItem[];
   revision: RevisionNumber;
   createdAt: InstantISO;
   updatedAt: InstantISO;
-  completedAt?: InstantISO | null;
-  canceledAt?: InstantISO | null;
+  completedAt: InstantISO | null;
+  canceledAt: InstantISO | null;
 }
 ```
 
@@ -318,42 +355,52 @@ export interface PersonalRecord {
 }
 ```
 
-### 3.10 `life_area_questions` (KeyPath: `id`) & `life_area_assessments` (KeyPath: `id`)
-Editable Ukrainian reflection questions and 1–10 periodic assessments preserving question wording/version (C15).
+### 3.10 lifeAreaQuestions and lifeAreaAssessments (canonical stores, schema v5)
+
+Existing canonical area IDs and original wording remain authoritative. The runtime fields in src/domain/types.ts are:
 
 ```ts
-export type Scale1To10 = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
-
-export interface LifeAreaQuestionRecord {
-  id: string;                         // Stable slug ID (e.g. 'physical_wellbeing', 'sleep_recovery', ...)
-  titleUk: string;
-  questionTextUk: string;
-  version: number;                    // Incremented when user edits question wording
+interface LifeAreaQuestion {
+  id: string;
+  questionTextUk: string; // Current editable area name; legacy question wording is retained
+  version: number;
   order: number;
-  revision: RevisionNumber;
-  updatedAt: InstantISO;
+  revision: number;
+  updatedAt: string;
+  archived?: boolean;
+  mergedIntoId?: string | null;
+  goodEnoughUk?: string | null;
+  starterKeys?: string[];
 }
-
-export interface LifeAreaAnswerSnapshot {
-  areaId: string;
-  score: Scale1To10;
-  note?: string;
-  questionTextSnapshotUk: string;     // Preserves exact wording at time of answer
+interface LifeAreaAnswerItem {
+  questionId: string;
+  questionTextSnapshotUk: string;
   questionVersionSnapshot: number;
+  score: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | null;
+  note: string | null; // Original legacy note remains unchanged
+  attentionNow?: boolean | null;
+  usefulChangeUk?: string | null;
+  definitionSnapshotUk?: string | null;
+  satisfactionQuestionSnapshotUk?: string;
 }
-
-export interface LifeAreaAssessmentRecord {
-  id: EntityId;
-  recordedAt: InstantISO;
-  localDate: LocalDateString;
-  periodLabelUk: string;              // e.g. "Останній тиждень"
-  answers: LifeAreaAnswerSnapshot[];  // Partial assessments allowed (1..8 answers)
-  generalNote?: string;
-  revision: RevisionNumber;
-  createdAt: InstantISO;
-  updatedAt: InstantISO;
+interface LifeAreaAssessment {
+  id: string;
+  recordedAt: string;
+  periodStartLocalDate: string;
+  periodEndLocalDate: string; // Inclusive calendar-date period, not an event interval
+  scale?: { min: 0 | 1; max: 10; labelUk: string };
+  answers: LifeAreaAnswerItem[];
+  createdAt: string;
+  updatedAt: string;
+  revision: number;
 }
 ```
+
+New reviews explicitly persist a 0–10 scale and independently nullable score, attention and useful-change answers. Empty useful-change text is distinct from null. Missing scale metadata denotes the original 1–10 scale and rejects zero; old records are never normalized into a new scale. Normal assessment saves are create-only. Snapshots are never relabelled after area rename/archive/merge.
+
+Merge keeps the source area ID/name and marks it archived with mergedIntoId. Direct live references are reassigned transactionally to the target; inherited context is recalculated without assignment copies. Validate target existence and reject cycles/self-merges. Starter mapping keys are explicit and never inferred from names.
+
+Folder, Task and CalendarEvent now optionally carry lifeAreaId, supplementing the existing Goal/Project/Habit links. Planned actions inherit through their canonical task. M1 direct-over-inherited precedence remains in force. Optional fields absent in legacy records retain their original representation. No new object stores or duplicate review databases exist.
 
 ### 3.11 `inspiration_items` (KeyPath: `id`) & `media_blobs` (KeyPath: `id`)
 Local inspiration cards and validated image storage (JPEG, PNG, WebP only; active SVG rejected).
@@ -473,3 +520,46 @@ export interface RecoverySnapshotRecord {
   dataJson: string;                   // Serialized domain snapshot (excluding recursive snapshots)
 }
 ```
+
+
+## M4 canonical roadmap metadata (schema v3)
+
+Goal, Project and ProjectStage optionally extend RoadmapMetadata:
+
+```ts
+interface RoadmapMetadata {
+  roadmapPeriod?:
+    | { precision: 'month'; month: string } // YYYY-MM
+    | { precision: 'quarter'; year: number; quarter: 1 | 2 | 3 | 4 }
+    | { precision: 'range'; startDate: string; endDateExclusive: string }
+    | null;
+  checkpoints?: { id: string; title: string; localDate: string | null; order: number }[];
+}
+```
+
+Missing/null periods mean undated, never a generated date. Intervals are calendar dates [startDate, endDateExclusive), with an inclusive final day only in the editor. A month/quarter's derived interval is a projection, never an editable deadline or UTC instant. Checkpoints are embedded in exactly one canonical owner and retain stable IDs and independent order; null dates are supported.
+
+ProjectStage.projectId is now string | null, with optional goalId. Validation requires exactly one owner: a real project or a real goal. Existing project-stage records remain valid unchanged. There are no stage parent references or recursive stages. Goal-level stages do not become project-task owners.
+
+Deadline markers read Goal.timing.targetDate, Project.targetDate or ProjectStage.targetDate directly. Goal.timing.targetPeriodUk remains preserved legacy text and is not parsed into precision. PlanuiSettings.roadmapLayer is optional hidden | key_dates | periods (default hidden). New metadata is included automatically in its canonical collection's ZIP data; no competing roadmap entity collection exists.
+
+
+## M5 Today metadata (schema v4)
+
+Task adds optional effort: null | 'small' | 'medium' | 'large'. Missing/null means unspecified; no migration infers a value. Existing task IDs, ownership, deadlines, estimates, history and lifecycle fields remain unchanged.
+
+PlanuiSettings.dailyPlans is an optional dictionary keyed by the explicit YYYY-MM-DD calendar date:
+
+```ts
+interface DailyPlan {
+  focusTaskIds: string[]; // unique canonical task references; no maximum count
+  focusNoteUk: string | null;
+  minimalDay: boolean;
+}
+```
+
+The live migration adds an empty dictionary. Daily focus does not create task copies, dates or reservations. Saving validates newly selected task references and checks the prior plan for stale edits while merging other dates/preferences. Deleted-task IDs may remain as historical references and display "Справа більше недоступна"; they do not make an export invalid or fabricate a task. Record removal never clears the user's other focus history.
+
+Minimal-day filtering keeps focus tasks, tasks with deadlines and tasks with retained sessions. It never changes source records or availability. Released future placeholders do not qualify as current dated work. Historical sessions remain inspectable. Effort is manually selected only.
+
+Today selected date/mode/scroll is optional sessionStorage interaction context (planui.today-context.v1), excluded from domain backups. The existing persisted next-day collapse preference remains authoritative. The session fallback validates dates/modes/scroll and ignores corrupt context safely.

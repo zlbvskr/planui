@@ -30,18 +30,19 @@ export interface BackupFileInventoryEntry {
 }
 
 export interface BackupManifest {
-  format: 'planui-backup';
-  backupFormatVersion: 1;
-  appVersion: string;                // e.g. "1.0.0"
-  dbSchemaVersion: number;           // e.g. 1
+  format: 'planui-backup-zip';
+  backupVersion: 5;                  // Supports v1/v2/v3/v4 import via migration
+  appVersion: string;                // e.g. "0.3.0"
+  dbSchemaVersion: number;           // Current: 5
   createdAt: string;                 // UTC ISO-8601 instant
-  exportTimeZone: string;            // IANA zone active at export time
-  counts: {
+  entityCounts: {
     folders: number;
+    goals: number;                   // Added in M1
     projects: number;
+    stages: number;
     tasks: number;
-    taskReservations: number;
-    calendarEvents: number;
+    reservations: number;
+    events: number;
     shiftTemplates: number;
     dayOffAnnotations: number;
     habits: number;
@@ -50,7 +51,7 @@ export interface BackupManifest {
     lifeAreaQuestions: number;
     lifeAreaAssessments: number;
     inspirationItems: number;
-    mediaBlobs: number;
+    mediaMeta: number;
     wishlistCategories: number;
     wishes: number;
   };
@@ -66,26 +67,27 @@ export interface BackupManifest {
 Contains the complete, coherent snapshot of all IndexedDB domain stores:
 
 ```ts
+// The actual serialized payload is PlanuiDomainSnapshot from src/domain/types.ts.
 export interface BackupDataPayload {
-  schemaVersion: 1;
-  exportedAt: string;
-  settings: AppSettingsRecord;       // Includes preferredWishlistCurrency, theme, timeZoneMode, manualTimeZone
-  folders: FolderRecord[];
-  projects: ProjectRecord[];
-  tasks: TaskRecord[];
-  taskReservations: TaskReservationRecord[];
-  calendarEvents: CalendarEventRecord[];
-  shiftTemplates: ShiftTemplateRecord[];
-  dayOffAnnotations: DayOffAnnotationRecord[];
-  habits: HabitRecord[];
-  habitEntries: HabitEntryRecord[];
+  settings: PlanuiSettings;
+  folders: Folder[];
+  goals: Goal[];
+  projects: Project[];
+  stages: ProjectStage[];
+  tasks: Task[];
+  reservations: TaskReservation[];
+  events: CalendarEvent[];
+  shiftTemplates: ShiftTemplate[];
+  dayOffAnnotations: DayOffAnnotation[];
+  habits: Habit[];
+  habitEntries: HabitEntry[];
   personalRecords: PersonalRecord[];
-  lifeAreaQuestions: LifeAreaQuestionRecord[];
-  lifeAreaAssessments: LifeAreaAssessmentRecord[];
-  inspirationItems: InspirationItemRecord[];
-  mediaMetadata: Omit<MediaBlobRecord, 'blob'>[]; // Binary bytes stored in media/<id>.<ext>
-  wishlistCategories: WishlistCategoryRecord[];
-  wishes: WishRecord[];              // Includes exact prices, currency codes, timing groups, fulfillment & archive states
+  lifeAreaQuestions: LifeAreaQuestion[];
+  lifeAreaAssessments: LifeAreaAssessment[];
+  inspirationItems: InspirationItem[];
+  mediaMeta: MediaAssetMeta[];
+  wishlistCategories: WishlistCategory[];
+  wishes: WishItem[];
 }
 ```
 
@@ -156,3 +158,30 @@ All validation runs **outside** the IndexedDB write transaction before any live 
    - Every normal repository write transaction verifies that the stored `settings.dbGeneration` matches the tab's `knownDbGeneration`, throwing `STALE_DB_GENERATION_CONFLICT` if another tab replaced, restored, or reset the database (protecting against stale-tab overwrites even without `BroadcastChannel` delivery).
    - `resetAllPlanuiDataTransactionally`: Resets only PLANUI-owned stores after explicit confirmation (`RESET_CONFIRMATION_REQUIRED`), allowing the user to either retain a `pre_reset` recovery snapshot or clear all recovery snapshots and media blobs.
 
+
+
+## M4 / v3 roadmap compatibility
+
+Canonical goals/projects/stages include optional roadmapPeriod precision and ordered checkpoints in data.json; settings include roadmapLayer. Checkpoint counts do not add manifest collections because checkpoints are embedded in their single owner. Flat stages retain the existing stages collection and ID; a stage may now have projectId: null and one valid goalId.
+
+Import accepts archive/schema versions 1, 2, 3, 4 and 5; newer versions remain rejected. Older snapshots acquire null periods, empty checkpoints and hidden-layer settings, preserving all existing IDs, target dates, timing text, reservations, events, prices, currencies and media. Stored settings are normalized to the current schema (5). No dates are inferred. Turning the layer off never removes records from ZIP backups. Recovery snapshots continue to capture the complete canonical snapshot.
+
+M4 tests round-trip v3 through ZIP validation and isolated atomic replacement and verify legacy snapshot migration. This updates the payload documentation to the actual serializer's existing collection names; it does not introduce a new envelope or rename persisted fields.
+
+
+## M5 / v4 Today compatibility
+
+Task.effort and settings.dailyPlans are serialized in their existing canonical collections, including focus task IDs, note and minimalDay for every saved calendar date. No new manifest collection counts or duplicated tasks are introduced. Layer/module visibility never omits this metadata. Recovery snapshots include the same fields.
+
+Live v3-to-v4 upgrade adds dailyPlans: {} and the schema version while preserving existing settings, next-day preference, dbGeneration and record revisions. Older live versions also acquire the earlier roadmap defaults. v1/v2/v3 archive imports acquire empty daily plans and preserve all previous data. Missing effort is left unspecified; no focus is generated. v4 validation rejects malformed date keys, duplicate/invalid focus IDs, invalid preference shapes or unsupported effort values.
+
+Interaction-only date/mode/scroll in sessionStorage is excluded from ZIP. The persisted next-day collapse preference, daily focus and minimal-day choices remain included. Tests verify v4 ZIP validation/atomic replacement in isolated storage, supported legacy migration, and simulated upgrade callbacks. Full native-browser migration verification remains pending.
+
+
+## M6 / v5 life-area and review compatibility
+
+Existing lifeAreaQuestions and lifeAreaAssessments collections contain the optional archive/merge/definition/starter metadata and explicit new review scale/question/definition/attention/useful-change snapshots. New optional folder/task/event lifeAreaId references remain in their canonical collections. No new manifest collection counts, renamed IDs, task copies or journal store are introduced.
+
+The v4-to-v5 live upgrade only advances settings.dbSchemaVersion, without cursoring or modifying area or assessment stores. Older supported upgrade pipelines retain all their original area IDs, customization and review bytes. Supported v1–v4 ZIP import similarly preserves area/review objects; absent historical scale continues to mean 1–10. An existing empty area collection is not automatically reseeded after import or reload.
+
+Validation handles new 0–10 and legacy 1–10 scales independently, partial answers including zero/false/empty text, explicit period order, optional definitions, direct references and retained merge targets/cycle prevention. New and legacy records, including archived source identities and their original historical answers, round-trip through v5 ZIP and recovery snapshots. Tests validate and atomically import actual ZIPs for every supported older version in isolated databases. Merging areas never deletes past answers or edits their snapshots.

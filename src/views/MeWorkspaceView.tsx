@@ -1,3 +1,4 @@
+import { LifeAreasReviewView } from './LifeAreasReviewView';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
@@ -92,6 +93,8 @@ import {
 } from '../components/ui/primitives';
 
 export interface MeWorkspaceViewProps {
+  onOpenPlan: (kind: 'goal' | 'project', id: string) => void;
+  onInspectCalendarEvent: (id: string) => void;
   subView: MeSubViewMode;
   activeWishlistCategoryId: string | null;
   activeZone: IanaTimeZone;
@@ -124,6 +127,7 @@ export interface MeWorkspaceViewProps {
 }
 
 export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
+  onOpenPlan, onInspectCalendarEvent,
   subView,
   activeWishlistCategoryId,
   activeZone,
@@ -149,6 +153,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
   onNavigateToHabits,
   onModalStateChange,
 }) => {
+  const [initialPlanningReview, setInitialPlanningReview] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
 
   // ---------------------------------------------------------------------------
@@ -1150,7 +1155,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
                 : subView === 'records'
                 ? 'Єдина хронологія швидких відміток стану та щоденникових записів без примусових ритуалів.'
                 : subView === 'life_areas'
-                ? 'Спокійний огляд 8 сфер життя зі збереженням формулювання запитань на момент кожної оцінки.'
+                ? 'Редаговані сфери життя, часткові огляди 0–10 та незмінна історія попередніх шкал.'
                 : subView === 'inspiration'
                 ? 'Нотатки, цитати, безпечні посилання та локальні растрові зображення без зовнішніх стрічок.'
                 : subView === 'wishlist'
@@ -1179,52 +1184,54 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
           role="list"
           aria-label="Підрозділи особистого простору Я"
         >
-          {/* 1. Personal records */}
-          <button
-            type="button"
-            role="listitem"
-            onClick={() => onChangeSubView('records')}
-            data-testid="me-drilldown-records"
-            className="w-full p-4 rounded-2xl flex items-center justify-between gap-3 text-left cursor-pointer planui-transition-micro"
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              border: '1px solid var(--border-subtle)',
-              color: 'var(--text-primary)',
-            }}
-          >
-            <div className="flex items-start gap-3.5 min-w-0">
-              <div
-                className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-                style={{ backgroundColor: 'var(--bg-elevated)' }}
-              >
-                <HeartHandshake
-                  className="w-5 h-5"
-                  style={{ color: 'var(--color-brand-text)' }}
-                  aria-hidden="true"
-                />
-              </div>
-              <div className="min-w-0">
-                <div className="text-[16px] font-semibold">
-                  Особисті записи та стан
-                </div>
+          {/* 1. Personal records (State check-ins module) */}
+          {(settings.modules?.stateCheckInsEnabled ?? true) && (
+            <button
+              type="button"
+              role="listitem"
+              onClick={() => onChangeSubView('records')}
+              data-testid="me-drilldown-records"
+              className="w-full p-4 rounded-2xl flex items-center justify-between gap-3 text-left cursor-pointer planui-transition-micro"
+              style={{
+                backgroundColor: 'var(--bg-surface)',
+                border: '1px solid var(--border-subtle)',
+                color: 'var(--text-primary)',
+              }}
+            >
+              <div className="flex items-start gap-3.5 min-w-0">
                 <div
-                  className="text-[13px] mt-0.5 leading-snug"
-                  style={{ color: 'var(--text-secondary)' }}
+                  className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                  style={{ backgroundColor: 'var(--bg-elevated)' }}
                 >
-                  {personalRecords.length === 0
-                    ? 'Швидка оцінка самопочуття, енергії, напруги та щоденник'
-                    : `Записів у хронології: ${personalRecords.length}`}
+                  <HeartHandshake
+                    className="w-5 h-5"
+                    style={{ color: 'var(--color-brand-text)' }}
+                    aria-hidden="true"
+                  />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[16px] font-semibold">
+                    Особисті записи та стан
+                  </div>
+                  <div
+                    className="text-[13px] mt-0.5 leading-snug"
+                    style={{ color: 'var(--text-secondary)' }}
+                  >
+                    {personalRecords.length === 0
+                      ? 'Швидка оцінка самопочуття, енергії, напруги та щоденник'
+                      : `Записів у хронології: ${personalRecords.length}`}
+                  </div>
                 </div>
               </div>
-            </div>
-            <ChevronRight
-              className="w-5 h-5 shrink-0"
-              style={{ color: 'var(--text-secondary)' }}
-              aria-hidden="true"
-            />
-          </button>
+              <ChevronRight
+                className="w-5 h-5 shrink-0"
+                style={{ color: 'var(--text-secondary)' }}
+                aria-hidden="true"
+              />
+            </button>
+          )}
 
-          {/* 2. Life areas */}
+          {/* 2. Life areas (Core - always present) */}
           <button
             type="button"
             role="listitem"
@@ -1255,8 +1262,8 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
                   style={{ color: 'var(--text-secondary)' }}
                 >
                   {lifeAreaAssessments.length === 0
-                    ? `${sortedLifeQuestions.length} запитань для періодичної рефлексії (шкала 1–10)`
-                    : `Збережених оглядів: ${lifeAreaAssessments.length} • Запитань: ${sortedLifeQuestions.length}`}
+                    ? `${sortedLifeQuestions.filter(q => !q.archived && !q.mergedIntoId).length} сфер для огляду (нові відповіді: 0–10)`
+                    : `Збережених оглядів: ${lifeAreaAssessments.length} • Сфер: ${sortedLifeQuestions.length}`}
                 </div>
               </div>
             </div>
@@ -1267,97 +1274,135 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
             />
           </button>
 
-          {/* 3. Inspiration */}
-          <button
-            type="button"
-            role="listitem"
-            onClick={() => onChangeSubView('inspiration')}
-            data-testid="me-drilldown-inspiration"
-            className="w-full p-4 rounded-2xl flex items-center justify-between gap-3 text-left cursor-pointer planui-transition-micro"
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              border: '1px solid var(--border-subtle)',
-              color: 'var(--text-primary)',
-            }}
-          >
-            <div className="flex items-start gap-3.5 min-w-0">
-              <div
-                className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-                style={{ backgroundColor: 'var(--bg-elevated)' }}
-              >
-                <Sparkles
-                  className="w-5 h-5"
-                  style={{ color: 'var(--color-work)' }}
-                  aria-hidden="true"
-                />
-              </div>
-              <div className="min-w-0">
-                <div className="text-[16px] font-semibold">
-                  Натхнення та локальні медіа
-                </div>
+          <Button onClick={() => { setInitialPlanningReview(true); onChangeSubView('life_areas'); }}>Короткий огляд планування</Button>
+          {/* 3. Inspiration (Desired Life module) */}
+          {(settings.modules?.desiredLifeEnabled ?? true) && (
+            <button
+              type="button"
+              role="listitem"
+              onClick={() => onChangeSubView('inspiration')}
+              data-testid="me-drilldown-inspiration"
+              className="w-full p-4 rounded-2xl flex items-center justify-between gap-3 text-left cursor-pointer planui-transition-micro"
+              style={{
+                backgroundColor: 'var(--bg-surface)',
+                border: '1px solid var(--border-subtle)',
+                color: 'var(--text-primary)',
+              }}
+            >
+              <div className="flex items-start gap-3.5 min-w-0">
                 <div
-                  className="text-[13px] mt-0.5 leading-snug"
+                  className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                  style={{ backgroundColor: 'var(--bg-elevated)' }}
+                >
+                  <Sparkles
+                    className="w-5 h-5"
+                    style={{ color: 'var(--color-work)' }}
+                    aria-hidden="true"
+                  />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[16px] font-semibold">
+                    Моє бажане життя та натхнення
+                  </div>
+                  <div
+                    className="text-[13px] mt-0.5 leading-snug"
+                    style={{ color: 'var(--text-secondary)' }}
+                  >
+                    {inspirationItems.length === 0
+                      ? 'Ідеї, цитати, орієнтири та растрові зображення'
+                      : `Елементів: ${inspirationItems.length} • Вибраних: ${
+                          inspirationItems.filter((i) => i.isFavorite).length
+                        }`}
+                  </div>
+                </div>
+              </div>
+              <ChevronRight
+                className="w-5 h-5 shrink-0"
+                style={{ color: 'var(--text-secondary)' }}
+                aria-hidden="true"
+              />
+            </button>
+          )}
+
+          {/* 4. Wishlist (Wishlist module) */}
+          {(settings.modules?.wishlistEnabled ?? true) && (
+            <button
+              type="button"
+              role="listitem"
+              onClick={() => onChangeSubView('wishlist')}
+              data-testid="me-drilldown-wishlist"
+              className="w-full p-4 rounded-2xl flex items-center justify-between gap-3 text-left cursor-pointer planui-transition-micro"
+              style={{
+                backgroundColor: 'var(--bg-surface)',
+                border: '1px solid var(--border-subtle)',
+                color: 'var(--text-primary)',
+              }}
+            >
+              <div className="flex items-start gap-3.5 min-w-0">
+                <div
+                  className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                  style={{ backgroundColor: 'var(--bg-elevated)' }}
+                >
+                  <Gift
+                    className="w-5 h-5"
+                    style={{ color: 'var(--color-reservation)' }}
+                    aria-hidden="true"
+                  />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[16px] font-semibold">Список бажань</div>
+                  <div
+                    className="text-[13px] mt-0.5 leading-snug"
+                    style={{ color: 'var(--text-secondary)' }}
+                  >
+                    {wishes.length === 0
+                      ? 'Бажання за групами «Зараз», «Пізніше», «Колись» та категоріями'
+                      : `Активних бажань: ${activeWishCount} • Категорій: ${wishlistCategories.length}`}
+                  </div>
+                </div>
+              </div>
+              <ChevronRight
+                className="w-5 h-5 shrink-0"
+                style={{ color: 'var(--text-secondary)' }}
+                aria-hidden="true"
+              />
+            </button>
+          )}
+
+          {/* Lightweight Setup Card if all optional modules disabled */}
+          {settings.modules &&
+            !settings.modules.habitsEnabled &&
+            !settings.modules.stateCheckInsEnabled &&
+            !settings.modules.desiredLifeEnabled &&
+            !settings.modules.wishlistEnabled && (
+              <div
+                className="p-4 rounded-2xl border border-dashed space-y-2"
+                style={{
+                  backgroundColor: 'var(--bg-elevated)',
+                  borderColor: 'var(--border-subtle)',
+                }}
+                data-testid="me-optional-modules-hint"
+              >
+                <div className="text-[15px] font-medium">
+                  Додаткові можливості планувальника
+                </div>
+                <p
+                  className="text-[13px] leading-relaxed m-0"
                   style={{ color: 'var(--text-secondary)' }}
                 >
-                  {inspirationItems.length === 0
-                    ? 'Ідеї, цитати, безпечні посилання та растрові зображення'
-                    : `Елементів: ${inspirationItems.length} • Вибраних: ${
-                        inspirationItems.filter((i) => i.isFavorite).length
-                      }`}
-                </div>
-              </div>
-            </div>
-            <ChevronRight
-              className="w-5 h-5 shrink-0"
-              style={{ color: 'var(--text-secondary)' }}
-              aria-hidden="true"
-            />
-          </button>
-
-          {/* 4. Wishlist */}
-          <button
-            type="button"
-            role="listitem"
-            onClick={() => onChangeSubView('wishlist')}
-            data-testid="me-drilldown-wishlist"
-            className="w-full p-4 rounded-2xl flex items-center justify-between gap-3 text-left cursor-pointer planui-transition-micro"
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              border: '1px solid var(--border-subtle)',
-              color: 'var(--text-primary)',
-            }}
-          >
-            <div className="flex items-start gap-3.5 min-w-0">
-              <div
-                className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-                style={{ backgroundColor: 'var(--bg-elevated)' }}
-              >
-                <Gift
-                  className="w-5 h-5"
-                  style={{ color: 'var(--color-reservation)' }}
-                  aria-hidden="true"
-                />
-              </div>
-              <div className="min-w-0">
-                <div className="text-[16px] font-semibold">Список бажань</div>
-                <div
-                  className="text-[13px] mt-0.5 leading-snug"
-                  style={{ color: 'var(--text-secondary)' }}
+                  За замовчуванням увімкнено лише базове планування дня, календаря та напрямів. У будь-який момент ви можете увімкнути звички, відмітки стану, моє бажане життя або список бажань у налаштуваннях.
+                </p>
+                <Button
+                  variant="subtle"
+                  size="sm"
+                  onClick={() => onChangeSubView('settings')}
                 >
-                  {wishes.length === 0
-                    ? 'Бажання за групами «Зараз», «Пізніше», «Колись» та плоскими категоріями'
-                    : `Активних бажань: ${activeWishCount} • Категорій: ${wishlistCategories.length}`}
-                </div>
+                  Переглянути додаткові модулі в Налаштуваннях →
+                </Button>
               </div>
-            </div>
-            <ChevronRight
-              className="w-5 h-5 shrink-0"
-              style={{ color: 'var(--text-secondary)' }}
-              aria-hidden="true"
-            />
-          </button>
+            )}
 
-          {/* 5. Settings */}
+          {/* 5. Settings (Secondary destination) */}
           <button
             type="button"
             role="listitem"
@@ -1643,241 +1688,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
       {/* =====================================================================
           10.3 LIFE AREAS SUBVIEW
          ===================================================================== */}
-      {subView === 'life_areas' && (
-        <div className="space-y-4" data-testid="me-life-areas-subview">
-          <Card
-            title="Оцінка сфер життя (шкала 1–10)"
-            subtitle="Ви можете відповісти на всі запитання або залишити частину без оцінки (часткова оцінка дозволена). Загальний «бал життя» не обчислюється."
-          >
-            <form
-              onSubmit={handleSaveLifeAreaAssessment}
-              className="space-y-4"
-              data-testid="life-area-assessment-form"
-            >
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <InputField
-                  label="Початок періоду спостереження"
-                  type="date"
-                  lang="uk"
-                  value={periodStartDate}
-                  onChange={(e) => setPeriodStartDate(e.target.value)}
-                  data-testid="life-area-period-start-input"
-                  required
-                />
-                <InputField
-                  label="Кінець періоду спостереження"
-                  type="date"
-                  lang="uk"
-                  value={periodEndDate}
-                  onChange={(e) => setPeriodEndDate(e.target.value)}
-                  data-testid="life-area-period-end-input"
-                  required
-                />
-              </div>
-
-              <div className="space-y-3">
-                {sortedLifeQuestions.map((q) => {
-                  const selectedScore = draftScores[q.id] ?? null;
-                  return (
-                    <div
-                      key={q.id}
-                      data-testid={`life-area-question-row-${q.id}`}
-                      className="p-3.5 rounded-2xl space-y-2.5"
-                      style={{
-                        backgroundColor: 'var(--bg-elevated)',
-                        border: '1px solid var(--border-subtle)',
-                      }}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="space-y-0.5">
-                          <div className="text-[15px] font-medium leading-snug">
-                            {q.questionTextUk}
-                          </div>
-                          <div
-                            className="text-[12px]"
-                            style={{ color: 'var(--text-secondary)' }}
-                          >
-                            Версія формулювання v{q.version} •{' '}
-                            {selectedScore !== null
-                              ? LIFE_AREA_SCALE_1_10_LABELS_UK[selectedScore]
-                              : 'Без відповіді (необов’язково)'}
-                          </div>
-                        </div>
-                        <Button
-                          type="button"
-                          variant="subtle"
-                          size="sm"
-                          onClick={() => {
-                            setEditingQuestion(q);
-                            setEditingQuestionText(q.questionTextUk);
-                          }}
-                          data-testid={`edit-life-question-btn-${q.id}`}
-                        >
-                          <Edit3 className="w-3.5 h-3.5" aria-hidden="true" />
-                          <span>Змінити питання</span>
-                        </Button>
-                      </div>
-
-                      <div
-                        className="flex flex-wrap gap-1.5"
-                        role="group"
-                        aria-label={q.questionTextUk}
-                      >
-                        {([1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const).map(
-                          (num) => {
-                            const active = selectedScore === num;
-                            return (
-                              <button
-                                key={num}
-                                type="button"
-                                aria-pressed={active}
-                                data-testid={`life-area-score-${q.id}-${num}`}
-                                onClick={() =>
-                                  setDraftScores((prev) => ({
-                                    ...prev,
-                                    [q.id]: prev[q.id] === num ? null : num,
-                                  }))
-                                }
-                                className="min-w-[38px] min-h-[38px] px-2 rounded-xl text-[13px] font-semibold cursor-pointer planui-transition-micro"
-                                style={{
-                                  backgroundColor: active
-                                    ? 'var(--color-brand)'
-                                    : 'var(--bg-surface)',
-                                  color: active
-                                    ? '#FFFFFF'
-                                    : 'var(--text-primary)',
-                                  border: '1px solid var(--border-subtle)',
-                                }}
-                              >
-                                {num}
-                              </button>
-                            );
-                          }
-                        )}
-                      </div>
-
-                      <input
-                        type="text"
-                        placeholder="Коротка примітка до цієї сфери (необов’язково)..."
-                        value={draftNotes[q.id] ?? ''}
-                        onChange={(e) =>
-                          setDraftNotes((prev) => ({
-                            ...prev,
-                            [q.id]: e.target.value,
-                          }))
-                        }
-                        data-testid={`life-area-note-${q.id}`}
-                        className="w-full min-h-[36px] px-3 py-1 rounded-xl text-[13px]"
-                        style={{
-                          backgroundColor: 'var(--bg-surface)',
-                          color: 'var(--text-primary)',
-                          border: '1px solid var(--border-subtle)',
-                        }}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="flex justify-end">
-                <Button
-                  type="submit"
-                  variant="primary"
-                  data-testid="save-life-area-assessment-button"
-                >
-                  Зберегти оцінку періоду
-                </Button>
-              </div>
-            </form>
-          </Card>
-
-          {/* Assessment history */}
-          {sortedAssessments.length > 0 && (
-            <Card title={`Історія оглядів (${sortedAssessments.length})`}>
-              <div
-                className="space-y-4"
-                data-testid="life-area-assessments-history"
-              >
-                {sortedAssessments.map((assess) => (
-                  <div
-                    key={assess.id}
-                    data-testid={`life-area-assessment-card-${assess.id}`}
-                    className="p-3.5 rounded-2xl space-y-3"
-                    style={{
-                      backgroundColor: 'var(--bg-elevated)',
-                      border: '1px solid var(--border-subtle)',
-                    }}
-                  >
-                    <div className="flex items-center justify-between gap-2 text-[13px]">
-                      <span className="font-semibold">
-                        Період: {assess.periodStartLocalDate} —{' '}
-                        {assess.periodEndLocalDate}
-                      </span>
-                      <Button
-                        variant="subtle"
-                        size="sm"
-                        onClick={async () => {
-                          await repositories.deleteLifeAreaAssessmentTransactionally(
-                            assess.id,
-                            new Date().toISOString()
-                          );
-                          await onDataChanged('Оцінку періоду видалено.');
-                        }}
-                        aria-label="Видалити оцінку періоду"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
-                      </Button>
-                    </div>
-
-                    <div className="space-y-2">
-                      {assess.answers.map((ans) => (
-                        <div key={ans.questionId} className="space-y-1">
-                          <div className="flex items-baseline justify-between gap-2 text-[13px]">
-                            <span>
-                              {ans.questionTextSnapshotUk}{' '}
-                              <span
-                                className="text-[11px]"
-                                style={{ color: 'var(--text-secondary)' }}
-                              >
-                                (v{ans.questionVersionSnapshot})
-                              </span>
-                            </span>
-                            <span className="font-semibold shrink-0">
-                              {ans.score !== null ? `${ans.score}/10` : '—'}
-                            </span>
-                          </div>
-                          {ans.score !== null && (
-                            <div
-                              className="h-2 rounded-full overflow-hidden"
-                              style={{ backgroundColor: 'var(--bg-surface)' }}
-                            >
-                              <div
-                                className="h-full rounded-full"
-                                style={{
-                                  width: `${ans.score * 10}%`,
-                                  backgroundColor: 'var(--color-personal)',
-                                }}
-                              />
-                            </div>
-                          )}
-                          {ans.note && (
-                            <div
-                              className="text-[12px]"
-                              style={{ color: 'var(--text-secondary)' }}
-                            >
-                              {ans.note}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          )}
-        </div>
-      )}
+      {subView === 'life_areas' && <LifeAreasReviewView snapshot={snapshot} zone={activeZone} today={actualTodayDate} repositories={repositories} onChanged={() => onDataChanged()} onOpenPlan={onOpenPlan} onInspectEvent={onInspectCalendarEvent} onModalStateChange={onModalStateChange} initialPlanningReview={initialPlanningReview} />}
 
       {/* =====================================================================
           10.4 INSPIRATION & LOCAL MEDIA SUBVIEW

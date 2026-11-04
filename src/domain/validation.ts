@@ -1,3 +1,5 @@
+import { validateDailyPlans } from './today';
+import { validateRoadmapMetadata } from './roadmap';
 import { PlanuiError } from '../i18n/errorsUk';
 import { validateFolderHierarchy } from './folders';
 import {
@@ -13,6 +15,7 @@ import {
   CalendarEvent,
   DayOffAnnotation,
   Folder,
+  Goal,
   Habit,
   HabitEntry,
   InspirationItem,
@@ -74,10 +77,64 @@ export function validateFolderRecord(folder: Folder): Folder {
   return folder;
 }
 
+export function validateGoalRecord(
+  goal: Goal,
+  context?: {
+    folderIds?: ReadonlySet<string>;
+    taskIds?: ReadonlySet<string>;
+  }
+): Goal {
+  validateRoadmapMetadata(goal);
+  assertNonEmptyString(goal.id, 'INVALID_ID');
+  assertNonEmptyString(goal.title, 'REQUIRED_TITLE');
+
+  if (
+    goal.state !== 'idea' &&
+    goal.state !== 'active' &&
+    goal.state !== 'paused' &&
+    goal.state !== 'completed'
+  ) {
+    throw new PlanuiError('GOAL_INVALID_STATE', `goal.state=${goal.state}`);
+  }
+
+  if (goal.folderId !== null) {
+    assertNonEmptyString(goal.folderId, 'INVALID_ID');
+    if (context?.folderIds && !context.folderIds.has(goal.folderId)) {
+      throw new PlanuiError('FOLDER_PARENT_NOT_FOUND', goal.folderId);
+    }
+  }
+
+  if (goal.nextActionTaskId !== null) {
+    assertNonEmptyString(goal.nextActionTaskId, 'INVALID_ID');
+    if (context?.taskIds && !context.taskIds.has(goal.nextActionTaskId)) {
+      throw new PlanuiError('TASK_INVALID_NEXT_ACTION', goal.nextActionTaskId);
+    }
+  }
+
+  if (goal.timing !== null) {
+    if (goal.timing.targetDate !== null) {
+      assertValidLocalDate(goal.timing.targetDate);
+    }
+  }
+
+  assertValidIsoInstant(goal.createdAt);
+  assertValidIsoInstant(goal.updatedAt);
+  if (goal.completedAt !== null) {
+    assertValidIsoInstant(goal.completedAt);
+  }
+  assertPositiveRevision(goal.revision);
+  return goal;
+}
+
 export function validateProjectRecord(
   project: Project,
-  folderIds?: ReadonlySet<string>
+  context?: {
+    folderIds?: ReadonlySet<string>;
+    goalIds?: ReadonlySet<string>;
+    taskIds?: ReadonlySet<string>;
+  }
 ): Project {
+  validateRoadmapMetadata(project);
   assertNonEmptyString(project.id, 'INVALID_ID');
   assertNonEmptyString(project.title, 'REQUIRED_TITLE');
   if (project.targetDate !== null) {
@@ -85,11 +142,24 @@ export function validateProjectRecord(
   }
   if (project.folderId !== null) {
     assertNonEmptyString(project.folderId, 'INVALID_ID');
-    if (folderIds && !folderIds.has(project.folderId)) {
+    if (context?.folderIds && !context.folderIds.has(project.folderId)) {
       throw new PlanuiError('FOLDER_PARENT_NOT_FOUND', project.folderId);
     }
   }
+  if (project.goalId !== null && project.goalId !== undefined) {
+    assertNonEmptyString(project.goalId, 'INVALID_ID');
+    if (context?.goalIds && !context.goalIds.has(project.goalId)) {
+      throw new PlanuiError('GOAL_NOT_FOUND', project.goalId);
+    }
+  }
+  if (project.nextActionTaskId !== null && project.nextActionTaskId !== undefined) {
+    assertNonEmptyString(project.nextActionTaskId, 'INVALID_ID');
+    if (context?.taskIds && !context.taskIds.has(project.nextActionTaskId)) {
+      throw new PlanuiError('TASK_INVALID_NEXT_ACTION', project.nextActionTaskId);
+    }
+  }
   if (
+    project.state !== 'idea' &&
     project.state !== 'active' &&
     project.state !== 'paused' &&
     project.state !== 'completed'
@@ -107,12 +177,17 @@ export function validateProjectRecord(
 
 export function validateStageRecord(
   stage: ProjectStage,
-  projectIds?: ReadonlySet<string>
+  projectIds?: ReadonlySet<string>,
+  goalIds?: ReadonlySet<string>
 ): ProjectStage {
+  validateRoadmapMetadata(stage);
   assertNonEmptyString(stage.id, 'INVALID_ID');
-  assertNonEmptyString(stage.projectId, 'INVALID_ID');
-  if (projectIds && !projectIds.has(stage.projectId)) {
-    throw new PlanuiError('STAGE_PROJECT_NOT_FOUND', stage.projectId);
+  if (stage.projectId !== null) {
+    assertNonEmptyString(stage.projectId, 'INVALID_ID');
+    if (stage.goalId != null || (projectIds && !projectIds.has(stage.projectId))) throw new PlanuiError('STAGE_PROJECT_NOT_FOUND');
+  } else {
+    assertNonEmptyString(stage.goalId, 'INVALID_ID');
+    if (goalIds && !goalIds.has(stage.goalId!)) throw new PlanuiError('GOAL_NOT_FOUND');
   }
   assertNonEmptyString(stage.title, 'REQUIRED_TITLE');
   if (stage.targetDate !== null) {
@@ -128,11 +203,13 @@ export function validateTaskRecord(
   task: Task,
   context?: {
     folderIds: ReadonlySet<string>;
+    goalIds?: ReadonlySet<string>;
     projectIds: ReadonlySet<string>;
     stageProjectMap: ReadonlyMap<string, string>;
     activeReservationsByTaskId?: ReadonlyMap<string, number>;
   }
 ): Task {
+  if (task.effort !== undefined && task.effort !== null && !['small', 'medium', 'large'].includes(task.effort)) throw new PlanuiError('VALIDATION_FAILED');
   assertNonEmptyString(task.id, 'INVALID_ID');
   assertNonEmptyString(task.title, 'REQUIRED_TITLE');
 
@@ -191,17 +268,35 @@ export function validateTaskRecord(
   }
   const ownRec = task.ownership as unknown as Record<string, unknown>;
   if (task.ownership.kind === 'standalone') {
-    if ('projectId' in ownRec || 'stageId' in ownRec) {
+    if ('projectId' in ownRec || 'stageId' in ownRec || 'goalId' in ownRec) {
       throw new PlanuiError('TASK_INVALID_OWNERSHIP', task.id);
     }
-    if (task.ownership.folderId !== null) {
-      assertNonEmptyString(task.ownership.folderId, 'INVALID_ID');
-      if (context && !context.folderIds.has(task.ownership.folderId)) {
-        throw new PlanuiError('FOLDER_PARENT_NOT_FOUND', task.ownership.folderId);
+    const legacyFolderId = ownRec.folderId as string | null | undefined;
+    if (legacyFolderId !== null && legacyFolderId !== undefined) {
+      // Legacy v1 compatibility: { kind: 'standalone', folderId: 'folder-id' }
+      assertNonEmptyString(legacyFolderId, 'INVALID_ID');
+      if (context && !context.folderIds.has(legacyFolderId)) {
+        throw new PlanuiError('FOLDER_PARENT_NOT_FOUND', legacyFolderId);
       }
     }
+  } else if (task.ownership.kind === 'folder') {
+    if ('projectId' in ownRec || 'stageId' in ownRec || 'goalId' in ownRec) {
+      throw new PlanuiError('TASK_INVALID_OWNERSHIP', task.id);
+    }
+    assertNonEmptyString(task.ownership.folderId, 'INVALID_ID');
+    if (context && !context.folderIds.has(task.ownership.folderId)) {
+      throw new PlanuiError('FOLDER_PARENT_NOT_FOUND', task.ownership.folderId);
+    }
+  } else if (task.ownership.kind === 'goal') {
+    if ('projectId' in ownRec || 'stageId' in ownRec || 'folderId' in ownRec) {
+      throw new PlanuiError('TASK_INVALID_OWNERSHIP', task.id);
+    }
+    assertNonEmptyString(task.ownership.goalId, 'INVALID_ID');
+    if (context && (context as { goalIds?: ReadonlySet<string> }).goalIds && !(context as { goalIds?: ReadonlySet<string> }).goalIds!.has(task.ownership.goalId)) {
+      throw new PlanuiError('GOAL_NOT_FOUND', task.ownership.goalId);
+    }
   } else if (task.ownership.kind === 'project') {
-    if ('folderId' in ownRec) {
+    if ('folderId' in ownRec || 'goalId' in ownRec) {
       throw new PlanuiError('TASK_INVALID_OWNERSHIP', task.id);
     }
     assertNonEmptyString(task.ownership.projectId, 'INVALID_ID');
@@ -460,6 +555,11 @@ export function validatePersonalRecord(rec: PersonalRecord): PersonalRecord {
 export function validateLifeAreaQuestion(
   q: LifeAreaQuestion
 ): LifeAreaQuestion {
+  if (q.archived !== undefined && typeof q.archived !== 'boolean') throw new PlanuiError('VALIDATION_FAILED');
+  if (q.goodEnoughUk !== undefined && q.goodEnoughUk !== null && typeof q.goodEnoughUk !== 'string') throw new PlanuiError('VALIDATION_FAILED');
+  if (q.mergedIntoId != null && (typeof q.mergedIntoId !== 'string' || !q.mergedIntoId.trim() || q.mergedIntoId === q.id || !q.archived)) throw new PlanuiError('VALIDATION_FAILED');
+  if (!Number.isFinite(q.order) || !Number.isInteger(q.version) || q.version < 1) throw new PlanuiError('VALIDATION_FAILED');
+  if (q.starterKeys !== undefined && (!Array.isArray(q.starterKeys) || new Set(q.starterKeys).size !== q.starterKeys.length || q.starterKeys.some(k => typeof k !== 'string' || !k.trim()))) throw new PlanuiError('VALIDATION_FAILED');
   assertNonEmptyString(q.id, 'INVALID_ID');
   assertNonEmptyString(q.questionTextUk, 'REQUIRED_TITLE');
   assertValidIsoInstant(q.updatedAt);
@@ -474,17 +574,28 @@ export function validateLifeAreaAssessment(
   assertValidIsoInstant(assessment.recordedAt);
   assertValidLocalDate(assessment.periodStartLocalDate);
   assertValidLocalDate(assessment.periodEndLocalDate);
+  if (assessment.periodStartLocalDate > assessment.periodEndLocalDate) throw new PlanuiError('VALIDATION_FAILED');
+  const scale = assessment.scale ?? { min: 1, max: 10 };
+  if ((scale.min !== 0 && scale.min !== 1) || scale.max !== 10 || (assessment.scale && (typeof assessment.scale.labelUk !== 'string' || !assessment.scale.labelUk.trim()))) throw new PlanuiError('VALIDATION_FAILED');
+  if (!Array.isArray(assessment.answers)) throw new PlanuiError('VALIDATION_FAILED');
+  const answerIds = new Set<string>();
   for (const ans of assessment.answers) {
+    if (answerIds.has(ans.questionId)) throw new PlanuiError('INVALID_ID');
+    answerIds.add(ans.questionId);
+    if (!Number.isInteger(ans.questionVersionSnapshot) || ans.questionVersionSnapshot < 1) throw new PlanuiError('VALIDATION_FAILED');
+    if (ans.attentionNow !== undefined && ans.attentionNow !== null && typeof ans.attentionNow !== 'boolean') throw new PlanuiError('VALIDATION_FAILED');
+    for (const value of [ans.note, ans.usefulChangeUk, ans.definitionSnapshotUk]) if (value !== undefined && value !== null && typeof value !== 'string') throw new PlanuiError('VALIDATION_FAILED');
+    if (ans.satisfactionQuestionSnapshotUk !== undefined && typeof ans.satisfactionQuestionSnapshotUk !== 'string') throw new PlanuiError('VALIDATION_FAILED');
     assertNonEmptyString(ans.questionId, 'INVALID_ID');
     assertNonEmptyString(ans.questionTextSnapshotUk, 'REQUIRED_TITLE');
     if (ans.score !== null) {
       if (
         typeof ans.score !== 'number' ||
         !Number.isInteger(ans.score) ||
-        ans.score < 1 ||
+        ans.score < scale.min ||
         ans.score > 10
       ) {
-        throw new PlanuiError('INVALID_SCALE_1_10', String(ans.score));
+        throw new PlanuiError(scale.min === 0 ? 'INVALID_SCALE_0_10' : 'INVALID_SCALE_1_10', String(ans.score));
       }
     }
   }
@@ -823,6 +934,8 @@ export function validateSettingsRecord(
   if (!settings || typeof settings !== 'object') {
     throw new PlanuiError('VALIDATION_FAILED', 'settings');
   }
+  if (settings.roadmapLayer !== undefined && !['hidden', 'key_dates', 'periods'].includes(settings.roadmapLayer)) throw new PlanuiError('VALIDATION_FAILED');
+  validateDailyPlans(settings.dailyPlans);
   if (settings.id !== 'singleton') {
     throw new PlanuiError('INVALID_ID', String(settings.id));
   }
@@ -848,6 +961,21 @@ export function validateSettingsRecord(
       'WISHLIST_PRICE_UNSUPPORTED_CURRENCY',
       String(settings.preferredWishlistCurrency)
     );
+  }
+  if (settings.modules !== undefined && settings.modules !== null) {
+    if (typeof settings.modules !== 'object') {
+      throw new PlanuiError('VALIDATION_FAILED', 'settings.modules');
+    }
+    const m = settings.modules;
+    if (
+      typeof m.habitsEnabled !== 'boolean' ||
+      typeof m.stateCheckInsEnabled !== 'boolean' ||
+      typeof m.desiredLifeEnabled !== 'boolean' ||
+      typeof m.wishlistEnabled !== 'boolean' ||
+      (m.userConfigured !== undefined && typeof m.userConfigured !== 'boolean')
+    ) {
+      throw new PlanuiError('VALIDATION_FAILED', 'settings.modules flags');
+    }
   }
   assertValidIsoInstant(settings.updatedAt);
   assertPositiveRevision(settings.revision);
@@ -904,9 +1032,33 @@ export function validateDomainSnapshot(
   }
   validateFolderHierarchy(snapshot.folders);
 
+  const goalIds = new Set<string>();
+  if (Array.isArray(snapshot.goals)) {
+    for (const g of snapshot.goals) {
+      validateGoalRecord(g, { folderIds });
+      if (
+        g.lifeAreaId !== null &&
+        lifeAreaQuestionIds.size > 0 &&
+        !lifeAreaQuestionIds.has(g.lifeAreaId)
+      ) {
+        throw new PlanuiError('VALIDATION_FAILED', `goal.lifeAreaId:${g.lifeAreaId}`);
+      }
+      if (goalIds.has(g.id)) throw new PlanuiError('INVALID_ID', g.id);
+      goalIds.add(g.id);
+    }
+  }
+
+  for (const area of snapshot.lifeAreaQuestions) {
+    if (area.mergedIntoId) {
+      const seen = new Set([area.id]); let id: string | null | undefined = area.mergedIntoId;
+      while (id) { if (seen.has(id)) throw new PlanuiError('VALIDATION_FAILED'); seen.add(id); const target = snapshot.lifeAreaQuestions.find(a => a.id === id); if (!target) throw new PlanuiError('VALIDATION_FAILED'); id = target.mergedIntoId; }
+    }
+  }
+  for (const record of [...snapshot.folders, ...snapshot.tasks, ...snapshot.events]) if (record.lifeAreaId != null && !lifeAreaQuestionIds.has(record.lifeAreaId)) throw new PlanuiError('VALIDATION_FAILED');
+
   const projectIds = new Set<string>();
   for (const p of snapshot.projects) {
-    validateProjectRecord(p, folderIds);
+    validateProjectRecord(p, { folderIds, goalIds });
     if (
       p.lifeAreaId !== null &&
       lifeAreaQuestionIds.size > 0 &&
@@ -920,9 +1072,9 @@ export function validateDomainSnapshot(
 
   const stageProjectMap = new Map<string, string>();
   for (const s of snapshot.stages) {
-    validateStageRecord(s, projectIds);
+    validateStageRecord(s, projectIds, goalIds);
     if (stageProjectMap.has(s.id)) throw new PlanuiError('INVALID_ID', s.id);
-    stageProjectMap.set(s.id, s.projectId);
+    if (s.projectId) stageProjectMap.set(s.id, s.projectId);
   }
 
   const activeReservationsByTaskId = new Map<string, number>();
@@ -942,12 +1094,27 @@ export function validateDomainSnapshot(
   for (const t of snapshot.tasks) {
     validateTaskRecord(t, {
       folderIds,
+      goalIds,
       projectIds,
       stageProjectMap,
       activeReservationsByTaskId,
     });
     if (taskIds.has(t.id)) throw new PlanuiError('INVALID_ID', t.id);
     taskIds.add(t.id);
+  }
+
+  if (Array.isArray(snapshot.goals)) {
+    for (const g of snapshot.goals) {
+      if (g.nextActionTaskId !== null && !taskIds.has(g.nextActionTaskId)) {
+        throw new PlanuiError('TASK_INVALID_NEXT_ACTION', g.nextActionTaskId);
+      }
+    }
+  }
+
+  for (const p of snapshot.projects) {
+    if (p.nextActionTaskId !== null && p.nextActionTaskId !== undefined && !taskIds.has(p.nextActionTaskId)) {
+      throw new PlanuiError('TASK_INVALID_NEXT_ACTION', p.nextActionTaskId);
+    }
   }
 
   for (const r of snapshot.reservations) {

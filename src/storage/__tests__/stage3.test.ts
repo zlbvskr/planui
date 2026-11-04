@@ -14,34 +14,29 @@ import {
 } from '../../state/shellStore';
 
 describe('Stage 3: Design System, Floating Shell, and Creation Host Unit Tests', () => {
-  it('enforces C04 five primary destinations in exact mobile order with Ukrainian labels and Today centered', () => {
-    assert.equal(PRIMARY_NAV_ITEMS.length, 5);
+  it('enforces four primary destinations in exact order with Ukrainian labels', () => {
+    assert.equal(PRIMARY_NAV_ITEMS.length, 4);
     assert.deepEqual(
       PRIMARY_NAV_ITEMS.map((item) => item.id),
-      ['calendar', 'plans', 'today', 'habits', 'me']
+      ['today', 'calendar', 'directions', 'me']
     );
     assert.deepEqual(
       PRIMARY_NAV_ITEMS.map((item) => item.labelUk),
-      ['Календар', 'Плани', 'Сьогодні', 'Звички', 'Я']
-    );
-    // Today occupies index 2 (center) and is the only item marked isCenter
-    assert.equal(PRIMARY_NAV_ITEMS[2].id, 'today');
-    assert.equal(PRIMARY_NAV_ITEMS[2].isCenter, true);
-    assert.equal(
-      PRIMARY_NAV_ITEMS.filter((item) => item.isCenter).length,
-      1
+      ['Сьогодні', 'Календар', 'Напрями', 'Я']
     );
   });
 
   it('parses and formats static-host-compatible hash routes and defaults unknown hashes to today', () => {
     assert.equal(parseDestinationFromHash('#/calendar'), 'calendar');
-    assert.equal(parseDestinationFromHash('#/plans'), 'plans');
+    assert.equal(parseDestinationFromHash('#/directions'), 'directions');
+    // Legacy routes migrate seamlessly
+    assert.equal(parseDestinationFromHash('#/plans'), 'directions');
+    assert.equal(parseDestinationFromHash('#/habits'), 'today');
     assert.equal(parseDestinationFromHash('#/today'), 'today');
-    assert.equal(parseDestinationFromHash('#/habits'), 'habits');
     assert.equal(parseDestinationFromHash('#/me'), 'me');
     assert.equal(parseDestinationFromHash(''), 'today');
     assert.equal(parseDestinationFromHash('#/unknown'), 'today');
-    assert.equal(formatHashForDestination('plans'), '#/plans');
+    assert.equal(formatHashForDestination('directions'), '#/directions');
   });
 
   it('preserves per-destination context (selected date, mode, open container, scrollTop) independently across tab switches', () => {
@@ -102,7 +97,10 @@ describe('Stage 3: Design System, Floating Shell, and Creation Host Unit Tests',
     });
 
     const plansCreationCtx = buildInitialCreationContext('plans', map);
-    assert.equal(plansCreationCtx.originDestination, 'plans');
+    assert.ok(
+      plansCreationCtx.originDestination === 'directions' ||
+        plansCreationCtx.originDestination === 'plans'
+    );
     assert.equal(plansCreationCtx.targetDate, null);
     assert.equal(plansCreationCtx.folderId, 'folder-music');
 

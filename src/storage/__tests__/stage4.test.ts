@@ -541,13 +541,14 @@ test('Stage 4.5: Distinguish overdue deadline from past planned date without dea
   assert.equal(overdueDateOnly.isDeadlineOverdue, true);
   assert.equal(overdueDateOnly.isPastPlannedDate, false);
 
-  // Contextual creation actions inside Plans folder vs inside open Project (C04)
+  // Contextual creation actions inside Plans/Directions folder vs inside open Project (C04 + M1)
   const contexts = createInitialDestinationContextMap(todayLocalDate);
   const folderActions = getContextualCreationActions('plans', contexts);
-  assert.deepEqual(
-    folderActions.slice(0, 3).map((a) => a.kind),
-    ['task', 'project', 'folder']
-  );
+  const kinds = folderActions.map((a) => a.kind);
+  assert.equal(kinds[0], 'task');
+  assert.ok(kinds.includes('goal'));
+  assert.ok(kinds.includes('project'));
+  assert.ok(kinds.includes('folder'));
 
   contexts.plans.activeProjectId = 'proj-1';
   const projectActions = getContextualCreationActions('plans', contexts);

@@ -13,6 +13,10 @@ import {
   RotateCcw,
   Trash2,
   XCircle,
+  HeartHandshake,
+  Layers,
+  Repeat,
+  Sparkles,
 } from 'lucide-react';
 import { UK_STRINGS } from '../i18n/uk';
 import { PlanuiError } from '../i18n/errorsUk';
@@ -536,6 +540,168 @@ export const BasicSettingsView: React.FC<BasicSettingsViewProps> = ({
           onDismiss={() => setFeedback(null)}
         />
       )}
+
+      {/* 0. Optional Modules Configuration */}
+      <Card
+        title={UK_STRINGS.settings.sectionModules}
+        subtitle={UK_STRINGS.settings.sectionModulesSubtitle}
+        headerRight={
+          <Layers
+            className="w-5 h-5"
+            style={{ color: 'var(--text-secondary)' }}
+            aria-hidden="true"
+          />
+        }
+      >
+        <div className="space-y-3.5">
+          {/* Habits */}
+          <label className="flex items-start justify-between gap-4 cursor-pointer">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-2 text-[15px] font-medium">
+                <Repeat className="w-4 h-4" style={{ color: 'var(--color-work)' }} aria-hidden="true" />
+                <span>{UK_STRINGS.settings.moduleHabitsLabel}</span>
+              </div>
+              <div
+                className="text-[13px]"
+                style={{ color: 'var(--text-secondary)' }}
+              >
+                {UK_STRINGS.settings.moduleHabitsDescription}
+              </div>
+            </div>
+            <input
+              type="checkbox"
+              data-testid="toggle-module-habits"
+              checked={Boolean(settings.modules?.habitsEnabled)}
+              onChange={(e) =>
+                persistPatch({
+                  modules: {
+                    habitsEnabled: e.target.checked,
+                    stateCheckInsEnabled: Boolean(settings.modules?.stateCheckInsEnabled),
+                    desiredLifeEnabled: Boolean(settings.modules?.desiredLifeEnabled),
+                    wishlistEnabled: Boolean(settings.modules?.wishlistEnabled),
+                    userConfigured: true,
+                  },
+                })
+              }
+              className="w-5 h-5 mt-1 shrink-0 accent-[#B93E4B] cursor-pointer"
+            />
+          </label>
+
+          {/* State Check-ins */}
+          <div
+            className="border-t pt-3.5"
+            style={{ borderColor: 'var(--border-subtle)' }}
+          >
+            <label className="flex items-start justify-between gap-4 cursor-pointer">
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2 text-[15px] font-medium">
+                  <HeartHandshake className="w-4 h-4" style={{ color: 'var(--color-brand)' }} aria-hidden="true" />
+                  <span>{UK_STRINGS.settings.moduleStateCheckInsLabel}</span>
+                </div>
+                <div
+                  className="text-[13px]"
+                  style={{ color: 'var(--text-secondary)' }}
+                >
+                  {UK_STRINGS.settings.moduleStateCheckInsDescription}
+                </div>
+              </div>
+              <input
+                type="checkbox"
+                data-testid="toggle-module-state-check-ins"
+                checked={Boolean(settings.modules?.stateCheckInsEnabled)}
+                onChange={(e) =>
+                  persistPatch({
+                    modules: {
+                      habitsEnabled: Boolean(settings.modules?.habitsEnabled),
+                      stateCheckInsEnabled: e.target.checked,
+                      desiredLifeEnabled: Boolean(settings.modules?.desiredLifeEnabled),
+                      wishlistEnabled: Boolean(settings.modules?.wishlistEnabled),
+                      userConfigured: true,
+                    },
+                  })
+                }
+                className="w-5 h-5 mt-1 shrink-0 accent-[#B93E4B] cursor-pointer"
+              />
+            </label>
+          </div>
+
+          {/* Desired Life / Inspiration */}
+          <div
+            className="border-t pt-3.5"
+            style={{ borderColor: 'var(--border-subtle)' }}
+          >
+            <label className="flex items-start justify-between gap-4 cursor-pointer">
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2 text-[15px] font-medium">
+                  <Sparkles className="w-4 h-4" style={{ color: 'var(--color-personal)' }} aria-hidden="true" />
+                  <span>{UK_STRINGS.settings.moduleDesiredLifeLabel}</span>
+                </div>
+                <div
+                  className="text-[13px]"
+                  style={{ color: 'var(--text-secondary)' }}
+                >
+                  {UK_STRINGS.settings.moduleDesiredLifeDescription}
+                </div>
+              </div>
+              <input
+                type="checkbox"
+                data-testid="toggle-module-desired-life"
+                checked={Boolean(settings.modules?.desiredLifeEnabled)}
+                onChange={(e) =>
+                  persistPatch({
+                    modules: {
+                      habitsEnabled: Boolean(settings.modules?.habitsEnabled),
+                      stateCheckInsEnabled: Boolean(settings.modules?.stateCheckInsEnabled),
+                      desiredLifeEnabled: e.target.checked,
+                      wishlistEnabled: Boolean(settings.modules?.wishlistEnabled),
+                      userConfigured: true,
+                    },
+                  })
+                }
+                className="w-5 h-5 mt-1 shrink-0 accent-[#B93E4B] cursor-pointer"
+              />
+            </label>
+          </div>
+
+          {/* Wishlist */}
+          <div
+            className="border-t pt-3.5"
+            style={{ borderColor: 'var(--border-subtle)' }}
+          >
+            <label className="flex items-start justify-between gap-4 cursor-pointer">
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2 text-[15px] font-medium">
+                  <Gift className="w-4 h-4" style={{ color: 'var(--color-dayoff)' }} aria-hidden="true" />
+                  <span>{UK_STRINGS.settings.moduleWishlistLabel}</span>
+                </div>
+                <div
+                  className="text-[13px]"
+                  style={{ color: 'var(--text-secondary)' }}
+                >
+                  {UK_STRINGS.settings.moduleWishlistDescription}
+                </div>
+              </div>
+              <input
+                type="checkbox"
+                data-testid="toggle-module-wishlist"
+                checked={Boolean(settings.modules?.wishlistEnabled)}
+                onChange={(e) =>
+                  persistPatch({
+                    modules: {
+                      habitsEnabled: Boolean(settings.modules?.habitsEnabled),
+                      stateCheckInsEnabled: Boolean(settings.modules?.stateCheckInsEnabled),
+                      desiredLifeEnabled: Boolean(settings.modules?.desiredLifeEnabled),
+                      wishlistEnabled: e.target.checked,
+                      userConfigured: true,
+                    },
+                  })
+                }
+                className="w-5 h-5 mt-1 shrink-0 accent-[#B93E4B] cursor-pointer"
+              />
+            </label>
+          </div>
+        </div>
+      </Card>
 
       {/* 1. Theme & Appearance */}
       <Card

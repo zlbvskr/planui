@@ -1,22 +1,27 @@
 # PLANUI Requirements Coverage Matrix
 
-This document defines stable requirement identifiers (`REQ-C01-*` through `REQ-C22-*`) covering every requirement in the PLANUI Master Contract (`docs/PLANUI_MASTER_CONTRACT.md`), including full Wishlist ownership, implementation stage, verification stage, and current status.
+This document defines stable requirement identifiers (`REQ-C01-*` through `REQ-C22-*`) covering every requirement in the PLANUI Master Contract (`docs/PLANUI_MASTER_CONTRACT.md`), incorporating the active `PLANUI-LIFE-ALIGNMENT-1` revision, implementation stages, verification stages, and current statuses.
 
 ## Stage Legend
 
-1. **Stage 1**: Workspace Audit and Persistent Contract
-2. **Stage 2**: Local Data and Early Backup
-3. **Stage 3**: Design System and Floating Shell
-4. **Stage 4**: Plans and Organization
-5. **Stage 5**: Shared Temporal Engine and Scheduling
-6. **Stage 6**: Day Timeline and Today
-7. **Stage 7**: Month/Week Calendar
-8. **Stage 8**: Work Roster
-9. **Stage 9**: Habits
-10. **Stage 10**: Personal Space, Wishlist, and Media
-11. **Stage 11**: Complete Backup/Recovery Integration
-12. **Stage 12**: PWA and Platform Refinement
-13. **Stage 13**: Final Audit
+### Original Baseline Stages (1–11 Accepted)
+- **Stage 1–11**: Baseline storage, temporal engine, timeline, calendar, roster, habits, personal space, and ZIP backup integration (Completed & Verified).
+
+### Active Migration Stages: PLANUI-LIFE-ALIGNMENT-1 (M0–M10, Revised 12–13)
+- **Stage M0**: Bounded Baseline Audit, Master Contract & Documentation Alignment (Completed)
+- **Stage M1**: Core Navigation & 4-Destination Shell Alignment (`Сьогодні` → `Календар` → `Напрями` → `Я`)
+- **Stage M2**: Directions & Goal Domain Models (Folders as Directions, Distinct Goals, Life Area links)
+- **Stage M3**: Project, Stage & Task Realignment (Purpose, Next Action references, Effort labels)
+- **Stage M4**: Roadmap Projection (`Дорожня карта`, checkpoints, horizons, non-blocking time)
+- **Stage M5**: Today Alignment (`День`, `Завдання`, daily focus, minimal-day mode)
+- **Stage M6 (latest explicit scope)**: Life Areas & Lightweight Reviews
+- **Deferred habit alignment (formerly M6)**: minimum/context/work-day rules remain planned; new stage assignment not inferred.
+- **Former Stage M7 label**: life-area scope delivered under the latest user-approved M6 request; no separate M7 execution claimed.
+- **Stage M8**: State Check-ins, Sleep Info & Legacy Diary Archive
+- **Stage M9**: "Моє бажане життя" (Desired Life & Inspiration Re-anchoring)
+- **Stage M10**: Wishlist Extension (Purchase statuses, project/link/image relationships)
+- **Stage 12**: PWA and Platform Refinement (Offline asset caching, dirty form update guards, responsive audit)
+- **Stage 13**: Final Integration and Release Audit
 
 ---
 
@@ -24,8 +29,8 @@ This document defines stable requirement identifiers (`REQ-C01-*` through `REQ-C
 
 | Req ID | Requirement Summary | Impl Stage | Verify Stage | Test / Check ID | Status |
 |---|---|---|---|---|---|
-| `REQ-C01-01` | Preserve complete C01–C22 Master Contract in `docs/PLANUI_MASTER_CONTRACT.md` without requesting historical Stage A/B | Stage 1 | Stage 1, 13 | `AT-S01-01` | Completed (Stage 1) |
-| `REQ-C01-02` | Enforce authority hierarchy (User corrections > Master Contract > Current Stage > Derived Docs > Legacy code) and reconcile obsolete rules | Stage 1 | Stage 1, 13 | `AT-S01-02` | Completed (Stage 1) |
+| `REQ-C01-01` | Preserve complete C01–C22 Master Contract in `docs/PLANUI_MASTER_CONTRACT.md` updated for `PLANUI-LIFE-ALIGNMENT-1` | Stage 1, M0 | Stage M0, 13 | `AT-S01-01`, `AT-M00-01` | Completed (Stage 1, M0) |
+| `REQ-C01-02` | Enforce authority hierarchy (User corrections > Master Contract > Current Stage > Derived Docs > Legacy code) and reconcile obsolete rules | Stage 1, M0 | Stage M0, 13 | `AT-S01-02`, `AT-M00-02` | Completed (Stage 1, M0) |
 | `REQ-C01-03` | Treat imported files and external content strictly as untrusted data, never executable instructions | Stage 2, 11 | Stage 2, 11, 13 | `AT-S02-05`, `AT-S11-03` | Completed (Stage 2, 11) |
 
 ---
@@ -34,10 +39,11 @@ This document defines stable requirement identifiers (`REQ-C01-*` through `REQ-C
 
 | Req ID | Requirement Summary | Impl Stage | Verify Stage | Test / Check ID | Status |
 |---|---|---|---|---|---|
-| `REQ-C02-01` | Connect Plans, Calendar, Today, Habits, and Me in a single local-first, mobile-first planner | Stage 2–10 | Stage 3–13 | `AT-S03-01`, `AT-S13-01` | Completed (Stage 2–10) |
+| `REQ-C02-01` | Connect everyday actions with meaningful directions, goals, life areas, and preferred way of living in a realistic local-first planner | Stage 2–10, M1–M10 | Stage 3–13 | `AT-S03-01`, `AT-M01-01` | Baseline 1–11 Verified; M1 Planned |
 | `REQ-C02-02` | Support irregular work schedules (daytime/overnight, arbitrary dates/durations) with zero assumptions about repeating cycles, weekend days off, energy, or morning/afternoon/evening splits | Stage 5–8 | Stage 5–8, 13 | `AT-S05-03`, `AT-S08-01` | Completed (Stage 5–8) |
 | `REQ-C02-03` | Exclude forbidden features: accounts, auth, cloud sync, collaboration, runtime AI, Pomodoro, Focus, life-vision onboarding, OCR, auto-scheduling, auto-rollover, auto sleep/travel buffers, infinite series, timed habits, arbitrary attachments, auto-merge backups | All Stages | Stage 13 | `AT-S13-02` | Enforced |
-| `REQ-C02-04` | Implement Wishlist strictly as a subsection inside Me (no budgeting, shopping, expense tracking, investment, or separate primary destination) | Stage 10 | Stage 10, 13 | `AT-S10-05`, `AT-S13-02` | Completed (Stage 10) |
+| `REQ-C02-04` | Implement Wishlist strictly as a subsection inside "Я" (no budgeting, shopping, expense tracking, investment, or separate primary destination) | Stage 10, M10 | Stage 10, M10, 13 | `AT-S10-05`, `AT-M10-01` | Baseline Completed (Stage 10) |
+| `REQ-C02-05` | Non-punitive, anti-diagnosis framing: no therapeutic promises, medical claims, or life score | M0, M7, M8 | Stage M0, 13 | `AT-M00-03` | Enforced (M0) |
 
 ---
 
@@ -45,9 +51,9 @@ This document defines stable requirement identifiers (`REQ-C01-*` through `REQ-C
 
 | Req ID | Requirement Summary | Impl Stage | Verify Stage | Test / Check ID | Status |
 |---|---|---|---|---|---|
-| `REQ-C03-01` | All application-owned user-facing strings rendered in natural Ukrainian (`uk-UA`) with 24-hour time formatting | Stage 3–12 | Stage 3–13 | `AT-S03-02`, `AT-S13-03` | Active (Stages 3–10 Completed) |
-| `REQ-C03-02` | Wishlist subsection uses natural Ukrainian equivalent ("Список бажань") and timing groups meaning Now, Later, Someday ("Зараз", "Пізніше", "Колись") | Stage 10 | Stage 10, 13 | `AT-S10-06` | Completed (Stage 10) |
-| `REQ-C03-03` | Never auto-translate user-authored text; preserve PLANUI brand, ISO currency codes, and IANA zone identifiers; never expose raw English library errors | Stage 2–12 | Stage 2–13 | `AT-S03-02`, `AT-S13-03` | Active (Stages 2–10 Completed) |
+| `REQ-C03-01` | All application-owned user-facing strings rendered in natural Ukrainian (`uk-UA`) with 24-hour time formatting | Stage 3–12, M1–M10 | Stage 3–13 | `AT-S03-02`, `AT-S13-03` | Active (Baseline Completed) |
+| `REQ-C03-02` | Wishlist subsection uses natural Ukrainian equivalent ("Список бажань"), timing groups ("Зараз", "Пізніше", "Колись"), and purchase statuses ("Хочу", "Куплено", "Більше не актуально") | Stage 10, M10 | Stage 10, M10, 13 | `AT-S10-06`, `AT-M10-02` | Baseline Completed; M10 Planned |
+| `REQ-C03-03` | Never auto-translate user-authored text; preserve PLANUI brand, ISO currency codes, and IANA zone identifiers; never expose raw English library errors | Stage 2–12 | Stage 2–13 | `AT-S03-02`, `AT-S13-03` | Active (Baseline Completed) |
 
 ---
 
@@ -55,23 +61,24 @@ This document defines stable requirement identifiers (`REQ-C01-*` through `REQ-C
 
 | Req ID | Requirement Summary | Impl Stage | Verify Stage | Test / Check ID | Status |
 |---|---|---|---|---|---|
-| `REQ-C04-01` | Five primary destinations in mobile order: Calendar ("Календар"), Plans ("Плани"), Today ("Сьогодні" — center), Habits ("Звички"), Me ("Я"); exactly one active at a time | Stage 3 | Stage 3, 13 | `AT-S03-01` | Completed (Stage 3) |
-| `REQ-C04-02` | Preserve per-destination context: selected date, calendar mode, open container, active filters, navigation position, and scroll state | Stage 3–10 | Stage 3, 6, 7, 13 | `AT-S03-03` | Completed (Stage 3–10) |
-| `REQ-C04-03` | One persistent global creation button separate from floating navigation, opening a contextual creation sheet/menu and shared editor host | Stage 3–10 | Stage 3, 4, 10, 13 | `AT-S03-04` | Completed (Stage 3–10) |
-| `REQ-C04-04` | Contextual creation priorities per screen (Calendar, Work Schedule, Plans, Project, Habits, Me overview, Wishlist) showing only implemented actions | Stage 3–10 | Stage 4–10, 13 | `AT-S03-04`, `AT-S04-04`, `AT-S10-07` | Completed (Stage 3–10) |
-| `REQ-C04-05` | Prefilled context (date, time, folder, project, stage, wishlist category) visibly editable; creating a task in Plans does not schedule for Today; creating a wish does not create a task or calendar entry | Stage 4, 5, 10 | Stage 4, 5, 10, 13 | `AT-S04-04`, `AT-S10-07` | Completed (Stage 4, 5, 10) |
+| `REQ-C04-01` | Four primary destinations in exact order: `Сьогодні` → `Календар` → `Напрями` → `Я`; exactly one active at a time; Settings secondary within `Я` | M1 | Stage M1, 13 | `AT-M01-01` | Planned (M1) |
+| `REQ-C04-02` | Preserve per-destination context: selected date, calendar mode, open container/direction, active filters, navigation position, and scroll state | Stage 3–10, M1 | Stage 3, 6, 7, M1, 13 | `AT-S03-03`, `AT-M01-02` | Baseline Completed; M1 Planned |
+| `REQ-C04-03` | One persistent global creation button separate from floating navigation, opening a contextual creation sheet/menu and shared editor host | Stage 3–10, M1 | Stage 3, 4, 10, M1, 13 | `AT-S03-04`, `AT-M01-03` | Baseline Completed; M1 Planned |
+| `REQ-C04-04` | Contextual creation priorities per screen (Сьогодні: task/focus/habit; Календар: event/shift/reservation; Напрями: direction/goal/project/task; Я: check-in/review/wish/desired life) | Stage 3–10, M1–M10 | Stage M1, 13 | `AT-S03-04`, `AT-M01-04` | Baseline Completed; M1 Planned |
+| `REQ-C04-05` | Prefilled context visibly editable; creating a task in "Напрями" does not schedule for Today; creating a wish does not create a task or calendar entry | Stage 4, 5, 10, M1 | Stage 4, 5, 10, M1, 13 | `AT-S04-04`, `AT-M01-04` | Completed (Stage 4, 5, 10) |
 
 ---
 
-## C05. Folders, Projects, and Stages
+## C05. Directions, Goals, Projects, Stages, and Roadmap
 
 | Req ID | Requirement Summary | Impl Stage | Verify Stage | Test / Check ID | Status |
 |---|---|---|---|---|---|
-| `REQ-C05-01` | Folders organize folders, projects, and standalone tasks with no arbitrary depth cap; cycle/self-parent/descendant-move prevention and depth-safe iterative traversal | Stage 2, 4 | Stage 2, 4, 13 | `AT-S04-01` | Completed (Stage 4) |
-| `REQ-C05-02` | Mobile single-container view with ancestor breadcrumb path (and full path access when abbreviated); default rehome on nonempty folder delete vs. confirmed recursive delete with impact counts | Stage 4 | Stage 4, 13 | `AT-S04-02` | Completed (Stage 4) |
-| `REQ-C05-03` | Projects support title, description, desired outcome, completion criteria, target date, folder, life area, stages, tasks, descriptive collaborator text, states (active/paused/completed), and separate archive flag | Stage 2, 4 | Stage 2, 4, 13 | `AT-S04-03` | Completed (Stage 4) |
-| `REQ-C05-04` | Stages form one flat ordered level inside a project; project progress = completed tasks / all non-canceled project tasks (stages & checklist items excluded; hidden completed included; honest empty state) | Stage 4 | Stage 4, 13 | `AT-S04-03` | Completed (Stage 4) |
-| `REQ-C05-05` | Explicit project completion showing unresolved tasks without silent auto-completion; archiving offers explicit retain-planning or remove-planning choice | Stage 4, 5 | Stage 4, 5, 13 | `AT-S04-05`, `AT-S05-06` | Completed (Stage 4, 5) |
+| `REQ-C05-01` | Folders represent Directions and groupings with no arbitrary depth cap; cycle/self-parent/descendant-move prevention; directions describe activity, life areas describe life parts | Stage 2, 4, M1, M3 | Stage 2, 4, M1, M3, 13 | `AT-S04-01`, `AT-M01-01`, `AT-M03-01` | Completed (Stage 4, M1, M3) |
+| `REQ-C05-02` | Mobile single-container view with ancestor breadcrumb path; default rehome on nonempty folder delete vs. confirmed recursive delete with impact counts | Stage 4, M3 | Stage 4, M3, 13 | `AT-S04-02`, `AT-M03-01` | Completed (Stage 4, M3) |
+| `REQ-C05-03` | Distinct Goals: direction link, title, purpose ("Навіщо це мені"), completion criteria, optional next action reference, optional timing, life area link, states (idea/active/paused/completed) | M1, M3 | Stage M1, M3, 13 | `AT-M01-02`, `AT-M03-02` | Completed (Stage M1, M3) |
+| `REQ-C05-04` | Projects represent concrete outcomes; support goal link, life area, purpose, stages, tasks, next action reference, states (idea/active/paused/completed), and separate archive flag | Stage 2, 4, M1, M3 | Stage 2, 4, M1, M3, 13 | `AT-S04-03`, `AT-M03-01` | Completed (Stage 4, M1, M3) |
+| `REQ-C05-05` | Stages form one flat ordered level inside a project; project progress = completed tasks / all non-canceled tasks (stages & checklists excluded; honest empty state) | Stage 4, M3 | Stage 4, M3, 13 | `AT-S04-03`, `AT-M03-05` | Completed (Stage 4, M3) |
+| `REQ-C05-06` | Roadmap projection (`Дорожня карта`): canonical view of goals, projects, stages, checkpoints, horizons; roadmap periods and checkpoints NEVER reserve working hours or occupy calendar time | M4 | Stage M4, 13 | `AT-M04-01`–`AT-M04-05` | Implemented; automated coverage passes; full UI/build verification blocked |
 
 ---
 
@@ -79,7 +86,7 @@ This document defines stable requirement identifiers (`REQ-C01-*` through `REQ-C
 
 | Req ID | Requirement Summary | Impl Stage | Verify Stage | Test / Check ID | Status |
 |---|---|---|---|---|---|
-| `REQ-C06-01` | Task fields: stable ID, title, description, state (open/completed/canceled), priority (high/normal/low, default normal), deadline (date-only or exact instant), estimated duration, planning state, ownership (standalone+optional folder OR project+optional valid stage), one-level checklist | Stage 2, 4 | Stage 2, 4, 13 | `AT-S04-04` | Completed (Stage 4) |
+| `REQ-C06-01` | Task fields: stable ID, title, description, state (open/completed/canceled), priority (high/normal/low, default normal), deadline (date-only or exact instant), estimated duration, planning state, ownership, one-level checklist, optional effort label | Stage 2, 4, M3 | Stage 2, 4, M3, 13 | `AT-S04-04`, `AT-M03-02` | Baseline Completed; M3 Planned |
 | `REQ-C06-02` | Priority never auto-escalates; moving between projects clears or explicitly replaces stage; checklist items can be promoted to ordinary tasks | Stage 4 | Stage 4, 13 | `AT-S04-04` | Completed (Stage 4) |
 | `REQ-C06-03` | Date-only deadlines never drift via UTC conversion; distinguish overdue deadline, elapsed planning, and open task on past date; no auto-rollover to today; non-punitive batch actions | Stage 4, 5 | Stage 4, 5, 6, 13 | `AT-S04-04`, `AT-S05-04` | Completed (Stage 4, 5) |
 
@@ -121,7 +128,7 @@ This document defines stable requirement identifiers (`REQ-C01-*` through `REQ-C
 | Req ID | Requirement Summary | Impl Stage | Verify Stage | Test / Check ID | Status |
 |---|---|---|---|---|---|
 | `REQ-C10-01` | Compute unoccupied gaps by subtracting the union of effective blocking intervals (work, active reservations, blocking events, manual blocking rest/sleep/travel) from viewing window; overlaps do not double-count | Stage 5 | Stage 5, 6, 13 | `AT-S05-09` | Completed (Stage 5) |
-| `REQ-C10-02` | Non-blocking items (deadlines, priorities, date-only tasks, day-off markers, habits, journal, life areas, inspiration, wishes) and canceled/released intervals never block time | Stage 5, 10 | Stage 5, 10, 13 | `AT-S05-09`, `AT-S10-05` | Completed (Stage 5) |
+| `REQ-C10-02` | Non-blocking items (deadlines, priorities, date-only tasks, day-off markers, habits, state check-ins, life areas, inspiration, wishes) and canceled/released intervals never block time | Stage 5, 10 | Stage 5, 10, 13 | `AT-S05-09`, `AT-S10-05` | Completed (Stage 5) |
 | `REQ-C10-03` | Contextual gap action opens existing-task picker with search/project filter, editable session length, partial-session support, and overlap warning without silent shifting | Stage 5, 6 | Stage 6, 13 | `AT-S06-04` | Completed (Stage 6) |
 
 ---
@@ -136,11 +143,11 @@ This document defines stable requirement identifiers (`REQ-C01-*` through `REQ-C
 
 ---
 
-## C12. Today Workspace
+## C12. Today Workspace ("Сьогодні")
 
 | Req ID | Requirement Summary | Impl Stage | Verify Stage | Test / Check ID | Status |
 |---|---|---|---|---|---|
-| `REQ-C12-01` | Today layout: selected date/weekday, date navigation, Today return, nearest commitment, compact habits, collapsible untimed tasks, proportional timeline, clear divider, and collapsible next calendar date with overnight carryover | Stage 6 | Stage 6, 13 | `AT-S06-01` | Completed (Stage 6) |
+| `REQ-C12-01` | Today workspace integrates `День` (continuous 24h timeline), `Завдання` (tasks for the day), and optional `Звички` (habits); daily focus note, manual minimal-day mode | Stage 6, M5 | Stage 6, M5, 13 | `AT-S06-01`, `AT-M05-01`–`AT-M05-05` | M5 implemented; automated checks pass; UI/build verification blocked |
 | `REQ-C12-02` | Proportional timeline with readable time rail, distinguishable overlap lanes, min 44px touch targets without altering stored duration, and honest DST gap/repeat display | Stage 6 | Stage 6, 13 | `AT-S06-02` | Completed (Stage 6) |
 | `REQ-C12-03` | Current-time indicator only on date containing now (updated ~1/min and on foregrounding); preserve scroll state; midnight context transition without ejecting user; no injection of undated/yesterday tasks | Stage 6 | Stage 6, 13 | `AT-S06-03` | Completed (Stage 6) |
 
@@ -156,28 +163,28 @@ This document defines stable requirement identifiers (`REQ-C01-*` through `REQ-C
 
 ---
 
-## C14. Habits
+## C14. Habits (Optional Embedded Module)
 
 | Req ID | Requirement Summary | Impl Stage | Verify Stage | Test / Check ID | Status |
 |---|---|---|---|---|---|
-| `REQ-C14-01` | Habits support name, description/icon, optional life area/project link, daily / selected-weekday / weekly-frequency rules, binary or numeric target+units, active/paused/archived states | Stage 2, 9 | Stage 9, 13 | `AT-S09-01` | Completed (Stage 9) |
-| `REQ-C14-02` | Local-date entries (`YYYY-MM-DD`) supporting previous-date recording after night shifts; distinguish completed, partial, intentionally skipped, no entry, not scheduled, paused; prevent duplicate binary entries | Stage 9 | Stage 9, 13 | `AT-S09-02` | Completed (Stage 9) |
-| `REQ-C14-03` | Effective-dated schedule revisions preserving historical interpretation; transparent rule-appropriate streaks; shared entries between Today and Habits | Stage 9 | Stage 9, 13 | `AT-S09-03` | Completed (Stage 9) |
+| `REQ-C14-01` | Optional module inside `Сьогодні` (no standalone primary tab); supports daily/selected-weekday/weekly-frequency and work-day-based rules, minimum viable version, context fields (e.g. "після пробудження") | Stage 2, 9, deferred habit alignment | Stage 9, deferred, 13 | `AT-S09-01`, `AT-M06-01` | Baseline Completed; habit extensions deferred |
+| `REQ-C14-02` | Local-date entries (`YYYY-MM-DD`) supporting previous-date recording after night shifts; distinguish completed, minimum version, partial, skipped, no entry, not scheduled, paused; prevent duplicate binary entries | Stage 9, deferred habit alignment | Stage 9, deferred, 13 | `AT-S09-02`, `AT-M06-02` | Baseline Completed; M6 Planned |
+| `REQ-C14-03` | Effective-dated schedule revisions; transparent non-punitive streaks; disabling module in settings preserves all records, calendar reservations, and backup entries | Stage 9, M6 | Stage 9, M6, 13 | `AT-S09-03`, `AT-M06-03` | Baseline Completed; M6 Planned |
 
 ---
 
-## C15. Personal Space, Wishlist, and Settings
+## C15. Personal Space, Life Areas, Wishlist, and Settings ("Я")
 
 | Req ID | Requirement Summary | Impl Stage | Verify Stage | Test / Check ID | Status |
 |---|---|---|---|---|---|
-| `REQ-C15-01` | Unified Personal Records model (timestamp, optional text, optional 1–5 mood/energy/stress scales with Ukrainian questions where high stress is not positive, optional tags) shared by quick state and journal | Stage 2, 10 | Stage 10, 13 | `AT-S10-01` | Completed (Stage 10) |
-| `REQ-C15-02` | Life Areas: 8 editable Ukrainian questions with 1–10 labeled answers, partial assessments allowed, question wording/version and period preserved, no radar-first UI or overall life score | Stage 2, 10 | Stage 10, 13 | `AT-S10-02` | Completed (Stage 10) |
-| `REQ-C15-03` | Inspiration items: text, quote, validated HTTP/HTTPS link, validated local image (JPEG/PNG/WebP magic bytes, dimensions, decoded memory limit; reject SVG/arbitrary files), favorite, project link | Stage 2, 10 | Stage 10, 13 | `AT-S10-03` | Completed (Stage 10) |
-| `REQ-C15-04` | Wishlist data model: stable ID, required title, optional plain-text note, optional single flat category ID, timing group (`now` / `later` / `someday`, default `later`), optional exact price + ISO currency, active/fulfilled state, timestamps, separate archive state | Stage 2, 10 | Stage 2, 10, 11, 13 | `AT-S02-03`, `AT-S10-04` | Completed (Stage 2, 10) |
-| `REQ-C15-05` | Wishlist categories: single flat user-created list (ID, name, order); virtual "All Categories" and "Uncategorized" filters; deleting a category defaults to leaving wishes uncategorized without deleting wishes | Stage 2, 10 | Stage 2, 10, 13 | `AT-S02-03`, `AT-S10-04` | Completed (Stage 2, 10) |
-| `REQ-C15-06` | Exact money representation (validated decimal/minor-unit integer, never binary float math); allow zero, reject negative/NaN/infinite; localized Ukrainian formatting; preferred currency saved after explicit choice and applied only to future defaults | Stage 2, 10 | Stage 2, 10, 13 | `AT-S02-04`, `AT-S10-05` | Completed (Stage 2, 10) |
-| `REQ-C15-07` | Wishlist UX & boundaries: title-only progressive disclosure creation, compact category & timing filter, fulfilled/archived history access, zero calendar/task coupling, zero exchange rates/cross-currency totals/budgets/external price lookup | Stage 10 | Stage 10, 13 | `AT-S10-05`, `AT-S10-07` | Completed (Stage 10) |
-| `REQ-C15-08` | Settings inside Me: theme, time zone, accessibility/display preferences, wishlist preferred currency, storage status, backup/restore, recovery snapshots, app version, reset, and links to habit/roster/category editors | Stage 10, 11, 12 | Stage 10, 11, 12, 13 | `AT-S10-08`, `AT-S11-01` | Completed (Stage 10, 11) |
+| `REQ-C15-01` | Short optional state check-ins (timestamp, mood 1–5, energy 1–5, tension 1–5, optional sleep, brief note) replace new diary writing; all historical diary text preserved in accessible legacy archive | Stage 2, 10, M8 | Stage 10, M8, 13 | `AT-S10-01`, `AT-M08-01` | Baseline Completed; M8 Planned |
+| `REQ-C15-02` | Life Areas: editable 10-area starter set; reviews with optional 0–10 satisfaction, attention preference, 1 useful change; historical 8-area questions and responses preserved immutably | Stage 2, 10, latest M6 | Stage 10, M6, 13 | `AT-S10-02`, `AT-M06-LA-01`–`AT-M06-LA-05` | M6 implemented; automated coverage passes; UI/build verification blocked |
+| `REQ-C15-03` | "Моє бажане життя" (Desired Life): descriptions, images, prompts, links to life areas/goals; reuses inspiration/media engine; existing inspiration preserved | Stage 2, 10, M9 | Stage 10, M9, 13 | `AT-S10-03`, `AT-M09-01` | Baseline Completed; M9 Planned |
+| `REQ-C15-04` | Wishlist data model: title, note, category, optional project link, web link, image, purchase statuses (`Хочу`, `Куплено`, `Більше не актуально`), preserved timing groups (`now`/`later`/`someday`), exact price + ISO currency | Stage 2, 10, M10 | Stage 2, 10, 11, M10, 13 | `AT-S02-03`, `AT-M10-01` | Baseline Completed; M10 Planned |
+| `REQ-C15-05` | Wishlist categories: flat user list; "All" and "Uncategorized" filters; category deletion unlinks wishes without deleting them | Stage 2, 10 | Stage 2, 10, 13 | `AT-S02-03`, `AT-S10-04` | Completed (Stage 2, 10) |
+| `REQ-C15-06` | Exact money representation (integer minor units, canonical decimal string, ISO currency); Ukrainian locale formatting; preferred currency applied only to future defaults | Stage 2, 10 | Stage 2, 10, 13 | `AT-S02-04`, `AT-S10-05` | Completed (Stage 2, 10) |
+| `REQ-C15-07` | Wishlist boundaries: title-only creation, fulfilled/archived history preserved, zero calendar occupancy, zero exchange rates/totals/budgets/price fetching | Stage 10, M10 | Stage 10, M10, 13 | `AT-S10-05`, `AT-M10-02` | Baseline Completed; M10 Planned |
+| `REQ-C15-08` | Settings as secondary section in `Я`: theme, zone, accessibility, optional module toggles (Habits, Wishlist, Reviews, Roadmap), storage, ZIP backup/restore, recovery snapshots, app version, reset | Stage 10, 11, 12, M1 | Stage 10, 11, 12, M1, 13 | `AT-S10-08`, `AT-M01-05` | Baseline Completed; M1 Planned |
 
 ---
 
@@ -195,7 +202,7 @@ This document defines stable requirement identifiers (`REQ-C01-*` through `REQ-C
 
 | Req ID | Requirement Summary | Impl Stage | Verify Stage | Test / Check ID | Status |
 |---|---|---|---|---|---|
-| `REQ-C17-01` | Inset floating navigation capsule (12–16px side gaps, bottom safe-area + external gap, ~60–68px height, unclipped enlarged text, translucent/blur with fallback and reduced-transparency support) | Stage 3 | Stage 3, 13 | `AT-S03-01`, `AT-S03-07` | Completed (Stage 3) |
+| `REQ-C17-01` | Inset floating navigation capsule (4 destinations: `Сьогодні` → `Календар` → `Напрями` → `Я`; 12–16px side gaps, bottom safe-area + external gap, ~60–68px height, unclipped enlarged text, translucent/blur with fallback and reduced-transparency support) | Stage 3, M1 | Stage 3, M1, 13 | `AT-S03-01`, `AT-M01-01` | Baseline Completed; M1 Planned |
 | `REQ-C17-02` | Separate global creation button positioned above the panel at the right (~48–52px, 12–16px gap), reserved bottom scroll clearance | Stage 3 | Stage 3, 13 | `AT-S03-04` | Completed (Stage 3) |
 | `REQ-C17-03` | Modal/sheet and keyboard behavior: hide global button, make background nav inert, trap/restore focus, provide visible close button, protect dirty forms, prevent unpredictable keyboard jumping | Stage 3 | Stage 3, 4, 10, 13 | `AT-S03-08` | Completed (Stage 3) |
 
@@ -225,8 +232,8 @@ This document defines stable requirement identifiers (`REQ-C01-*` through `REQ-C
 
 | Req ID | Requirement Summary | Impl Stage | Verify Stage | Test / Check ID | Status |
 |---|---|---|---|---|---|
-| `REQ-C20-01` | Complete ZIP backup (`manifest.json`, `data.json`, `media/`) covering all domains including Wishlist categories, wishes, exact prices, currencies, timing, fulfillment/archive states, and preferred currency | Stage 2, 11 | Stage 2, 11, 13 | `AT-S02-05`, `AT-S11-01` | Completed (Stage 2, 11) |
-| `REQ-C20-02` | Pre-import validation outside write tx: ZIP container safety (no traversal, symlinks, nested archives, zip bombs, oversized expansion), SHA-256 checksums, entity count checks, schema/reference integrity, folder cycle check, temporal/zone validity, wishlist & exact money validation, media magic-byte/dimension checks, and cancelable AbortSignal | Stage 2, 11 | Stage 2, 11, 13 | `AT-S02-05`, `AT-S11-02`, `AT-S11-03` | Completed (Stage 2, 11) |
+| `REQ-C20-01` | Complete ZIP backup (`manifest.json`, `data.json`, `media/`) covering all domains including directions, goals, projects, stages, tasks, reservations, events, shifts, habits, check-ins, life areas, wishlist, desired life, settings | Stage 2, 11, M10 | Stage 2, 11, M10, 13 | `AT-S02-05`, `AT-S11-01` | Baseline Completed (Stage 2, 11) |
+| `REQ-C20-02` | Pre-import validation outside write tx: ZIP container safety, SHA-256 checksums, entity count checks, schema/reference integrity, folder cycles, temporal/zone validity, exact prices, media magic-bytes/dimensions, cancelable AbortSignal | Stage 2, 11 | Stage 2, 11, 13 | `AT-S02-05`, `AT-S11-02`, `AT-S11-03` | Completed (Stage 2, 11) |
 | `REQ-C20-03` | Preview and explicit replacement confirmation (no auto-merge); pre-replacement recovery snapshot (retaining up to 3 snapshots); abort replacement if snapshot creation fails; restore/export/delete snapshots safely; preserve referenced media | Stage 2, 11 | Stage 2, 11, 13 | `AT-S02-05`, `AT-S11-04` | Completed (Stage 2, 11) |
 
 ---
@@ -236,7 +243,7 @@ This document defines stable requirement identifiers (`REQ-C01-*` through `REQ-C
 | Req ID | Requirement Summary | Impl Stage | Verify Stage | Test / Check ID | Status |
 |---|---|---|---|---|---|
 | `REQ-C21-01` | Static HTTPS operation with zero backend/cloud/AI/telemetry dependencies; original PLANUI icons, manifest, and standalone PWA support | Stage 12 | Stage 12, 13 | `AT-S12-01` | Planned |
-| `REQ-C21-02` | Offline asset caching after initial load (including backup and wishlist chunks); separate asset-cache and IndexedDB lifecycles; safe update notification that never reloads over dirty editors | Stage 12 | Stage 12, 13 | `AT-S12-02` | Planned |
+| `REQ-C21-02` | Offline asset caching after initial load (including backup, wishlist, and roadmap chunks); separate asset-cache and IndexedDB lifecycles; safe update notification that never reloads over dirty editors | Stage 12 | Stage 12, 13 | `AT-S12-02` | Planned |
 | `REQ-C21-03` | Honest privacy & storage disclosures in Ukrainian (origin-local data, unencrypted local storage/ZIP, no background notification guarantees) | Stage 10, 12 | Stage 10, 12, 13 | `AT-S12-01` | Planned |
 
 ---
@@ -245,4 +252,7 @@ This document defines stable requirement identifiers (`REQ-C01-*` through `REQ-C
 
 | Req ID | Requirement Summary | Impl Stage | Verify Stage | Test / Check ID | Status |
 |---|---|---|---|---|---|
-| `REQ-C22-01` | Retain lightweight React/TypeScript/Vite setup, modular domain services, pure temporal & exact-money utilities, deterministic unit tests, and staged execution with honest reporting | Stage 1–13 | Stage 1–13 | `AT-S01-01`..`AT-S13-04` | Active (Stage 1 Completed) |
+| `REQ-C22-01` | Retain lightweight React/TypeScript/Vite setup, modular domain services, pure temporal & exact-money utilities, deterministic unit tests, and staged execution with honest reporting | Stage 1–13, M0–M10 | Stage 1–13 | `AT-S01-01`..`AT-S13-04` | Active (M0 Completed) |
+
+
+M6 numbering note: legacy AT-M06-01/02/03 references in habit rows retain their former scope and are not claimed as completed here. The latest life-area M6 request uses AT-M06-LA-01 through AT-M06-LA-05 to avoid reusing those identifiers with a different meaning.

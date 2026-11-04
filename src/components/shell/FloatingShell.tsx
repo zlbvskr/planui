@@ -1,9 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import {
   Calendar,
-  FolderKanban,
+  Compass,
   SunMedium,
-  Repeat,
   User,
   Plus,
 } from 'lucide-react';
@@ -11,10 +10,9 @@ import { PrimaryDestinationId, UK_STRINGS } from '../../i18n/uk';
 import { PRIMARY_NAV_ITEMS } from '../../state/shellStore';
 
 const NAV_ICONS: Record<PrimaryDestinationId, React.FC<{ className?: string }>> = {
-  calendar: Calendar,
-  plans: FolderKanban,
   today: SunMedium,
-  habits: Repeat,
+  calendar: Calendar,
+  directions: Compass,
   me: User,
 };
 
@@ -199,7 +197,7 @@ export const FloatingShell: React.FC<FloatingShellProps> = ({
       {/* Main Content Area with Measured Bottom Scroll Clearance on Mobile/Tablet */}
       <main
         id="planui-main-content"
-        className="flex-1 w-full max-w-[920px] mx-auto px-4 sm:px-6 pt-5 lg:py-8"
+        className="flex-1 w-full max-w-[1080px] mx-auto px-4 sm:px-6 lg:px-8 pt-5 lg:py-8"
         style={{
           paddingBottom: 'var(--floating-scroll-clearance)',
         }}
@@ -237,11 +235,11 @@ export const FloatingShell: React.FC<FloatingShellProps> = ({
               <Plus className="w-6 h-6 stroke-[2.4]" aria-hidden="true" />
             </button>
 
-            {/* Inset Floating Navigation Capsule (60–68px height when text size permits, expandable for large text) */}
+            {/* Inset Floating Navigation Capsule (4 equal columns for 4 destinations) */}
             <nav
               aria-label={UK_STRINGS.app.mainNavigationAria}
               data-testid="mobile-floating-capsule"
-              className="pointer-events-auto w-full min-h-[64px] px-1.5 py-1.5 rounded-[28px] planui-floating-capsule grid grid-cols-5 items-stretch gap-1"
+              className="pointer-events-auto w-full min-h-[64px] px-1.5 py-1.5 rounded-[28px] planui-floating-capsule grid grid-cols-4 items-stretch gap-1"
             >
               {PRIMARY_NAV_ITEMS.map((item) => {
                 const Icon = NAV_ICONS[item.id];
@@ -261,7 +259,7 @@ export const FloatingShell: React.FC<FloatingShellProps> = ({
                         ? 'var(--bg-pressed)'
                         : 'transparent',
                       color: isActive
-                        ? 'var(--text-primary)'
+                        ? 'var(--color-brand)'
                         : 'var(--text-secondary)',
                       fontWeight: isActive ? 600 : 500,
                     }}

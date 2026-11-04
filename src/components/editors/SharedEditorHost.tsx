@@ -14,6 +14,7 @@ import {
   Sparkles,
   Gift,
   Tag,
+  Target,
 } from 'lucide-react';
 import { PrimaryDestinationId, UK_STRINGS } from '../../i18n/uk';
 import {
@@ -27,6 +28,8 @@ import {
   CalendarEventType,
   EventPaletteColor,
   Folder,
+  Goal,
+  GoalState,
   HabitFrequencyRule,
   HabitTargetSpec,
   IanaTimeZone,
@@ -38,6 +41,7 @@ import {
   SupportedCurrencyCode,
   Task,
   TaskDeadline,
+  TaskOwnership,
   TaskPlanningState,
   TaskPriority,
   TaskReservation,
@@ -85,6 +89,7 @@ export interface SharedEditorHostProps {
   initialActionKind?: ImplementedCreationActionKind;
   activeZone?: IanaTimeZone;
   folders: Folder[];
+  goals?: Goal[];
   projects?: Project[];
   stages?: ProjectStage[];
   tasks?: Task[];
@@ -94,6 +99,12 @@ export interface SharedEditorHostProps {
   lifeAreaQuestions?: readonly LifeAreaQuestion[];
   wishlistCategories?: readonly WishlistCategory[];
   preferredWishlistCurrency?: SupportedCurrencyCode | null;
+  enabledModules?: {
+    habitsEnabled?: boolean;
+    stateCheckInsEnabled?: boolean;
+    desiredLifeEnabled?: boolean;
+    wishlistEnabled?: boolean;
+  };
   repositories: PlanuiRepositories;
   onClose: () => void;
   onEntityCreated: (feedbackMessage: string) => void;
@@ -107,6 +118,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
   initialActionKind,
   activeZone = 'Europe/Kyiv',
   folders,
+  goals = [],
   projects = [],
   stages = [],
   tasks = [],
@@ -116,13 +128,15 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
   lifeAreaQuestions = [],
   wishlistCategories = [],
   preferredWishlistCurrency = null,
+  enabledModules,
   repositories,
   onClose,
   onEntityCreated,
 }) => {
   const availableActions = getContextualCreationActions(
     activeDestination,
-    contexts
+    contexts,
+    enabledModules
   );
   const defaultAction =
     initialActionKind ??
@@ -180,6 +194,18 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
   const [dayOffCode, setDayOffCode] = useState<string>('В');
   const [dayOffNote, setDayOffNote] = useState<string>('');
 
+  // Goal fields (Stage M1 / M3)
+  const [goalTitle, setGoalTitle] = useState('');
+  const [goalPurpose, setGoalPurpose] = useState('');
+  const [goalCriteria, setGoalCriteria] = useState('');
+  const [goalIntention, setGoalIntention] = useState('');
+  const [goalTargetDate, setGoalTargetDate] = useState<string | null>(null);
+  const [goalTargetPeriod, setGoalTargetPeriod] = useState<string>('');
+  const [goalState, setGoalState] = useState<GoalState>('active');
+  const [goalFolderId, setGoalFolderId] = useState<string>('');
+  const [goalLifeAreaId, setGoalLifeAreaId] = useState<string>('');
+  const [goalNextActionTaskId, setGoalNextActionTaskId] = useState<string>('');
+
   // Project fields
   const [projectTitle, setProjectTitle] = useState('');
   const [projectDesiredOutcome, setProjectDesiredOutcome] = useState('');
@@ -189,6 +215,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
     null
   );
   const [projectCollaborators, setProjectCollaborators] = useState('');
+  const [projectGoalId, setProjectGoalId] = useState<string>('');
 
   // Stage fields
   const [stageTitle, setStageTitle] = useState('');
@@ -310,12 +337,24 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
       setDayOffCode('В');
       setDayOffNote('');
 
+      setGoalTitle('');
+      setGoalPurpose('');
+      setGoalCriteria('');
+      setGoalIntention('');
+      setGoalTargetDate(null);
+      setGoalTargetPeriod('');
+      setGoalState('active');
+      setGoalFolderId(initialContext.folderId ?? '');
+      setGoalLifeAreaId('');
+      setGoalNextActionTaskId('');
+
       setProjectTitle('');
       setProjectDesiredOutcome('');
       setProjectCriteria('');
       setProjectDescription('');
       setProjectTargetDate(null);
       setProjectCollaborators('');
+      setProjectGoalId(initialContext.goalId ?? '');
 
       setStageTitle('');
       setStageExpectedOutcome('');
@@ -368,6 +407,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
     activeZone,
     contexts,
     projects,
+    goals,
     preferredWishlistCurrency,
   ]);
 
@@ -375,6 +415,11 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
   const isDirty =
     taskTitle.trim().length > 0 ||
     taskDescription.trim().length > 0 ||
+    goalTitle.trim().length > 0 ||
+    goalPurpose.trim().length > 0 ||
+    goalCriteria.trim().length > 0 ||
+    goalIntention.trim().length > 0 ||
+    goalTargetPeriod.trim().length > 0 ||
     eventTitle.trim().length > 0 ||
     eventNote.trim().length > 0 ||
     dayOffNote.trim().length > 0 ||
@@ -534,12 +579,24 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
   ];
 
   const activeProjectStages = stages
-    .filter((s) => s.projectId === editableContext.projectId)
+    .filter((s) => s.projectId !== null && s.projectId === editableContext.projectId)
     .sort((a, b) => a.order - b.order);
 
   const stageOptions = [
     { value: '', label: UK_STRINGS.creation.noStageOption },
     ...activeProjectStages.map((s) => ({ value: s.id, label: s.title })),
+  ];
+
+  const goalOptions = [
+    { value: '', label: 'Без прив’язки до цілі' },
+    ...goals.map((g) => ({ value: g.id, label: g.title })),
+  ];
+
+  const openTaskOptions = [
+    { value: '', label: UK_STRINGS.creation.goalForm.noNextActionOption },
+    ...tasks
+      .filter((t) => t.state === 'open')
+      .map((t) => ({ value: t.id, label: t.title })),
   ];
 
   const handleSave = async (e: React.FormEvent) => {
@@ -582,16 +639,26 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
         const parsedEstimate =
           taskEstimate.trim().length > 0 ? Number(taskEstimate.trim()) : null;
 
-        const ownership = editableContext.projectId
-          ? ({
+        const ownership: TaskOwnership = editableContext.projectId
+          ? {
               kind: 'project',
               projectId: editableContext.projectId,
               stageId: editableContext.stageId || null,
-            } as const)
-          : ({
+            }
+          : editableContext.goalId
+          ? {
+              kind: 'goal',
+              goalId: editableContext.goalId,
+            }
+          : editableContext.folderId
+          ? {
+              kind: 'folder',
+              folderId: editableContext.folderId,
+            }
+          : {
               kind: 'standalone',
-              folderId: editableContext.folderId || null,
-            } as const);
+              folderId: null,
+            };
 
         if (taskPlanningMode === 'timed') {
           if (conflictPreview.hasConflicts && !confirmConsciousOverlap) {
@@ -753,6 +820,56 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
         return;
       }
 
+      if (selectedAction === 'goal') {
+        if (!goalTitle.trim()) {
+          setErrorMessage('Будь ласка, вкажіть назву цілі.');
+          setIsSaving(false);
+          return;
+        }
+
+        const effectiveFolderId =
+          editableContext.folderId || (goalFolderId ? goalFolderId : null);
+        const siblingGoalsCount = goals.filter(
+          (g) => g.folderId === effectiveFolderId
+        ).length;
+
+        await repositories.saveGoal({
+          id,
+          title: goalTitle.trim(),
+          description: null,
+          purposeUk: goalPurpose.trim() ? goalPurpose.trim() : null,
+          completionCriteriaUk: goalCriteria.trim() ? goalCriteria.trim() : null,
+          nextActionTaskId: goalNextActionTaskId.trim()
+            ? goalNextActionTaskId.trim()
+            : null,
+          timing:
+            goalTargetDate || goalTargetPeriod.trim()
+              ? {
+                  targetDate: goalTargetDate || null,
+                  targetPeriodUk: goalTargetPeriod.trim()
+                    ? goalTargetPeriod.trim()
+                    : null,
+                }
+              : null,
+          folderId: effectiveFolderId,
+          lifeAreaId: goalLifeAreaId.trim() ? goalLifeAreaId.trim() : null,
+          implementationIntentionUk: goalIntention.trim()
+            ? goalIntention.trim()
+            : null,
+          state: goalState,
+          archived: false,
+          order: siblingGoalsCount,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+          completedAt: goalState === 'completed' ? nowIso : null,
+          revision: 1,
+        });
+
+        onEntityCreated(UK_STRINGS.creation.goalForm.savedFeedback);
+        onClose();
+        return;
+      }
+
       if (selectedAction === 'project') {
         await repositories.saveProject({
           id,
@@ -768,6 +885,8 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
             : null,
           targetDate: projectTargetDate || null,
           folderId: editableContext.folderId || null,
+          goalId:
+            editableContext.goalId || (projectGoalId ? projectGoalId : null),
           lifeAreaId: null,
           collaboratorText: projectCollaborators.trim()
             ? projectCollaborators.trim()
@@ -1068,6 +1187,8 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
             const Icon =
               act.kind === 'task'
                 ? CheckSquare
+                : act.kind === 'goal'
+                ? Target
                 : act.kind === 'project'
                 ? Briefcase
                 : act.kind === 'stage'
@@ -1420,46 +1541,88 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
                   </select>
                 </div>
               ) : (
-                <div className="space-y-1.5">
-                  <label
-                    htmlFor="creation-context-folder"
-                    className="text-[13px] font-medium flex items-center gap-1.5"
-                    style={{ color: 'var(--text-primary)' }}
-                  >
-                    <FolderIcon className="w-3.5 h-3.5" aria-hidden="true" />
-                    <span>{UK_STRINGS.creation.fieldFolderContext}</span>
-                  </label>
-                  <select
-                    id="creation-context-folder"
-                    data-testid="creation-context-folder-select"
-                    value={editableContext.folderId ?? ''}
-                    onChange={(e) =>
-                      setEditableContext((prev) => ({
-                        ...prev,
-                        folderId: e.target.value ? e.target.value : null,
-                      }))
-                    }
-                    className="w-full min-h-[42px] px-3 py-1.5 rounded-xl text-[16px]"
-                    style={{
-                      backgroundColor: 'var(--bg-surface)',
-                      color: 'var(--text-primary)',
-                      border: '1px solid var(--border-subtle)',
-                    }}
-                  >
-                    {folderOptions.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label
+                      htmlFor="creation-context-goal"
+                      className="text-[13px] font-medium flex items-center gap-1.5"
+                      style={{ color: 'var(--text-primary)' }}
+                    >
+                      <Target className="w-3.5 h-3.5" aria-hidden="true" />
+                      <span>Ціль</span>
+                    </label>
+                    <select
+                      id="creation-context-goal"
+                      data-testid="creation-context-goal-select"
+                      value={editableContext.goalId ?? ''}
+                      onChange={(e) => {
+                        const nextGoalId = e.target.value ? e.target.value : null;
+                        const linkedGoal = goals.find((g) => g.id === nextGoalId);
+                        setEditableContext((prev) => ({
+                          ...prev,
+                          goalId: nextGoalId,
+                          folderId:
+                            nextGoalId && linkedGoal?.folderId
+                              ? linkedGoal.folderId
+                              : prev.folderId,
+                        }));
+                      }}
+                      className="w-full min-h-[42px] px-3 py-1.5 rounded-xl text-[16px]"
+                      style={{
+                        backgroundColor: 'var(--bg-surface)',
+                        color: 'var(--text-primary)',
+                        border: '1px solid var(--border-subtle)',
+                      }}
+                    >
+                      {goalOptions.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label
+                      htmlFor="creation-context-folder"
+                      className="text-[13px] font-medium flex items-center gap-1.5"
+                      style={{ color: 'var(--text-primary)' }}
+                    >
+                      <FolderIcon className="w-3.5 h-3.5" aria-hidden="true" />
+                      <span>{UK_STRINGS.creation.fieldFolderContext}</span>
+                    </label>
+                    <select
+                      id="creation-context-folder"
+                      data-testid="creation-context-folder-select"
+                      value={editableContext.folderId ?? ''}
+                      onChange={(e) =>
+                        setEditableContext((prev) => ({
+                          ...prev,
+                          folderId: e.target.value ? e.target.value : null,
+                        }))
+                      }
+                      className="w-full min-h-[42px] px-3 py-1.5 rounded-xl text-[16px]"
+                      style={{
+                        backgroundColor: 'var(--bg-surface)',
+                        color: 'var(--text-primary)',
+                        border: '1px solid var(--border-subtle)',
+                      }}
+                    >
+                      {folderOptions.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               )}
             </div>
           )}
 
-          {selectedAction === 'project' && (
+          {selectedAction === 'goal' && (
             <SelectField
-              label={UK_STRINGS.creation.projectForm.folderLabel}
+              label={UK_STRINGS.creation.goalForm.folderLabel}
               options={folderOptions}
               value={editableContext.folderId ?? ''}
               onChange={(e) =>
@@ -1468,8 +1631,37 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
                   folderId: e.target.value ? e.target.value : null,
                 }))
               }
-              data-testid="creation-project-folder-select"
+              data-testid="creation-goal-folder-select"
             />
+          )}
+
+          {selectedAction === 'project' && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <SelectField
+                label={UK_STRINGS.creation.projectForm.folderLabel}
+                options={folderOptions}
+                value={editableContext.folderId ?? ''}
+                onChange={(e) =>
+                  setEditableContext((prev) => ({
+                    ...prev,
+                    folderId: e.target.value ? e.target.value : null,
+                  }))
+                }
+                data-testid="creation-project-folder-select"
+              />
+              <SelectField
+                label="Ціль (необов’язково)"
+                options={goalOptions}
+                value={editableContext.goalId ?? ''}
+                onChange={(e) =>
+                  setEditableContext((prev) => ({
+                    ...prev,
+                    goalId: e.target.value ? e.target.value : null,
+                  }))
+                }
+                data-testid="creation-project-goal-select"
+              />
+            </div>
           )}
 
           {selectedAction === 'stage' && (
@@ -2082,6 +2274,92 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
           </div>
         )}
 
+        {selectedAction === 'goal' && (
+          <div className="space-y-3.5" data-testid="create-goal-form">
+            <InputField
+              label={UK_STRINGS.creation.goalForm.titleLabel}
+              placeholder={UK_STRINGS.creation.goalForm.titlePlaceholder}
+              value={goalTitle}
+              onChange={(e) => setGoalTitle(e.target.value)}
+              data-testid="create-goal-title-input"
+              required
+            />
+            <TextAreaField
+              label={UK_STRINGS.creation.goalForm.purposeLabel}
+              placeholder={UK_STRINGS.creation.goalForm.purposePlaceholder}
+              value={goalPurpose}
+              onChange={(e) => setGoalPurpose(e.target.value)}
+              data-testid="create-goal-purpose-input"
+            />
+            <TextAreaField
+              label={UK_STRINGS.creation.goalForm.criteriaLabel}
+              placeholder={UK_STRINGS.creation.goalForm.criteriaPlaceholder}
+              value={goalCriteria}
+              onChange={(e) => setGoalCriteria(e.target.value)}
+              data-testid="create-goal-criteria-input"
+            />
+            <TextAreaField
+              label={UK_STRINGS.creation.goalForm.implementationIntentionLabel}
+              placeholder={
+                UK_STRINGS.creation.goalForm.implementationIntentionPlaceholder
+              }
+              value={goalIntention}
+              onChange={(e) => setGoalIntention(e.target.value)}
+              data-testid="create-goal-intention-input"
+            />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <SelectField
+                label={UK_STRINGS.creation.goalForm.stateLabel}
+                value={goalState}
+                onChange={(e) => setGoalState(e.target.value as GoalState)}
+                options={[
+                  {
+                    value: 'idea',
+                    label: UK_STRINGS.creation.goalForm.stateIdea,
+                  },
+                  {
+                    value: 'active',
+                    label: UK_STRINGS.creation.goalForm.stateActive,
+                  },
+                  {
+                    value: 'paused',
+                    label: UK_STRINGS.creation.goalForm.statePaused,
+                  },
+                  {
+                    value: 'completed',
+                    label: UK_STRINGS.creation.goalForm.stateCompleted,
+                  },
+                ]}
+                data-testid="create-goal-state-select"
+              />
+              <SelectField
+                label={UK_STRINGS.creation.goalForm.nextActionLabel}
+                value={goalNextActionTaskId}
+                onChange={(e) => setGoalNextActionTaskId(e.target.value)}
+                options={openTaskOptions}
+                data-testid="create-goal-next-action-select"
+              />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <InputField
+                label={UK_STRINGS.creation.goalForm.targetDateLabel}
+                type="date"
+                lang="uk"
+                value={goalTargetDate ?? ''}
+                onChange={(e) => setGoalTargetDate(e.target.value || null)}
+                data-testid="create-goal-target-date-input"
+              />
+              <InputField
+                label={UK_STRINGS.creation.goalForm.targetPeriodLabel}
+                placeholder="Наприклад: Q3 2026 або До кінця року"
+                value={goalTargetPeriod}
+                onChange={(e) => setGoalTargetPeriod(e.target.value)}
+                data-testid="create-goal-target-period-input"
+              />
+            </div>
+          </div>
+        )}
+
         {selectedAction === 'project' && (
           <div className="space-y-3.5">
             <InputField
@@ -2312,7 +2590,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
                 label="Сфера життя (необов’язково)"
                 options={[
                   { value: '', label: 'Без прив’язки до сфери' },
-                  ...lifeAreaQuestions.map((la) => ({
+                  ...lifeAreaQuestions.filter(area => !area.archived && !area.mergedIntoId).map((la) => ({
                     value: la.id,
                     label: la.questionTextUk,
                   })),

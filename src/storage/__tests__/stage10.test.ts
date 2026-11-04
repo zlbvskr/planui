@@ -252,19 +252,19 @@ describe('Stage 10: Me, Wishlist, Reflection, and Local Media Tests', () => {
     assert.equal(snap2.personalRecords[0].id, 'rec-1');
   });
 
-  it('10.3 Life areas: 8 Ukrainian questions, partial assessments, and question wording edits preserving historical snapshots', async () => {
+  it('10.3 Life areas: current Ukrainian starter areas, partial legacy-scale assessments, and question wording edits preserving historical snapshots', async () => {
     const { repo } = createTestRepos();
 
     const { snapshot: initSnap } = await repo.captureCoherentSnapshot();
     const questions = initSnap.lifeAreaQuestions;
-    assert.equal(questions.length, 8);
+    assert.equal(questions.length, 10);
     assert.ok(LIFE_AREA_SCALE_1_10_LABELS_UK[10].includes('10'));
 
     const firstQ = questions[0];
     const originalWording = firstQ.questionTextUk;
     assert.equal(firstQ.version, 1);
 
-    // 1. Create a partial assessment (only 3 of 8 questions scored, others null)
+    // 1. Create a partial assessment (only 3 of 10 areas scored, others null)
     const assessment1 = buildLifeAreaAssessmentSnapshot({
       id: 'assess-1',
       periodStartLocalDate: '2026-03-30',
@@ -282,7 +282,7 @@ describe('Stage 10: Me, Wishlist, Reflection, and Local Media Tests', () => {
     });
     await repo.saveLifeAreaAssessment(assessment1);
 
-    assert.equal(assessment1.answers.length, 8);
+    assert.equal(assessment1.answers.length, 10);
     assert.equal(assessment1.answers[0].score, 8);
     assert.equal(assessment1.answers[1].score, null);
     assert.equal(assessment1.answers[0].questionTextSnapshotUk, originalWording);
@@ -740,6 +740,8 @@ describe('Stage 10: Me, Wishlist, Reflection, and Local Media Tests', () => {
 
     const nowIso = '2026-04-05T14:00:00.000Z';
 
+    // Initialize the fresh fixture before updating settings; existing empty area sets are never reseeded.
+    await sourceRepo.getOrInitSettings(nowIso);
     // 1. Populate source database with Stage 10 entities + binary raster media
     await sourceRepo.updateSettingsPatch({
       preferredWishlistCurrency: 'UAH',

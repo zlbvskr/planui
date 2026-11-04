@@ -7,10 +7,12 @@ import { compareLocalDates } from './temporal';
 import {
   EntityId,
   Folder,
+  Goal,
   IsoInstantString,
   LocalDateString,
   Project,
   Task,
+  TaskOwnership,
   TaskReservation,
 } from './types';
 
@@ -179,11 +181,13 @@ export function computeFolderDeleteImpact(
   let projectTaskCount = 0;
 
   for (const task of tasks) {
-    if (
-      task.ownership.kind === 'standalone' &&
-      task.ownership.folderId !== null &&
-      subtreeIds.has(task.ownership.folderId)
-    ) {
+    const isFolderTask =
+      (task.ownership.kind === 'folder' && subtreeIds.has(task.ownership.folderId)) ||
+      (task.ownership.kind === 'standalone' &&
+        task.ownership.folderId &&
+        subtreeIds.has(task.ownership.folderId));
+
+    if (isFolderTask) {
       standaloneTaskCount++;
     } else if (
       task.ownership.kind === 'project' &&
@@ -264,5 +268,144 @@ export function buildAbbreviatedBreadcrumbs(
     hiddenMiddle: fullChain.slice(1, fullChain.length - (maxVisible - 1)),
     visibleTrailing: fullChain.slice(fullChain.length - (maxVisible - 1)),
     fullChain,
+  };
+}
+
+/**
+ * M1 / Goal Task Progress Calculation
+ * Calculates countable progress across direct tasks and (optionally) projects of a goal.
+ * Completed tasks divided by all non-canceled countable tasks.
+ */
+export interface GoalTaskProgress {
+  directTasks: {
+    completedCount: number;
+    openCount: number;
+    canceledCount: number;
+    totalCountable: number;
+  };
+  projectTasks: {
+    completedCount: number;
+    openCount: number;
+    canceledCount: number;
+    totalCountable: number;
+  };
+  totalCountable: number;
+  completedCount: number;
+  percentage: number | null;
+  hasCountableTasks: boolean;
+}
+
+export function calculateGoalProgress(
+  goalId: EntityId,
+  tasks: readonly Task[],
+  projects: readonly Project[]
+): GoalTaskProgress {
+  const associatedProjectIds = new Set<EntityId>(
+    projects.filter((p) => p.goalId === goalId).map((p) => p.id)
+  );
+
+  let directCompleted = 0;
+  let directOpen = 0;
+  let directCanceled = 0;
+
+  let projectCompleted = 0;
+  let projectOpen = 0;
+  let projectCanceled = 0;
+
+  for (const task of tasks) {
+    if (task.ownership.kind === 'goal' && task.ownership.goalId === goalId) {
+      if (task.state === 'completed') directCompleted++;
+      else if (task.state === 'open') directOpen++;
+      else if (task.state === 'canceled') directCanceled++;
+    } else if (
+      task.ownership.kind === 'project' &&
+      associatedProjectIds.has(task.ownership.projectId)
+    ) {
+      if (task.state === 'completed') projectCompleted++;
+      else if (task.state === 'open') projectOpen++;
+      else if (task.state === 'canceled') projectCanceled++;
+    }
+  }
+
+  const directTotal = directCompleted + directOpen;
+  const projectTotal = projectCompleted + projectOpen;
+  const totalCountable = directTotal + projectTotal;
+  const totalCompleted = directCompleted + projectCompleted;
+
+  const percentage =
+    totalCountable > 0 ? Math.round((totalCompleted / totalCountable) * 100) : null;
+
+  return {
+    directTasks: {
+      completedCount: directCompleted,
+      openCount: directOpen,
+      canceledCount: directCanceled,
+      totalCountable: directTotal,
+    },
+    projectTasks: {
+      completedCount: projectCompleted,
+      openCount: projectOpen,
+      canceledCount: projectCanceled,
+      totalCountable: projectTotal,
+    },
+    totalCountable,
+    completedCount: totalCompleted,
+    percentage,
+    hasCountableTasks: totalCountable > 0,
+  };
+}
+
+/**
+ * M1 / Life-Area Inheritance Resolution
+ * Direct lifeAreaId takes precedence.
+ * If unset, inherited from parent Goal (for a project or direct task) or Project's Goal.
+ * Resolved dynamically without copying or overwriting descendant fields.
+ */
+export interface ResolvedLifeAreaContext {
+  directLifeAreaId: EntityId | null;
+  inheritedLifeAreaId: EntityId | null;
+  effectiveLifeAreaId: EntityId | null;
+}
+
+export function resolveEffectiveLifeArea(
+  entity: {
+    lifeAreaId?: EntityId | null;
+    ownership?: TaskOwnership;
+    goalId?: EntityId | null;
+  },
+  context: {
+    goalsById: ReadonlyMap<EntityId, Goal>;
+    projectsById: ReadonlyMap<EntityId, Project>;
+  }
+): ResolvedLifeAreaContext {
+  const directLifeAreaId = entity.lifeAreaId ?? null;
+  let inheritedLifeAreaId: EntityId | null = null;
+
+  if (entity.ownership) {
+    if (entity.ownership.kind === 'goal') {
+      const parentGoal = context.goalsById.get(entity.ownership.goalId);
+      inheritedLifeAreaId = parentGoal?.lifeAreaId ?? null;
+    } else if (entity.ownership.kind === 'project') {
+      const parentProject = context.projectsById.get(entity.ownership.projectId);
+      if (parentProject) {
+        if (parentProject.lifeAreaId) {
+          inheritedLifeAreaId = parentProject.lifeAreaId;
+        } else if (parentProject.goalId) {
+          const parentGoal = context.goalsById.get(parentProject.goalId);
+          inheritedLifeAreaId = parentGoal?.lifeAreaId ?? null;
+        }
+      }
+    }
+  } else if (entity.goalId) {
+    const parentGoal = context.goalsById.get(entity.goalId);
+    inheritedLifeAreaId = parentGoal?.lifeAreaId ?? null;
+  }
+
+  const effectiveLifeAreaId = directLifeAreaId ?? inheritedLifeAreaId;
+
+  return {
+    directLifeAreaId,
+    inheritedLifeAreaId,
+    effectiveLifeAreaId,
   };
 }

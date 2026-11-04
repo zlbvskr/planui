@@ -1,3 +1,6 @@
+import { RoadmapCalendarLayer } from './RoadmapCalendarLayer';
+import { RoadmapSource, projectRoadmap, roadmapMarkers } from '../domain/roadmap';
+import { PlanuiSettings } from '../domain/types';
 import React, { useMemo, useState } from 'react';
 import {
   Calendar as CalendarIcon,
@@ -51,6 +54,8 @@ import { SharedDayTimeline } from '../components/timeline/SharedDayTimeline';
 import { WorkRosterSubview } from '../components/roster/WorkRosterSubview';
 
 export interface CalendarWorkspaceViewProps {
+  roadmapSource: RoadmapSource;
+  settings: PlanuiSettings;
   selectedDate: LocalDateString;
   actualTodayDate: LocalDateString;
   mode: CalendarViewMode;
@@ -85,6 +90,8 @@ function formatMinutesCompactUk(totalMinutes: number): string {
 }
 
 export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
+  roadmapSource,
+  settings,
   selectedDate,
   actualTodayDate,
   mode,
@@ -111,6 +118,9 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
   const [wideWeekViewStyle, setWideWeekViewStyle] = useState<
     'overview' | 'columns'
   >('overview');
+
+  const roadmapItems = useMemo(() => projectRoadmap(roadmapSource), [roadmapSource]);
+  const roadmapCount = (date: string) => roadmapMarkers(roadmapItems, date, settings.roadmapLayer ?? 'hidden').length;
 
   // 8.1 Work Schedule subview is hosted inside Calendar alongside Month, Week, Day.
   const effectiveMode: CalendarViewMode =
@@ -1076,6 +1086,7 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
       </Card>
 
       {/* =================================================================== */}
+      {effectiveMode !== 'work_schedule' && <RoadmapCalendarLayer selectedDate={selectedDate} source={roadmapSource} settings={settings} repositories={repositories} startDate={effectiveMode === 'month' ? monthGrid.cells[0].localDate : effectiveMode === 'week' ? weekOverview.days[0].localDate : selectedDate} endDateExclusive={addDaysToLocalDate(effectiveMode === 'month' ? monthGrid.cells[monthGrid.cells.length - 1].localDate : effectiveMode === 'week' ? weekOverview.days[6].localDate : selectedDate, 1)} onChanged={() => onDataChanged()} />}
       {/* 8.1–8.6 WORK SCHEDULE SUBVIEW INSIDE CALENDAR                       */}
       {/* =================================================================== */}
       {effectiveMode === 'work_schedule' && (
@@ -1138,7 +1149,7 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
                     key={cell.localDate}
                     type="button"
                     onClick={() => handleCellSelect(cell)}
-                    aria-label={cell.accessibleSummaryUk}
+                    aria-label={cell.accessibleSummaryUk + (roadmapCount(cell.localDate) ? '; Дорожня карта: ' + roadmapCount(cell.localDate) + ' позначок' : '')}
                     aria-pressed={isSelected}
                     aria-current={isToday ? 'date' : undefined}
                     data-testid={`month-cell-${cell.localDate}`}
@@ -1165,6 +1176,7 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
                       opacity: inMonth || isSelected ? 1 : 0.72,
                     }}
                   >
+                    {roadmapCount(cell.localDate) > 0 && <span className="text-xs font-semibold" aria-hidden="true">◇ {roadmapCount(cell.localDate)}</span>}
                     {/* Top row: date number + overflow badge */}
                     <div className="flex w-full items-center justify-between gap-0.5">
                       <span
@@ -1433,7 +1445,7 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
                           className="text-xs font-bold uppercase"
                           style={{ color: 'var(--text-secondary)' }}
                         >
-                          {day.weekdayShortUk}
+                          {day.weekdayShortUk} {roadmapCount(day.localDate) > 0 && <span aria-label={`Дорожня карта: ${roadmapCount(day.localDate)} позначок`}>◇ {roadmapCount(day.localDate)}</span>}
                         </span>
                         {day.isToday && (
                           <span
@@ -1569,7 +1581,7 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
                                 }
                           }
                         >
-                          {day.weekdayShortUk}
+                          {day.weekdayShortUk} {roadmapCount(day.localDate) > 0 && <span aria-label={`Дорожня карта: ${roadmapCount(day.localDate)} позначок`}>◇ {roadmapCount(day.localDate)}</span>}
                         </span>
                         <div>
                           <div className="flex flex-wrap items-center gap-1.5">

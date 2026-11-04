@@ -50,19 +50,21 @@ Commands run against the unmodified workspace prior to creating documentation:
 
 | Stage | Title | Primary Scope | Status |
 |---|---|---|---|
-| **Stage 1** | **Workspace Audit and Persistent Contract** | Inspect workspace, run baseline checks, persist complete C01–C22 Master Contract and architecture/data/design/backup/test/decision/status docs | **Completed** |
-| **Stage 2** | **Local Data and Early Backup** | IndexedDB schema (`planui_db` v1), runtime validators, folder cycle prevention, exact money utilities, Wishlist & category stores, revision-checked repositories, multi-tab sync, early ZIP backup export/validation & round-trip tests | **Completed** |
-| **Stage 3** | **Design System and Floating Shell** | Semantic light/dark/system tokens, Ukrainian (`uk-UA`) localization foundation, 5-destination floating navigation capsule, separate global creation button, shared modal/sheet editor host with dirty-form & focus guards | **Completed** |
-| **Stage 4** | **Plans and Organization** | Unbounded folders (single-container mobile browser + ancestor breadcrumb, rehome/recursive delete), projects, flat stages, accurate progress calculation, tasks, checklists, checklist-to-task promotion, batch actions | **Completed** |
-| **Stage 5** | **Shared Temporal Engine and Scheduling** | Device/manual IANA time zones, calendar arithmetic, DST handling, task reservations, transactional task completion/cancellation releasing unused reservations, events & overnight shift projection, union-based unoccupied gap engine | **Completed** |
-| **Stage 6** | **Day Timeline and Today** | Shared proportional 24h timeline, overlap lanes, Today workspace (header, nearest commitment, compact habits, collapsible untimed tasks, timeline, divider, collapsible next calendar day with overnight carryover), gap task picker | **Completed** |
-| **Stage 7** | **Month/Week Calendar** | Month grid (7×6, adjacent-month dates, `00:00–12:00–24:00` local-clock work strip with overnight segments, compact markers), readable phone Week view & wide-screen Week timeline, shared Calendar Day view | **Completed** |
-| **Stage 8** | **Work Roster** | Shift templates, Work Schedule batch editor, explicit day-off annotations, finite period shift generator, deterministic Ukrainian/local text roster parser with preview & warnings, accurate month intersection summaries | **Completed** |
-| **Stage 9** | **Habits** | Daily, weekday, and weekly-frequency habits, binary/numeric targets, effective-dated rule revisions, local-date entries (including previous-date night-shift logging), transparent rule-appropriate streaks, Today integration | **Completed** |
-| **Stage 10** | **Personal Space, Wishlist, and Media** | Unified Personal Records (quick state + journal, 1–5 mood/energy/stress scales), 8 editable Life Area questions (1–10 assessments), Inspiration with validated local JPEG/PNG/WebP images, Wishlist (`Зараз`/`Пізніше`/`Колись`, flat categories, exact price & currency preference), Settings | **Completed** |
-| **Stage 11** | **Complete Backup/Recovery Integration** | Full ZIP export/import UI with preview, hostile archive & checksum/reference validation, bounded pre-replacement recovery snapshots (up to 3), media garbage-collection protection, full round-trip verification | **Completed** |
-| **Stage 12** | **PWA and Platform Refinement** | Web App Manifest, original PLANUI icons, offline service worker caching (separated from IndexedDB lifecycle), safe update prompt, keyboard/safe-area/viewport audit (`320`–`1440px`) | Pending |
-| **Stage 13** | **Final Audit** | Comprehensive C01–C22 acceptance verification, unit + integration + browser test execution, final documentation and release checkpoint | Pending |
+| **Stage 1–11** | **Original Core Baseline** | Workspace audit, local data, design system, folders/projects/tasks, temporal engine, timeline, calendar, roster, habits, me, and ZIP backup integration | **Completed & Verified** |
+| **Stage M0** | **Baseline Audit & Documentation Alignment** | Baseline verification, fix repositories import, update master contract, decisions, requirements coverage, and implementation status for `PLANUI-LIFE-ALIGNMENT-1` | **Completed** |
+| **Stage M1** | **Canonical Direction / Goal / Project / Task Model** | Folders as directions (unbounded depth, cycle prevention), distinct Goal entity, planning states, task ownership discriminated union, dynamic life-area inheritance, transactional repositories, schema v2 migration, v1/v2 ZIP backup round-trip, automated test suite | **Completed** |
+| **Stage M2** | **4-Destination Shell & Core Navigation** | Realign navigation to `Сьогодні` → `Календар` → `Напрями` → `Я`; move Settings inside `Я`; update floating capsule and contextual creation | **Completed** |
+| **Stage M3** | **Projects, Stages & Tasks Realignment** | Complete Directions, Goals, and Projects experience: hierarchy navigation, Goal CRUD, planning states, task ownership (4 kinds), transparent task counts, starter directions on explicit click | **Completed** |
+| **Stage M4** | **Roadmap Projection (Дорожня карта)** | Canonical projection, explicit precision, checkpoints, optional calendar layer; zero occupancy | Implemented; full toolchain/browser verification blocked |
+| **Stage M5** | **Today Workspace Alignment** | Separate day/tasks/optional habits modes; canonical dated focus, manual effort, minimal day, planning previews, context restoration | Implemented; full toolchain/browser verification blocked |
+| **Stage M6 (latest approved scope)** | **Life Areas & Lightweight Reviews** | Editable ten-area framework, immutable review scales/history, transactional area merges, effective links and explicit planning-review actions | Implemented; full toolchain/browser verification blocked |
+| **Deferred habit alignment (formerly M6)** | **Embedded Habits & Work-day Rules** | Minimum viable versions, context execution and work-day rules remain unimplemented | Planned; stage assignment not changed automatically |
+| **Former Stage M7 label** | **Life Areas 10-Area Starter Set & Reviews** | Delivered within the latest user-approved M6 scope | Superseded stage label; no separate M7 execution claimed |
+| **Stage M8** | **State Check-ins & Legacy Diary Archive** | Short state check-ins (mood, energy, tension 1–5, optional sleep, notes); accessible legacy diary archive | Planned |
+| **Stage M9** | **Моє бажане життя (Desired Life)** | Desired life descriptions, images, prompts, links to life areas and goals; preserve existing inspiration | Planned |
+| **Stage M10** | **Wishlist Extension & Purchase Statuses** | Extended purchase statuses (`Хочу`, `Куплено`, `Більше не актуально`), project/url/image links, preserve legacy records | Planned |
+| **Stage 12** | **PWA and Platform Refinement** | Web App Manifest, original PLANUI icons, offline service worker caching, safe update prompt, responsive audit (`320`–`1440px`) | Planned |
+| **Stage 13** | **Final Integration and Release Audit** | Comprehensive C01–C22 acceptance verification, unit + integration + browser test execution, release checklist | Planned |
 
 ---
 
@@ -129,7 +131,157 @@ Commands run against the unmodified workspace prior to creating documentation:
   - Implemented recovery snapshot restoration (`restoreFromRecoverySnapshotTransactionally`), recovery snapshot ZIP export (`exportRecoverySnapshotZip`), protected snapshot deletion (`deleteRecoverySnapshotTransactionally` with `ONLY_RECOVERY_POINT_CONFIRMATION_REQUIRED`), and controlled PLANUI data reset (`resetAllPlanuiDataTransactionally` with `RESET_CONFIRMATION_REQUIRED` and snapshot retention/clearing options).
   - Completed the Ukrainian Settings, Storage Persistence, Backup/Restore, Recovery Snapshots, and Controlled Reset UX in `src/views/BasicSettingsView.tsx` (`src/views/MeWorkspaceView.tsx`, `src/i18n/uk.ts`, `src/i18n/errorsUk.ts`).
   - Verified with Stage 11 adversarial test suite (`src/storage/__tests__/stage11.test.ts`, 54/54 tests passing across all 9 suites), `npm run lint`, `npm run build`, and Playwright CLI browser verification at desktop (`1440×900`) and mobile (`390×844`).
+- **Checkpoint `STAGE-M0-COMPLETE` (2026-11-03)**:
+  - **Actual Workspace Baseline Audit**:
+    * Inspected actual workspace tooling and tests: Node `v22.23.4`, npm `10.9.9`, TypeScript `v7.0.2`, `tsx v4.23.15`, React `19.0.1`, Vite `8.3.5`.
+    * Resolved single missing import `PLANUI_DB_SCHEMA_VERSION` in `src/storage/repositories.ts` to restore clean typecheck and test runner execution.
+    * Ran `npm run lint` (`tsc --noEmit`): **0 errors, exit code 0**.
+    * Ran all 9 unit test suites (`src/storage/__tests__/*.test.ts`): **54/54 tests passing across all suites, exit code 0** (100% baseline pass).
+    * Ran `npm run build` (`vite build`): **Built in 837ms, exit code 0**.
+  - **Incorporated PLANUI-LIFE-ALIGNMENT-1 Approved Product Delta**:
+    * Updated `docs/PLANUI_MASTER_CONTRACT.md` as the canonical product specification covering all 14 points of the life-alignment revision.
+    * Updated `docs/DECISIONS.md` marking superseded decisions (5 tabs -> 4 tabs; no goals -> distinct goals; standalone habits -> embedded module; standalone diary -> short check-ins + legacy archive; 8 areas -> 10 starter areas + reviews; Wishlist purchase statuses; Roadmap projection).
+    * Updated `docs/REQUIREMENTS_COVERAGE.md` with stable requirement identifiers and stage mapping across M0–M10, Stage 12, and Stage 13.
+  - **Generated PLANUI-LIFE-ALIGNMENT-1 Migration Map**:
+    * *Unchanged Entities & IDs*: `folders` (Directions hierarchy), `projects`, `stages`, `tasks`, `reservations`, `events`, `shiftTemplates`, `dayOffAnnotations`, `habits`, `habitEntries`, `personalRecords`, `lifeAreaQuestions`, `lifeAreaAssessments`, `inspirationItems`, `mediaMeta`, `mediaBlobs`, `wishlistCategories`, `wishes`, `settings`, `recoverySnapshots`.
+    * *New Entities & Schema Realignment*:
+      - `goals`: Distinct Goal entity linked to direction folders, containing projects or direct tasks, with purpose ("Навіщо це мені"), completion criteria, optional next action reference, timing, and life area links.
+      - `projects`: Extended with purpose, completion criteria, next action task reference, and goal linkage (`goalId`).
+      - `tasks`: Extended with optional effort labels (`minimal` | `moderate` | `deep` / `легке` | `помірне` | `глибоке`).
+      - `roadmap`: Virtual projection of canonical goals, projects, stages, checkpoints, and horizons; strictly non-blocking (zero calendar occupancy).
+      - `today`: Embedded `День` (timeline), `Завдання` (tasks), optional `Звички` (habits); daily focus note, manual minimal-day mode.
+      - `habits`: Embedded in `Сьогодні`; minimum viable versions, execution contexts ("після пробудження", "після зміни"), work-day rules, safe disable toggle.
+      - `lifeAreas`: 10-area holistic starter set; periodic reviews (`satisfactionScore` 0–10, attention preference, 1 change); immutable preservation of all 8 historical questions and answers.
+      - `stateCheckIns`: Short check-ins (mood, energy, tension 1–5, optional sleep info); all diary text preserved in an accessible legacy archive.
+      - `desiredLife`: "Моє бажане життя" descriptions, local raster images, prompts, life area & goal links; existing inspiration preserved.
+      - `wishlist`: Extended purchase statuses (`Хочу`, `Куплено`, `Більше не актуально`), project links, web links, images; exact money & ISO currencies preserved; legacy records preserved.
+    * *Legacy Preservation*: All 8-area questions and assessments preserved immutably; all personal journal text preserved in legacy archive; all fulfilled/archived wishes preserved without fabricating purchase dates; all habit revision histories preserved.
+    * *Compatibility & Safety*: Disabling optional modules never deletes records, never drops items from ZIP backups, and never alters occupied calendar time. Schema migration to version 2 will be backward-compatible with v1 stores and backups.
+
+- **Checkpoint `STAGE-M1-COMPLETE` (2026-11-03)**:
+  - **Canonical Model Implemented**:
+    * Retained existing `folders` store as the unbounded hierarchy for Directions without creating competing trees.
+    * Added canonical `Goal` entity (`GoalRecord`) with purpose (`purposeUk`, "Навіщо це мені"), completion criteria (`completionCriteriaUk`), reference to canonical next action (`nextActionTaskId`), timing metadata (`timing.targetDate`, `timing.targetPeriodUk`), direct life-area link (`lifeAreaId`), implementation intention (`implementationIntentionUk`, "Якщо..., то..."), and orthogonal archiving (`archived: boolean`).
+    * Planning entity states: `idea`, `active`, `paused`, `completed` for both goals and projects.
+    * Single canonical task ownership discriminated union (`TaskOwnership`):
+      `{ kind: 'standalone'; folderId?: null }` (standalone without direction)
+      `{ kind: 'folder'; folderId: EntityId }` (direction/folder task)
+      `{ kind: 'goal'; goalId: EntityId }` (direct goal task)
+      `{ kind: 'project'; projectId: EntityId; stageId: EntityId | null }` (project task; inherits context from project)
+      *Maintained backwards compatibility for v1 `{ kind: 'standalone'; folderId: string }` during validation and migration.*
+    * Dynamic life-area inheritance (`resolveEffectiveLifeArea`): direct assignment takes precedence; otherwise inherited dynamically from parent Goal or Project's Goal without duplicating or mutating records down trees.
+    * Goal progress calculation (`calculateGoalProgress`): honest percentage based on countable direct tasks and associated project tasks (excluding canceled).
+  - **Persistence, Storage & Migrations**:
+    * Incremented `PLANUI_DB_SCHEMA_VERSION` to `2`.
+    * Added `goals` object store to `STORE_NAMES`, `ALL_STORE_NAMES`, and `DOMAIN_DATA_STORES` with indexes `by_folderId`, `by_lifeAreaId`, `by_state`, `by_archived`.
+    * Upgraded `IndexedDbStorageEngine.onupgradeneeded` to safely migrate v1 stores to v2 (auto-converting `{ kind: 'standalone', folderId: 'xyz' }` to `{ kind: 'folder', folderId: 'xyz' }`).
+    * Implemented Goal repository transactions: `saveGoal`, `deleteGoalTransactionally` (with safe unlinking of child projects and rehoming/deletion of direct tasks), `archiveGoalTransactionally`, and updated `saveProject`, `saveTask`, `moveTaskOwnershipTransactionally`.
+  - **ZIP Backup & Restore Compatibility**:
+    * Incremented `PLANUI_BACKUP_VERSION` to `2`.
+    * Included `entityCounts.goals` and `goals` array in `data.json`.
+    * Upgraded `migrateSupportedDomainSnapshot` in `backupService.ts` to support both v1 and v2 archives, ensuring v1 archives import seamlessly with default `goals = []` and migrated task ownership.
+  - **Verification**:
+    * Added new automated test suite `src/storage/__tests__/stageM1.test.ts` (7/7 tests passing).
+    * Total automated test suite: **61/61 tests passing across 10 suites (100% pass rate)**.
+    * Type check (`npm run lint` / `tsc --noEmit`): **0 errors**.
+
+- **Checkpoint `STAGE-M2-COMPLETE` (2026-11-04)**:
+  - **Four Primary Destinations Shell Implemented**:
+    * Enforced the canonical order of exactly 4 primary destinations: 1. `Сьогодні` (`today`), 2. `Календар` (`calendar`), 3. `Напрями` (`directions`), 4. `Я` (`me`).
+    * Active styling applied strictly to the selected destination alone.
+    * Settings positioned strictly as secondary within `Я`, never as a fifth primary tab.
+    * Mobile floating capsule re-architected with `grid grid-cols-4`, safe-area spacing, and separate floating `+` button.
+    * Desktop sidebar navigation with intentional `lg:w-[264px]` sidebar and `max-w-[1080px]` content container.
+  - **Route & Bookmark Migration**:
+    * Former `#/plans` routes seamlessly open `#/directions` without broken bookmarks.
+    * Former `#/habits` routes open `#/today`.
+    * Former diary and records routes (`#/diary`, `#/records`) open `#/me` with `subView: 'records'` (accessible legacy history, zero dead pages).
+    * `#/settings` opens `#/me` with `subView: 'settings'`.
+  - **Optional Modules Preferences & Safe Auto-Enable**:
+    * Added `OptionalModulesSettings` (`habitsEnabled`, `stateCheckInsEnabled`, `desiredLifeEnabled`, `wishlistEnabled`, `userConfigured`) in `PlanuiSettings`.
+    * Fresh installations start with all 4 optional modules disabled by default.
+    * Existing installations and upgrades auto-enable populated features so user records are never silently hidden.
+    * Disabling a module never deletes user records, never cancels existing reservations, and never omits data from ZIP backups.
+    * Added dedicated "Додаткові модулі" controls in Settings with individual toggles.
+  - **Contextual Creation Actions**:
+    * Priority-ordered, compact creation options per destination.
+    * Today: task and event (with pre-filled date) + habit and personal check-in when enabled.
+    * Calendar: event, task, shift, day-off.
+    * Directions: task, goal, project, stage, folder.
+    * Me: contextual creation tailored to currently enabled modules (personal record, wish, wishlist category).
+  - **Verification**:
+    * Added comprehensive automated test suite `src/storage/__tests__/stageM2.test.ts` (7/7 tests passing).
+    * Total test suite: **68/68 tests passing across all 11 suites (100% pass rate)**.
+    * Typecheck (`npm run lint` / `tsc --noEmit`): **0 errors**.
+    * Production build (`npm run build` / `vite build`): **Passes cleanly**.
+    * Browser verification with Playwright CLI at desktop (`1440×900`) and mobile (`390×844`): confirmed 4 primary destinations in order, URL synchronization, bookmark migration, and non-destructive module toggles.
+
+- **Checkpoint `STAGE-M3-COMPLETE` (2026-11-04)**:
+  - **Directions Hierarchy Experience**:
+    * Structured on canonical folder hierarchy, preserving existing names and IDs.
+    * Mobile navigation drills down strictly one level/context at a time (`activeFolderId` → `activeGoalId` → `activeProjectId`), preventing infinite tree expansion on phone screens.
+    * Breadcrumbs provide ancestor paths with modal access for depths > 3.
+    * Cycle-safe folder moves powered by `getAllowedMoveTargetFolders`.
+    * Default rehoming deletion (`rehome_to_parent`) vs. explicit recursive deletion with impact counts.
+    * Starter directions suggestion card rendered on empty root container only via explicit user click (`Додати базові напрями (Дім, Робота, Самовдосконалення)`), never automatically populating workspace.
+  - **Goals & Projects Experience**:
+    * Clear conceptual and visual distinction: Goal (intended outcome), Project (finishable work body), Task (executable action), Habit (repeated practice).
+    * Supported relationships: Goal with direct tasks and no project; Goal with projects; Project without goal; Tasks directly in direction; Standalone tasks.
+    * Progressive disclosure: title is sufficient to create, optional purpose, criteria, canonical next action, timing metadata, life-area link, if-then implementation intention.
+    * Planning states (`Ідея`, `Активна`, `На паузі`, `Досягнута`) with visual separation of active commitments from ideas and paused work.
+    * Goal completion is an explicit user action, never inferred automatically.
+  - **Canonical Task Ownership & Progress**:
+    * Task editor supports all 4 ownership variants (`standalone`, `folder`, `goal`, `project`).
+    * Transparent project progress counts (`completedTasks / totalCountableTasks`), never contaminated by checklist rows.
+    * 1-level checklist with promotion of checklist item to independent task.
+    * Transactional goal deletion with choice between `unlink_children` and `delete_direct_tasks`.
+  - **Verification**:
+    * Created automated test suite `src/storage/__tests__/stageM3.test.ts` (5/5 tests passing).
+    * Full test suite: **73/73 tests passing across all 12 suites (100% pass rate)**.
+    * Typecheck (`npm run lint` / `tsc --noEmit`): **0 errors**.
+    * Production build (`npm run build` / `vite build`): **Passes cleanly**.
 
 
 
+- **Checkpoint M4 implementation (2026-11-04), verification incomplete**:
+  - Global active-by-default roadmap grouped by canonical direction paths, and goal/project detail roadmaps. Explicit idea/paused/completed filters. Undated plans and checkpoints remain accessible. No generated plans.
+  - Reused flat stages; each stage belongs to exactly one project or one goal. Button-based stage/checkpoint reordering and shared Ukrainian date forms work without dragging.
+  - Canonical goals/projects/stages store optional month, quarter, or half-open calendar-date periods and ordered checkpoints. Existing deadline fields remain authoritative. Both calendar and roadmap call revision-guarded updateRoadmapItem; no related dates, tasks, reservations, events, or shifts cascade.
+  - Persistent calendar layer: hidden, key dates, or key dates plus stage/project periods. Separate date-grouped informational lane with per-date and date-group overflow disclosure; unchanged work/event/task layout and availability engine.
+  - Schema and ZIP format v3. v1/v2 import supported; live upgrade adds empty metadata and hidden-layer defaults without inferred dates. Goal deletion cleans its owned stages. No storage reset or reseeding.
+  - Verification: 14 M4 tests pass, including simulated IndexedDB v2-to-v3 upgrade callback, ZIP replacement in isolated memory storage, leap/month/year/quarter boundaries, time-zone invariance, stale edits, and 300-minute real reservation/shift occupancy preservation. Full regression: 87/87 tests pass across 13 suites. Tests executed with Node 26 built-in TypeScript stripping and a temporary local import adapter, because tsx was unavailable.
+  - Local TypeScript 6.0.3 compiler: domain/storage semantic checks (strictNullChecks) pass; changed React files transpile with zero syntax diagnostics. This is supplementary verification, not the project's configured full type check.
+  - npm run lint fails because tsc is unavailable; npm dependency installation failed (sandbox DNS failure, then EACCES outside sandbox). npm run build fails because vite is unavailable. Production build and browser/device behavior require the actual dependencies. No browser/device verification claimed.
+  - Dependency graphs and automatic scheduling are explicitly out of scope. Stopped at M4; M5 and later remain planned.
 
+  - Separate pre-existing issue: docs/BACKUP_FORMAT.md section 4 states 150 MB archive / 1,000 entries, while zipCodec.ts enforces 100 MB / 500 entries (other limit differences also exist). M4 does not change those policies; align them in a separate backup-policy correction.
+
+
+- **Checkpoint M5 implementation (2026-11-04), verification incomplete**:
+  - Separate Ukrainian modes День / Завдання / optional Звички. Kept the shared proportional timeline, selected date followed by next date at the same scale, overnight segments, and persisted next-day collapse choice. No project/statistics/Wishlist dashboard added.
+  - Added relevant-task projection plus explicit general-list access; distinguishes deadlines, date-only assignments, sessions and estimates. Released future placeholders never become current commitments. Existing past/current/future/completed timeline states retained.
+  - Settings.dailyPlans stores per-calendar-date canonical task IDs, optional focus note and manual minimalDay. Up to three dated-task suggestions require explicit selection; more than three focus items are allowed. Task.effort is optional small/medium/large with Ukrainian labels. No state-check-in inference.
+  - Minimal day changes only focus/view metadata. Deadlines and session-related tasks stay visible; non-Day modes show a compact blocking-record/deadline/occupied-time summary. Full general-list access remains available. Priority is not used as a mandatory flag.
+  - Added task planning sheet from tasks and timeline sessions: explicit date/time/elapsed-duration editing, additional sessions, conflict warning with intentional-overlap confirmation, and exact date-only/without-date or single-reservation cancellation previews. Reviewed task/reservation revisions are checked; original interval metadata and historical records are retained. Current-reservation release retains its elapsed blocking slice.
+  - Reused existing lifecycle completion/reopening operations; no completion at planned end, no automatic reservation restoration, no deadline changes during scheduling.
+  - Today restores date/mode/scroll in sessionStorage, with in-memory per-mode scroll on mode switches. Current-time reveal is gated by first-entry context, never clock ticks. Explicit date/current-time actions remain available. Session context is optional and not backed up; disabling sessionStorage does not block the app.
+  - Schema/ZIP format v4; live v3 settings upgrade adds an empty dailyPlans map, earlier versions retain existing migrations, and imports support v1/v2/v3/v4. Missing effort remains unspecified. No user storage reset or seed.
+  - Automated suite: 100/100 tests pass across 14 suites, including 13 M5 tests. Executed with Node 26 and the existing temporary TypeScript import adapter because tsx is unavailable. M4 upgrade assertions were advanced to the current version without removing their preservation checks.
+  - Supplementary local TypeScript 6.0.3 semantic check for domain/storage/context and syntax checks for all 6 affected React files: zero diagnostics.
+  - npm run lint fails: missing tsc. npm run build fails: missing vite. Dependencies remain unavailable following the M4 installation failures. Full configured project type check, production build, browser scroll/focus/keyboard/device verification and native IndexedDB upgrade remain unverified. The upgrade callback is tested with isolated mock records.
+  - Stopped at M5. M6 and later remain planned. The previously recorded backup-limit documentation mismatch remains outside this stage.
+
+
+- **Checkpoint M6 implementation (2026-11-04), verification incomplete**:
+  - Followed the latest explicit M6 request for life areas/reviews, superseding the earlier M6-habits/M7-life-areas numbering. Habit minimum versions/context/work-day rules are not implemented in this stage and remain separately deferred.
+  - Genuinely fresh initialization provides the exact ten editable Ukrainian areas. Existing areas are never overwritten or reseeded, including an existing empty area store. Upgrades offer explicit starter add/mapping, with no name-similarity matching. Added rename, standing definition, hide/archive and non-drag ordering.
+  - Added new 0–10 reviews with explicit inclusive calendar-date periods, optional two-week suggestion, independent null/zero/false/empty answers, immutable question/name/identity/version/definition/scale snapshots and accessible history. Existing missing scale metadata stays interpreted as legacy 1–10. Normal save cannot overwrite a historical assessment; no history is removed by area edits or merges.
+  - Life-area reviews no longer auto-enable the unrelated state-check-in module; saved enabled preferences and actual personal-record detection remain preserved.
+  - Reused M1 effective-link resolution for goals/projects/tasks, extending the projection to directions, habits, events and reservations. Direct links override inherited links and records are deduplicated without copying assignments. Added optional direct area references to folders/tasks/events.
+  - Confirmed area merge transaction reassigns direct live relationships, dynamically updates inherited results, retains the source area as an archived identity, transfers starter mappings, and never rewrites historical assessment records. Source/target revisions and reviewed effective-link signatures prevent stale merges. Injected failure proves full rollback.
+  - Explicit actions: title-only next-task editor without a date; reviewed existing-record linking; related roadmap inspection; normal project navigation to reduce scope; confirmed pause without time changes; M5 task-planning preview for selected future-time release. Unsaved review answers prompt before navigating into a plan.
+  - Added manual short planning review in Я: shifts, blocking and non-blocking events, dated tasks/reservations, current goals, unoccupied time and active project reduction/pause. It creates no journal, schedule, recurring task or permission prompt.
+  - Schema/ZIP v5 reuses existing stores and preserves v1–v4 imports. Live v4 upgrade changes only settings schema metadata; existing areas and assessments remain untouched. Both new and legacy review data and merge identities survive real ZIP validation/atomic replacement in isolated memory databases.
+  - Automated suite: 114/114 tests pass across 15 suites, including 14 M6 tests. Executed with Node 26 plus the existing temporary TypeScript import adapter. The Stage 10 fresh-start assertions now require ten areas and explicitly initialize their fresh fixture; legacy eight-area preservation has dedicated M6 coverage.
+  - Supplementary local TypeScript 6.0.3 domain/storage semantic checks and syntax checks for all 5 affected React files pass with zero diagnostics. npm run lint fails (tsc unavailable); npm run build fails (vite unavailable). The previously unavailable dependencies remain a blocker. No browser/device checks or native IndexedDB upgrade are claimed; upgrade callback tests use isolated mocks.
+  - Stop at the requested M6 scope. Remaining stages and the pre-existing backup-limit documentation mismatch are not included.

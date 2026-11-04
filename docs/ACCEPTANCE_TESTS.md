@@ -94,3 +94,36 @@ Every stage is verified against deterministic unit tests (`npx --yes tsx --test`
 
 ### Stage 13: Final Audit
 - `AT-S13-01`..`AT-S13-04`: End-to-end regression suite, full C01–C22 contract verification, zero prohibited features check, and final checkpoint documentation.
+
+
+### Stage M4: canonical roadmap
+
+- AT-M04-01: Global roadmap defaults to active, unarchived goals/projects and their stages, grouped by direction. Detail lists show the selected goal/project and its canonical stages/projects. Explicit state filters expose ideas, paused and completed work. Undated items stay visible. No title-to-plan generation.
+- AT-M04-02: Month/quarter precision survives leap/month/year boundaries and zone changes without deadline or instant fabrication. Ranges reject invalid/reversed/equal half-open boundaries. Editors present inclusive final dates; checkpoints retain exact calendar dates or remain undated.
+- AT-M04-03: Editing from either surface calls updateRoadmapItem, preserves canonical deadline identity and rejects stale revisions. Explicit stage/checkpoint reordering changes only ordering. Clear inconsistencies warn without cascading changes. A reserved task and work shift retain 300 occupied minutes through all layer modes and period edits.
+- AT-M04-04: Month/week/day offer persistent hidden/key-dates/period modes, a readable information lane, and overflow disclosure without modifying existing schedule markers. Verify mobile, keyboard controls, focus and visibility manually once the browser toolchain is available. This UI acceptance remains unverified.
+- AT-M04-05: v3 ZIP export/validation/atomic replacement preserves all metadata, owners, checkpoint IDs, precision, settings, and existing records. v1/v2 imports and the simulated v2-to-v3 IndexedDB upgrade preserve dates and legacy text without invented periods. Browser-native IndexedDB upgrade behavior remains unverified.
+
+Automated M4 coverage: src/storage/__tests__/stageM4.test.ts (14 tests). No dependency graph or automatic scheduler is included.
+
+
+### Stage M5: Today working space
+
+- AT-M05-01: День / Завдання / enabled-only Звички modes. Selected date and next date share one proportional vertical flow and scale; next-day collapse preference persists. One overnight shift retains one canonical ID and continues from the previous date. No projects/charts/Wishlist/full-statistics dashboard.
+- AT-M05-02: Dated task projection includes date-only assignments, deadlines and retained sessions; general-list access exposes undated/older work explicitly. Date-only assignment, deadline, estimate, effort and sessions remain distinct. Historical/future/completed states do not imply automatic completion. Up to three dated focus suggestions require explicit choice; more than three references are allowed and persist for the explicit selected date.
+- AT-M05-03: Manual minimal-day toggle changes only settings. High priority alone never forces visibility. Keep focus, deadline/session tasks, work/blocking event information and occupied-time totals. Full task access remains available. Preview any optional-task planning removal before explicit confirmation; never alter deadlines, complete tasks or move everything to tomorrow.
+- AT-M05-04: Gap picker keeps timeline context. Multiple sessions, explicit date/time/duration edits, union availability and intentional overlaps remain supported. Reviewed assignment/without-date previews reject stale task or reservation revisions. History remains intact; current release preserves the elapsed slice and original bounds. Completion/reopening retains existing release semantics, with no actual-work inference from planned duration.
+- AT-M05-05: Restore selected date/mode/scroll; saved interaction overrides initial reveal. Explicit current-time/return-to-today actions work without repeated clock-driven scrolling. v4 ZIP and recovery preserve daily plans and effort; older stores/backups migrate without invented focus/effort. Validate malformed metadata and simulated v3-to-v4 upgrade.
+
+Automated coverage: src/storage/__tests__/stageM5.test.ts (13 tests), plus existing timeline/lifecycle/regression suites. Actual browser restoration, modal focus return, keyboard/mobile rendering and native IndexedDB upgrades remain unverified because the project dependencies/build toolchain are unavailable. Do not treat helper/syntax tests as browser acceptance.
+
+
+### Latest Stage M6: life areas and lightweight reviews
+
+- AT-M06-LA-01: Genuinely fresh initialization provides the exact approved ten editable names. Upgrade preserves all eight/custom IDs, names, ordering and histories and does not reseed empty stores. Starter add/mapping is explicit, with no similarity merge. Rename/archive/reorder preserve relationships and old snapshots.
+- AT-M06-LA-02: New review has explicit inclusive calendar dates and optional two-week suggestion. Independently test null/zero/false/empty text; new scales are explicitly 0–10 while legacy absent metadata remains 1–10. Snapshot wording/identity/version/definition and answers remain unchanged after edits/merge; normal historical overwrite is rejected.
+- AT-M06-LA-03: Confirmed merge updates direct direction/goal/project/task/habit/event links and recalculates inherited/reservation links without assignment duplication. Retain source identity and historical assessments. Reject stale previews, self/cyclic targets and failed transaction writes atomically.
+- AT-M06-LA-04: Review changes never mutate planning, and task completion never changes satisfaction. Explicit next-task/linking editor, roadmap, scope editor, confirmed pause and selected-time M5 preview remain separate actions. Manual planning review shows shifts/commitments, goals, recovery space and reducible work without recurrence, journal or notifications. Confirm navigation when review answers are unsaved.
+- AT-M06-LA-05: New/legacy review scales, partial values, archived merge identity and direct links survive v5 ZIP/recovery. Actual supported v1–v4 ZIP imports preserve original eight-area objects and 1–10 answers. Simulated v4 upgrade advances only settings schema metadata.
+
+Automated M6 coverage: src/storage/__tests__/stageM6.test.ts (14 tests), plus all shared regression suites. Browser keyboard/mobile layout, dirty-form/modal focus behavior, actual click confirmation flows and native IndexedDB upgrade remain unverified while the full project dependencies/toolchain are unavailable. Supplementary syntax/helper checks do not constitute browser acceptance.

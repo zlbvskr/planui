@@ -95,3 +95,34 @@ PLANUI is a local-first, offline-capable, mobile-first personal planner engineer
 ### 4.4 Wishlist & Exact Money Subsystem (`src/domain/wishlist.ts`)
 - **Strict Isolation from Tasks & Finance**: Wishes and flat wishlist categories live in dedicated object stores (`wishes`, `wishlist_categories`) inside the shared IndexedDB database. Wishes never project onto the calendar, never block availability, and never auto-convert into tasks or expenses.
 - **Exact Decimal Representation**: Prices are stored as `{ amountMinor: number; currency: IsoCurrencyCode; formattedCanonical: string }` (or validated decimal string + integer minor units according to ISO-4217 currency exponent `0`, `2`, or `3`)—never IEEE-754 float math.
+
+
+### M4: informational roadmap projection
+
+src/domain/roadmap.ts projects canonical goals, projects and flat stages, filters planning states, derives calendar-date intervals and markers, validates metadata, and reports clear plan inconsistencies. src/views/RoadmapView.tsx supplies global/detail lists, undated items, explicit stage creation and non-drag ordering. The calendar's RoadmapCalendarLayer.tsx renders an independent informational date lane for the visible month/week/day range with explicit overflow, rather than adding all-day events or timed overlap lanes.
+
+Both surfaces use PlanuiRepositories.updateRoadmapItem with expected revision. It changes only the selected canonical record; deadline edits write existing canonical fields. Period or checkpoint moves never call reservation/event/task planning operations. The existing scheduling engine receives no roadmap metadata and remains the only occupancy authority. Timed sessions continue through the existing task planner with task references; periods never create sessions.
+
+No dependency graph, dependency controls, plan generator, or automatic scheduling engine is included in M4. Full browser/device verification remains pending the available project dependencies.
+
+
+### M5 Today working space
+
+src/domain/today.ts supplies date-aware task projection, explicit focus suggestions, daily-plan validation, exact planning-change previews, elapsed-duration session construction, and validated interaction restoration/current-time gating. TodayWorkspaceView reuses SharedDayTimeline for both consecutive dates at one scale and separates Day/Tasks/optional Habits presentation. components/today provides focus, task list and planning forms; existing gap selection and lifecycle code remain in use.
+
+Focus/minimal-day writes update only the selected date in settings. Effort writes update only the canonical task metadata. Planning changes use existing transactional operations, with an optional reviewed reservation revision map for exact preview protection. New session creation can additionally guard the task revision/state. Single ongoing-reservation release retains its elapsed active interval and original bounds, matching lifecycle partial-release semantics.
+
+Minimal-day rendering never filters scheduling inputs. Work/blocking records and deadlines remain in the Day timeline and a compact summary in other modes. Availability remains the union of the same blocking sources. Current-time positioning runs after first mount only if saved interaction does not take precedence; clock updates do not trigger it. Internal mode changes preserve separate in-memory scroll positions; session context restores the last selected date/mode/scroll without changing persisted planning.
+
+
+### M6 latest approved scope: life areas and lightweight reviews
+
+src/domain/lifeAreas.ts defines the exact ten-area framework, immutable new review snapshot builder, canonical effective relationship projection, merge preview signature, and read-only planning-review projection. It reuses resolveEffectiveLifeArea from M1 and the existing union-availability engine. LifeAreasReviewView replaces the old 1–10-only live form while rendering every legacy review using its original scale and stored snapshots. PlanningReviewPanel is a manual entry point inside Я, not a journal or recurrence engine.
+
+Fresh initialization seeds only a genuinely new store with the editable ten-area defaults. Existing settings/area stores, including empty ones, do not trigger reseeding. Starter additions or mappings require explicit selection; names are never matched heuristically.
+
+Area merge is a single transaction over areas and the live relationship stores. Confirm the reviewed source/target revisions and effective-link signature; reassign direct references only, retain the archived source identity and preserve historical assessments. The transaction does not include the assessment store and cannot rewrite scores or question snapshots. Normal assessment saving is create-only. Related tasks/plans/reservations are projected dynamically; no assignment copies or aggregate life scores exist.
+
+Review answers alone write only a review record. Planning effects route through explicit linking/task editors, project pause confirmation, normal scope editors, the shared roadmap, or the M5 exact reservation/assignment preview. Manual planning review uses canonical events including non-blocking recovery, reservations and date/deadline tasks with origin-zone interval semantics and union occupancy. It never assumes free time implies usable energy.
+
+This user-approved M6 scope supersedes the earlier habit-stage numbering only for the requested work; habit rule enhancements remain deferred. Native browser/device verification remains outstanding.

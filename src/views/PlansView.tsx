@@ -1,3 +1,4 @@
+import { RoadmapView } from './RoadmapView';
 import React, { useMemo, useState } from 'react';
 import {
   Folder as FolderIcon,
@@ -20,12 +21,15 @@ import {
   Search,
   ArrowUpRight,
   Plus,
+  Target,
 } from 'lucide-react';
 import { UK_STRINGS } from '../i18n/uk';
 import {
   CalendarEvent,
   ChecklistItem,
   Folder,
+  Goal,
+  GoalState,
   Project,
   ProjectStage,
   ProjectResultState,
@@ -37,6 +41,7 @@ import {
 } from '../domain/types';
 import {
   buildAbbreviatedBreadcrumbs,
+  calculateGoalProgress,
   calculateProjectTaskProgress,
   classifyTaskTemporalNotice,
   computeFolderDeleteImpact,
@@ -74,6 +79,7 @@ import {
 
 export interface PlansViewProps {
   folders: Folder[];
+  goals: Goal[];
   projects: Project[];
   stages: ProjectStage[];
   tasks: Task[];
@@ -93,6 +99,7 @@ export interface PlansViewProps {
 
 export const PlansView: React.FC<PlansViewProps> = ({
   folders,
+  goals = [],
   projects,
   stages,
   tasks,
@@ -107,6 +114,7 @@ export const PlansView: React.FC<PlansViewProps> = ({
   onDataChanged,
   onModalStateChange,
 }) => {
+  const [showRoadmap, setShowRoadmap] = useState(false);
   // Modal states inside Plans
   const [showFullAncestorModal, setShowFullAncestorModal] = useState(false);
   const [editingFolder, setEditingFolder] = useState<Folder | null>(null);
@@ -148,6 +156,27 @@ export const PlansView: React.FC<PlansViewProps> = ({
     'rehome_to_folder' | 'delete_tasks'
   >('rehome_to_folder');
 
+  // Goal modal states (Stage M3)
+  const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
+  const [goalEditTitle, setGoalEditTitle] = useState('');
+  const [goalEditPurpose, setGoalEditPurpose] = useState('');
+  const [goalEditCriteria, setGoalEditCriteria] = useState('');
+  const [goalEditIntention, setGoalEditIntention] = useState('');
+  const [goalEditTargetDate, setGoalEditTargetDate] = useState<string | null>(
+    null
+  );
+  const [goalEditTargetPeriod, setGoalEditTargetPeriod] = useState('');
+  const [goalEditFolderId, setGoalEditFolderId] = useState<string | null>(null);
+  const [goalEditState, setGoalEditState] = useState<GoalState>('active');
+  const [goalEditNextActionTaskId, setGoalEditNextActionTaskId] = useState<
+    string | null
+  >(null);
+
+  const [deletingGoal, setDeletingGoal] = useState<Goal | null>(null);
+  const [goalDeleteMode, setGoalDeleteMode] = useState<
+    'unlink_children' | 'delete_direct_tasks'
+  >('unlink_children');
+
   const [editingStage, setEditingStage] = useState<ProjectStage | null>(null);
   const [stageEditTitle, setStageEditTitle] = useState('');
   const [stageEditOutcome, setStageEditOutcome] = useState('');
@@ -176,9 +205,10 @@ export const PlansView: React.FC<PlansViewProps> = ({
   const [taskEditDeadlineDate, setTaskEditDeadlineDate] = useState('');
   const [taskEditDeadlineInstant, setTaskEditDeadlineInstant] = useState('');
   const [taskEditOwnershipMode, setTaskEditOwnershipMode] = useState<
-    'standalone' | 'project'
+    'standalone' | 'folder' | 'goal' | 'project'
   >('standalone');
   const [taskEditFolderId, setTaskEditFolderId] = useState<string | null>(null);
+  const [taskEditGoalId, setTaskEditGoalId] = useState<string | null>(null);
   const [taskEditProjectId, setTaskEditProjectId] = useState<string | null>(
     null
   );
@@ -219,6 +249,8 @@ export const PlansView: React.FC<PlansViewProps> = ({
     showFullAncestorModal ||
       editingFolder ||
       deletingFolder ||
+      editingGoal ||
+      deletingGoal ||
       editingProject ||
       completingProject ||
       archivingProject ||
@@ -234,6 +266,11 @@ export const PlansView: React.FC<PlansViewProps> = ({
   const activeFolder = useMemo(
     () => folders.find((f) => f.id === plansContext.activeFolderId) ?? null,
     [folders, plansContext.activeFolderId]
+  );
+
+  const activeGoal = useMemo(
+    () => goals.find((g) => g.id === plansContext.activeGoalId) ?? null,
+    [goals, plansContext.activeGoalId]
   );
 
   const activeProject = useMemo(
@@ -288,11 +325,25 @@ export const PlansView: React.FC<PlansViewProps> = ({
       setTaskEditOwnershipMode('project');
       setTaskEditProjectId(task.ownership.projectId);
       setTaskEditStageId(task.ownership.stageId);
+      setTaskEditGoalId(null);
       setTaskEditFolderId(null);
+    } else if (task.ownership.kind === 'goal') {
+      setTaskEditOwnershipMode('goal');
+      setTaskEditGoalId(task.ownership.goalId);
+      setTaskEditFolderId(null);
+      setTaskEditProjectId(null);
+      setTaskEditStageId(null);
+    } else if (task.ownership.kind === 'folder') {
+      setTaskEditOwnershipMode('folder');
+      setTaskEditFolderId(task.ownership.folderId);
+      setTaskEditGoalId(null);
+      setTaskEditProjectId(null);
+      setTaskEditStageId(null);
     } else {
       setTaskEditOwnershipMode('standalone');
-      setTaskEditFolderId(task.ownership.folderId);
-      setTaskEditProjectId(projects[0]?.id ?? null);
+      setTaskEditFolderId(null);
+      setTaskEditGoalId(null);
+      setTaskEditProjectId(null);
       setTaskEditStageId(null);
     }
     setNewChecklistTitle('');
@@ -300,6 +351,161 @@ export const PlansView: React.FC<PlansViewProps> = ({
     setRescheduleResId(null);
     setNewSessionStartDate(actualTodayDate);
     setNewSessionEndDate(actualTodayDate);
+  };
+
+  const openGoalEditModal = (goal: Goal) => {
+    setModalError(null);
+    setEditingGoal(goal);
+    setGoalEditTitle(goal.title);
+    setGoalEditPurpose(goal.purposeUk ?? '');
+    setGoalEditCriteria(goal.completionCriteriaUk ?? '');
+    setGoalEditIntention(goal.implementationIntentionUk ?? '');
+    setGoalEditTargetDate(goal.timing?.targetDate ?? null);
+    setGoalEditTargetPeriod(goal.timing?.targetPeriodUk ?? '');
+    setGoalEditFolderId(goal.folderId);
+    setGoalEditState(goal.state);
+    setGoalEditNextActionTaskId(goal.nextActionTaskId);
+  };
+
+  const handleSaveGoalEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingGoal || !goalEditTitle.trim()) return;
+    setModalError(null);
+    const nowIso = new Date().toISOString();
+    try {
+      await repositories.saveGoal({
+        ...editingGoal,
+        title: goalEditTitle.trim(),
+        purposeUk: goalEditPurpose.trim() ? goalEditPurpose.trim() : null,
+        completionCriteriaUk: goalEditCriteria.trim()
+          ? goalEditCriteria.trim()
+          : null,
+        implementationIntentionUk: goalEditIntention.trim()
+          ? goalEditIntention.trim()
+          : null,
+        timing:
+          goalEditTargetDate || goalEditTargetPeriod.trim()
+            ? {
+                targetDate: goalEditTargetDate || null,
+                targetPeriodUk: goalEditTargetPeriod.trim()
+                  ? goalEditTargetPeriod.trim()
+                  : null,
+              }
+            : null,
+        folderId: goalEditFolderId || null,
+        state: goalEditState,
+        nextActionTaskId: goalEditNextActionTaskId || null,
+        updatedAt: nowIso,
+        completedAt:
+          goalEditState === 'completed'
+            ? editingGoal.completedAt ?? nowIso
+            : null,
+        revision: editingGoal.revision + 1,
+      });
+      setEditingGoal(null);
+      await onDataChanged('Ціль оновлено.');
+    } catch (err) {
+      setModalError(
+        err instanceof Error ? err.message : 'Не вдалося оновити ціль.'
+      );
+    }
+  };
+
+  const handleToggleGoalCompleted = async (goal: Goal) => {
+    setModalError(null);
+    const nowIso = new Date().toISOString();
+    const isCompleted = goal.state === 'completed';
+    const nextState: GoalState = isCompleted ? 'active' : 'completed';
+    try {
+      await repositories.saveGoal({
+        ...goal,
+        state: nextState,
+        completedAt: isCompleted ? null : nowIso,
+        updatedAt: nowIso,
+        revision: goal.revision + 1,
+      });
+      await onDataChanged(
+        isCompleted ? 'Ціль повернуто в активні.' : 'Ціль досягнуто!'
+      );
+    } catch (err) {
+      setModalError(
+        err instanceof Error ? err.message : 'Не вдалося змінити стан цілі.'
+      );
+    }
+  };
+
+  const handleToggleGoalArchived = async (goal: Goal) => {
+    setModalError(null);
+    try {
+      await repositories.archiveGoalTransactionally(
+        goal.id,
+        !goal.archived,
+        new Date().toISOString(),
+        goal.revision
+      );
+      await onDataChanged(
+        goal.archived ? 'Ціль розархівовано.' : 'Ціль заархівовано.'
+      );
+    } catch (err) {
+      setModalError(
+        err instanceof Error ? err.message : 'Не вдалося змінити архів цілі.'
+      );
+    }
+  };
+
+  const openGoalDeleteModal = (goal: Goal) => {
+    setModalError(null);
+    setDeletingGoal(goal);
+    setGoalDeleteMode('unlink_children');
+  };
+
+  const handleConfirmDeleteGoal = async () => {
+    if (!deletingGoal) return;
+    setModalError(null);
+    try {
+      await repositories.deleteGoalTransactionally(
+        deletingGoal.id,
+        goalDeleteMode,
+        new Date().toISOString()
+      );
+      if (plansContext.activeGoalId === deletingGoal.id) {
+        onUpdatePlansContext({ activeGoalId: null });
+      }
+      setDeletingGoal(null);
+      await onDataChanged('Ціль видалено.');
+    } catch (err) {
+      setModalError(
+        err instanceof Error ? err.message : 'Не вдалося видалити ціль.'
+      );
+    }
+  };
+
+  const handleCreateStarterDirections = async () => {
+    setModalError(null);
+    const nowIso = new Date().toISOString();
+    const starters = ['Дім', 'Робота', 'Самовдосконалення'];
+    try {
+      for (let i = 0; i < starters.length; i++) {
+        const id =
+          typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+            ? crypto.randomUUID()
+            : `starter-${Date.now()}-${i}`;
+        await repositories.saveFolder({
+          id,
+          name: starters[i],
+          parentId: null,
+          order: i,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+          revision: 1,
+        });
+      }
+      await onDataChanged('Базові напрями створено.');
+    } catch (err) {
+      setModalError(
+        err instanceof Error ? err.message : 'Не вдалося створити напрями.'
+      );
+    }
   };
 
   const openFolderEditModal = (folder: Folder) => {
@@ -417,28 +623,88 @@ export const PlansView: React.FC<PlansViewProps> = ({
     plansContext.searchQuery,
   ]);
 
+  // Goals in current container
+  const containerGoals = useMemo(() => {
+    const q = plansContext.searchQuery.trim().toLowerCase();
+    return goals.filter((g) => {
+      if (!plansContext.showArchivedProjects && g.archived) {
+        return false;
+      }
+      if (q) {
+        return (
+          g.title.toLowerCase().includes(q) ||
+          (g.purposeUk ?? '').toLowerCase().includes(q) ||
+          (g.completionCriteriaUk ?? '').toLowerCase().includes(q) ||
+          (g.implementationIntentionUk ?? '').toLowerCase().includes(q)
+        );
+      }
+      return g.folderId === plansContext.activeFolderId;
+    });
+  }, [
+    goals,
+    plansContext.activeFolderId,
+    plansContext.showArchivedProjects,
+    plansContext.searchQuery,
+  ]);
+
   // Standalone tasks in current container (or all matching tasks when search is active)
   const containerTasks = useMemo(() => {
     return tasks.filter((t) => {
       if (!matchesTaskFilter(t)) return false;
-      if (isSearchActive && !plansContext.activeProjectId) {
+      if (isSearchActive && !plansContext.activeProjectId && !plansContext.activeGoalId) {
         return true;
       }
+      if (plansContext.activeFolderId === null) {
+        return (
+          t.ownership.kind === 'standalone' &&
+          (t.ownership.folderId === null || t.ownership.folderId === undefined)
+        );
+      }
       return (
-        t.ownership.kind === 'standalone' &&
-        t.ownership.folderId === plansContext.activeFolderId
+        (t.ownership.kind === 'folder' &&
+          t.ownership.folderId === plansContext.activeFolderId) ||
+        (t.ownership.kind === 'standalone' &&
+          t.ownership.folderId === plansContext.activeFolderId)
       );
     });
   }, [
     tasks,
     plansContext.activeFolderId,
     plansContext.activeProjectId,
+    plansContext.activeGoalId,
     plansContext.searchQuery,
     plansContext.taskStateFilter,
     plansContext.priorityFilter,
     plansContext.showCompletedTasks,
     isSearchActive,
   ]);
+
+  // Projects and direct tasks for the active goal
+  const activeGoalProjects = useMemo(() => {
+    if (!activeGoal) return [];
+    return projects.filter((p) => p.goalId === activeGoal.id);
+  }, [projects, activeGoal]);
+
+  const activeGoalTasks = useMemo(() => {
+    if (!activeGoal) return [];
+    return tasks.filter(
+      (t) =>
+        t.ownership.kind === 'goal' &&
+        t.ownership.goalId === activeGoal.id &&
+        matchesTaskFilter(t)
+    );
+  }, [
+    tasks,
+    activeGoal,
+    plansContext.taskStateFilter,
+    plansContext.priorityFilter,
+    plansContext.showCompletedTasks,
+  ]);
+
+  const activeGoalProgress = useMemo(() => {
+    if (!activeGoal) return null;
+    return calculateGoalProgress(activeGoal.id, tasks, projects);
+  }, [tasks, activeGoal, projects]);
 
   // Stages and tasks for the active project
   const activeProjectStages = useMemo(() => {
@@ -660,7 +926,7 @@ export const PlansView: React.FC<PlansViewProps> = ({
   ) => {
     try {
       const target = stages.find((s) => s.id === stageId);
-      if (!target) return;
+      if (!target || target.projectId === null) return;
       const siblings = stages
         .filter((s) => s.projectId === target.projectId)
         .sort((a, b) => a.order - b.order);
@@ -967,9 +1233,19 @@ export const PlansView: React.FC<PlansViewProps> = ({
               projectId: taskEditProjectId,
               stageId: taskEditStageId || null,
             }
+          : taskEditOwnershipMode === 'goal' && taskEditGoalId
+          ? {
+              kind: 'goal',
+              goalId: taskEditGoalId,
+            }
+          : taskEditOwnershipMode === 'folder' && taskEditFolderId
+          ? {
+              kind: 'folder',
+              folderId: taskEditFolderId,
+            }
           : {
               kind: 'standalone',
-              folderId: taskEditFolderId || null,
+              folderId: null,
             };
 
       let baseTask = editingTask;
@@ -1425,6 +1701,8 @@ export const PlansView: React.FC<PlansViewProps> = ({
 
   return (
     <div className="space-y-4" data-testid="destination-view-plans">
+      <Button aria-expanded={showRoadmap} onClick={() => setShowRoadmap(!showRoadmap)}>Дорожня карта</Button>
+      {showRoadmap && <RoadmapView source={{ folders, goals, projects, stages, tasks }} repositories={repositories} onChanged={onDataChanged} initialOwner={activeProject ? { kind: 'project', id: activeProject.id } : activeGoal ? { kind: 'goal', id: activeGoal.id } : null} onInspect={owner => onUpdatePlansContext(owner.kind === 'goal' ? { activeGoalId: owner.id, activeProjectId: null } : { activeProjectId: owner.id })} />}
       <header className="space-y-1">
         <h1 className="text-[32px] font-bold tracking-tight leading-tight m-0">
           {UK_STRINGS.destinations.plans.title}
@@ -1602,12 +1880,39 @@ export const PlansView: React.FC<PlansViewProps> = ({
               </span>
             </>
           )}
+
+          {activeGoal && (
+            <>
+              <ChevronRight
+                className="w-3.5 h-3.5"
+                style={{ color: 'var(--text-secondary)' }}
+                aria-hidden="true"
+              />
+              <span
+                className="px-2.5 py-1 rounded-lg flex items-center gap-1.5 font-semibold"
+                style={{
+                  backgroundColor: 'var(--bg-elevated)',
+                  color: 'var(--text-primary)',
+                }}
+                data-testid="plans-active-goal-crumb"
+              >
+                <Target
+                  className="w-3.5 h-3.5"
+                  style={{ color: 'var(--color-brand)' }}
+                  aria-hidden="true"
+                />
+                <span>{activeGoal.title}</span>
+              </span>
+            </>
+          )}
         </div>
 
         {/* Hidden compatibility span for active container label */}
         <span className="sr-only" data-testid="plans-active-container-label">
           {activeProject
             ? activeProject.title
+            : activeGoal
+            ? activeGoal.title
             : activeFolder
             ? activeFolder.name
             : UK_STRINGS.destinations.plans.rootBreadcrumb}
@@ -1620,6 +1925,15 @@ export const PlansView: React.FC<PlansViewProps> = ({
               size="sm"
               onClick={() => onUpdatePlansContext({ activeProjectId: null })}
               data-testid="plans-back-from-project-button"
+            >
+              {UK_STRINGS.plansView.backToFolderFromProject}
+            </Button>
+          ) : activeGoal ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => onUpdatePlansContext({ activeGoalId: null })}
+              data-testid="plans-back-from-goal-button"
             >
               {UK_STRINGS.plansView.backToFolderFromProject}
             </Button>
@@ -2241,49 +2555,430 @@ export const PlansView: React.FC<PlansViewProps> = ({
             })()}
           </Card>
         </div>
+      ) : activeGoal ? (
+        /* OPEN GOAL DETAIL VIEW (Stage M1 / M3) */
+        <div className="space-y-4" data-testid="plans-open-goal-view">
+          <Card>
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Target
+                      className="w-5 h-5 shrink-0"
+                      style={{ color: 'var(--color-brand)' }}
+                      aria-hidden="true"
+                    />
+                    <h2
+                      className="text-[22px] font-bold m-0"
+                      data-testid="open-goal-title"
+                    >
+                      {activeGoal.title}
+                    </h2>
+                    <span
+                      className="px-2.5 py-0.5 rounded-full text-[12px] font-semibold"
+                      style={{
+                        backgroundColor: 'var(--bg-elevated)',
+                        color: 'var(--text-primary)',
+                      }}
+                      data-testid="open-goal-state-badge"
+                    >
+                      {activeGoal.state === 'idea'
+                        ? UK_STRINGS.creation.goalForm.stateIdea
+                        : activeGoal.state === 'active'
+                        ? UK_STRINGS.creation.goalForm.stateActive
+                        : activeGoal.state === 'paused'
+                        ? UK_STRINGS.creation.goalForm.statePaused
+                        : UK_STRINGS.creation.goalForm.stateCompleted}
+                    </span>
+                    {activeGoal.archived && (
+                      <span
+                        className="px-2.5 py-0.5 rounded-full text-[12px] font-semibold"
+                        style={{
+                          backgroundColor: 'var(--color-brand-tint)',
+                          color: 'var(--color-brand-text)',
+                        }}
+                        data-testid="open-goal-archived-badge"
+                      >
+                        Заархівовано
+                      </span>
+                    )}
+                  </div>
+                  {(activeGoal.timing?.targetDate ||
+                    activeGoal.timing?.targetPeriodUk) && (
+                    <div
+                      className="text-[13px] flex items-center gap-1.5"
+                      style={{ color: 'var(--text-secondary)' }}
+                    >
+                      <CalendarIcon className="w-3.5 h-3.5" aria-hidden="true" />
+                      <span>
+                        Орієнтир:{' '}
+                        {[
+                          activeGoal.timing.targetDate,
+                          activeGoal.timing.targetPeriodUk,
+                        ]
+                          .filter(Boolean)
+                          .join(' • ')}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Goal Actions */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => openGoalEditModal(activeGoal)}
+                    data-testid="open-goal-edit-button"
+                  >
+                    <Edit3 className="w-4 h-4" aria-hidden="true" />
+                    <span>{UK_STRINGS.plansView.editGoalButton}</span>
+                  </Button>
+
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => void handleToggleGoalCompleted(activeGoal)}
+                    data-testid="open-goal-complete-button"
+                  >
+                    <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
+                    <span>
+                      {activeGoal.state === 'completed'
+                        ? UK_STRINGS.plansView.reopenGoalButton
+                        : UK_STRINGS.plansView.completeGoalButton}
+                    </span>
+                  </Button>
+
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => void handleToggleGoalArchived(activeGoal)}
+                    data-testid="open-goal-archive-button"
+                  >
+                    <Archive className="w-4 h-4" aria-hidden="true" />
+                    <span>
+                      {activeGoal.archived
+                        ? UK_STRINGS.plansView.unarchiveGoalButton
+                        : UK_STRINGS.plansView.archiveGoalButton}
+                    </span>
+                  </Button>
+
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    onClick={() => openGoalDeleteModal(activeGoal)}
+                    data-testid="open-goal-delete-button"
+                  >
+                    <Trash2 className="w-4 h-4" aria-hidden="true" />
+                    <span>{UK_STRINGS.plansView.deleteGoalButton}</span>
+                  </Button>
+                </div>
+              </div>
+
+              {/* Purpose */}
+              {activeGoal.purposeUk && (
+                <div
+                  className="p-3 rounded-xl space-y-1"
+                  style={{ backgroundColor: 'var(--bg-elevated)' }}
+                  data-testid="open-goal-purpose-box"
+                >
+                  <div
+                    className="text-[12px] font-semibold"
+                    style={{ color: 'var(--text-secondary)' }}
+                  >
+                    {UK_STRINGS.creation.goalForm.purposeLabel}
+                  </div>
+                  <div className="text-[14px] leading-relaxed">
+                    {activeGoal.purposeUk}
+                  </div>
+                </div>
+              )}
+
+              {/* Criteria */}
+              {activeGoal.completionCriteriaUk && (
+                <div
+                  className="p-3 rounded-xl space-y-1"
+                  style={{ backgroundColor: 'var(--bg-elevated)' }}
+                  data-testid="open-goal-criteria-box"
+                >
+                  <div
+                    className="text-[12px] font-semibold"
+                    style={{ color: 'var(--text-secondary)' }}
+                  >
+                    {UK_STRINGS.creation.goalForm.criteriaLabel}
+                  </div>
+                  <div className="text-[14px] leading-relaxed">
+                    {activeGoal.completionCriteriaUk}
+                  </div>
+                </div>
+              )}
+
+              {/* Implementation Intention */}
+              {activeGoal.implementationIntentionUk && (
+                <div
+                  className="p-3 rounded-xl space-y-1"
+                  style={{ backgroundColor: 'var(--bg-elevated)' }}
+                  data-testid="open-goal-intention-box"
+                >
+                  <div
+                    className="text-[12px] font-semibold"
+                    style={{ color: 'var(--text-secondary)' }}
+                  >
+                    {UK_STRINGS.creation.goalForm.implementationIntentionLabel}
+                  </div>
+                  <div className="text-[14px] leading-relaxed italic">
+                    {activeGoal.implementationIntentionUk}
+                  </div>
+                </div>
+              )}
+
+              {/* Progress Summary: Transparent task count */}
+              {activeGoalProgress && (
+                <div
+                  className="p-3 rounded-xl space-y-1.5"
+                  style={{ backgroundColor: 'var(--bg-elevated)' }}
+                  data-testid="open-goal-progress-box"
+                >
+                  <div className="flex items-center justify-between text-[13px] font-medium">
+                    <span>
+                      Виконано прямих справ:{' '}
+                      {activeGoalProgress.directTasks.completedCount} з{' '}
+                      {activeGoalProgress.directTasks.totalCountable}
+                    </span>
+                    <span>
+                      Пов’язаних проєктів: {activeGoalProjects.length}
+                    </span>
+                  </div>
+                  <div
+                    className="text-[12px]"
+                    style={{ color: 'var(--text-secondary)' }}
+                  >
+                    Досягнення цілі є усвідомленим рішенням користувача, а не автоматичним відсотком.
+                  </div>
+                </div>
+              )}
+            </div>
+          </Card>
+
+          {/* Canonical Next Action Task */}
+          {activeGoal.nextActionTaskId &&
+            (() => {
+              const nextTask = tasks.find(
+                (t) => t.id === activeGoal.nextActionTaskId
+              );
+              if (!nextTask) return null;
+              return (
+                <Card title="Канонічний наступний крок">
+                  <ul className="m-0 p-0 list-none">
+                    {renderTaskRow(nextTask)}
+                  </ul>
+                </Card>
+              );
+            })()}
+
+          {/* Associated Projects */}
+          <Card
+            title={UK_STRINGS.plansView.goalProjectsHeading}
+            headerRight={
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => onOpenGlobalCreation('project')}
+                data-testid="goal-add-project-button"
+              >
+                <Plus className="w-4 h-4" aria-hidden="true" />
+                <span>{UK_STRINGS.creation.actions.project.label}</span>
+              </Button>
+            }
+          >
+            {activeGoalProjects.length === 0 ? (
+              <p
+                className="text-[14px] m-0"
+                style={{ color: 'var(--text-secondary)' }}
+              >
+                {UK_STRINGS.plansView.noGoalProjectsNote}
+              </p>
+            ) : (
+              <div className="space-y-2.5">
+                {activeGoalProjects.map((p) => {
+                  const prog = calculateProjectTaskProgress(tasks, p.id);
+                  return (
+                    <div
+                      key={p.id}
+                      className="p-3 rounded-xl flex items-center justify-between gap-2.5"
+                      style={{
+                        backgroundColor: 'var(--bg-elevated)',
+                        border: '1px solid var(--border-subtle)',
+                      }}
+                      data-testid={`goal-project-card-${p.title}`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onUpdatePlansContext({ activeProjectId: p.id })
+                        }
+                        className="text-left flex-1 cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Briefcase
+                            className="w-4 h-4 shrink-0"
+                            style={{ color: 'var(--color-personal)' }}
+                            aria-hidden="true"
+                          />
+                          <span className="font-semibold text-[15px]">
+                            {p.title}
+                          </span>
+                        </div>
+                        <div
+                          className="text-[12px] mt-1"
+                          style={{ color: 'var(--text-secondary)' }}
+                        >
+                          Справи: {prog.completedCount} / {prog.totalCountable}
+                        </div>
+                      </button>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() =>
+                          onUpdatePlansContext({ activeProjectId: p.id })
+                        }
+                        data-testid={`open-goal-project-${p.title}`}
+                      >
+                        <span>Відкрити проєкт</span>
+                        <ChevronRight className="w-4 h-4" aria-hidden="true" />
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Card>
+
+          {/* Direct Goal Tasks */}
+          <Card
+            title={UK_STRINGS.plansView.goalDirectTasksHeading}
+            headerRight={
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => onOpenGlobalCreation('task')}
+                data-testid="goal-add-task-button"
+              >
+                <Plus className="w-4 h-4" aria-hidden="true" />
+                <span>{UK_STRINGS.creation.actions.task.label}</span>
+              </Button>
+            }
+          >
+            {activeGoalTasks.length === 0 ? (
+              <p
+                className="text-[14px] m-0"
+                style={{ color: 'var(--text-secondary)' }}
+              >
+                {UK_STRINGS.plansView.noDirectGoalTasksNote}
+              </p>
+            ) : (
+              <ul className="space-y-2 m-0 p-0 list-none">
+                {activeGoalTasks.map(renderTaskRow)}
+              </ul>
+            )}
+          </Card>
+        </div>
       ) : (
-        /* CONTAINER VIEW: FOLDERS, PROJECTS, AND STANDALONE TASKS (4.1) */
+        /* CONTAINER VIEW: FOLDERS, GOALS, PROJECTS, AND TASKS (4.1) */
         <>
           {childFolders.length === 0 &&
+          containerGoals.length === 0 &&
           containerProjects.length === 0 &&
           containerTasks.length === 0 ? (
-            <EmptyStateCard
-              icon={
-                isSearchActive ? (
-                  <Search className="w-5 h-5" />
-                ) : (
-                  <FolderIcon className="w-5 h-5" />
-                )
-              }
-              title={
-                isSearchActive
-                  ? UK_STRINGS.plansView.noFilterMatchesTitle
-                  : UK_STRINGS.destinations.plans.emptyTitle
-              }
-              description={
-                isSearchActive
-                  ? UK_STRINGS.plansView.noFilterMatchesDescription
-                  : UK_STRINGS.destinations.plans.emptyDescription
-              }
-              actionLabel={
-                isSearchActive
-                  ? UK_STRINGS.plansView.clearSearchButton
-                  : UK_STRINGS.creation.actions.task.label
-              }
-              onAction={() => {
-                if (isSearchActive) {
-                  onUpdatePlansContext({
-                    searchQuery: '',
-                    taskStateFilter: 'all',
-                    priorityFilter: 'all',
-                  });
-                } else {
-                  onOpenGlobalCreation('task');
+            plansContext.activeFolderId === null &&
+            !isSearchActive &&
+            folders.length === 0 ? (
+              <Card title={UK_STRINGS.plansView.starterDirectionsTitle}>
+                <div className="space-y-3" data-testid="starter-directions-card">
+                  <p
+                    className="text-[14px] m-0"
+                    style={{ color: 'var(--text-secondary)' }}
+                  >
+                    {UK_STRINGS.plansView.starterDirectionsPrompt}
+                  </p>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => void handleCreateStarterDirections()}
+                    data-testid="starter-directions-create-button"
+                  >
+                    <Plus className="w-4 h-4" aria-hidden="true" />
+                    <span>{UK_STRINGS.plansView.starterDirectionsButton}</span>
+                  </Button>
+                </div>
+              </Card>
+            ) : (
+              <EmptyStateCard
+                icon={
+                  isSearchActive ? (
+                    <Search className="w-5 h-5" />
+                  ) : (
+                    <FolderIcon className="w-5 h-5" />
+                  )
                 }
-              }}
-            />
+                title={
+                  isSearchActive
+                    ? UK_STRINGS.plansView.noFilterMatchesTitle
+                    : UK_STRINGS.destinations.plans.emptyTitle
+                }
+                description={
+                  isSearchActive
+                    ? UK_STRINGS.plansView.noFilterMatchesDescription
+                    : UK_STRINGS.destinations.plans.emptyDescription
+                }
+                actionLabel={
+                  isSearchActive
+                    ? UK_STRINGS.plansView.clearSearchButton
+                    : UK_STRINGS.creation.actions.task.label
+                }
+                onAction={() => {
+                  if (isSearchActive) {
+                    onUpdatePlansContext({
+                      searchQuery: '',
+                      taskStateFilter: 'all',
+                      priorityFilter: 'all',
+                    });
+                  } else {
+                    onOpenGlobalCreation('task');
+                  }
+                }}
+              />
+            )
           ) : (
             <div className="space-y-4">
+              {/* Optional Starter Directions prompt at root container if user has no folders (Stage M3) */}
+              {plansContext.activeFolderId === null &&
+                folders.length === 0 &&
+                !isSearchActive && (
+                  <Card title={UK_STRINGS.plansView.starterDirectionsTitle}>
+                    <div
+                      className="space-y-3"
+                      data-testid="starter-directions-card"
+                    >
+                      <p
+                        className="text-[14px] m-0"
+                        style={{ color: 'var(--text-secondary)' }}
+                      >
+                        {UK_STRINGS.plansView.starterDirectionsPrompt}
+                      </p>
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() => void handleCreateStarterDirections()}
+                        data-testid="starter-directions-create-button"
+                      >
+                        <Plus className="w-4 h-4" aria-hidden="true" />
+                        <span>{UK_STRINGS.plansView.starterDirectionsButton}</span>
+                      </Button>
+                    </div>
+                  </Card>
+                )}
+
               {/* Folders Card */}
               {childFolders.length > 0 && (
                 <Card title={UK_STRINGS.destinations.plans.foldersHeading}>
@@ -2301,6 +2996,7 @@ export const PlansView: React.FC<PlansViewProps> = ({
                             onUpdatePlansContext({
                               activeFolderId: folder.id,
                               activeProjectId: null,
+                              activeGoalId: null,
                             })
                           }
                           className="min-h-[44px] px-2 flex items-center gap-2.5 text-left flex-1 cursor-pointer"
@@ -2371,6 +3067,390 @@ export const PlansView: React.FC<PlansViewProps> = ({
                 </Card>
               )}
 
+              {/* Goals Card (Stage M1 / M3) */}
+              {containerGoals.length > 0 && (
+                <Card
+                  title={UK_STRINGS.plansView.goalsHeading}
+                  headerRight={
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => onOpenGlobalCreation('goal')}
+                      data-testid="container-add-goal-button"
+                    >
+                      <Plus className="w-4 h-4" aria-hidden="true" />
+                      <span>{UK_STRINGS.creation.actions.goal.label}</span>
+                    </Button>
+                  }
+                >
+                  <div className="space-y-3">
+                    {/* Active goals */}
+                    {containerGoals.some((g) => g.state === 'active') && (
+                      <div className="space-y-2">
+                        <div
+                          className="text-[13px] font-semibold"
+                          style={{ color: 'var(--text-secondary)' }}
+                        >
+                          {UK_STRINGS.plansView.activeGoalsHeading}
+                        </div>
+                        {containerGoals
+                          .filter((g) => g.state === 'active')
+                          .map((goal) => {
+                            const goalProg = calculateGoalProgress(
+                              goal.id,
+                              tasks,
+                              projects
+                            );
+                            const linkedProjectsCount = projects.filter(
+                              (p) => p.goalId === goal.id
+                            ).length;
+                            return (
+                              <div
+                                key={goal.id}
+                                data-testid={`goal-card-${goal.title}`}
+                                className="p-3.5 rounded-xl space-y-2.5"
+                                style={{
+                                  backgroundColor: 'var(--bg-elevated)',
+                                  border: '1px solid var(--border-subtle)',
+                                }}
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <button
+                                    type="button"
+                                    data-testid={`open-goal-${goal.title}`}
+                                    onClick={() =>
+                                      onUpdatePlansContext({
+                                        activeGoalId: goal.id,
+                                        activeProjectId: null,
+                                      })
+                                    }
+                                    className="text-left flex-1 cursor-pointer space-y-1"
+                                  >
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <Target
+                                        className="w-4 h-4 shrink-0"
+                                        style={{ color: 'var(--color-brand)' }}
+                                        aria-hidden="true"
+                                      />
+                                      <span className="text-[16px] font-semibold">
+                                        {goal.title}
+                                      </span>
+                                      <span
+                                        className="px-2 py-0.5 rounded-md text-[11px] font-medium"
+                                        style={{
+                                          backgroundColor: 'var(--bg-surface)',
+                                          color: 'var(--text-secondary)',
+                                        }}
+                                      >
+                                        {UK_STRINGS.plansView.stateActive}
+                                      </span>
+                                      {goal.archived && (
+                                        <span
+                                          className="px-2 py-0.5 rounded-md text-[11px] font-semibold"
+                                          style={{
+                                            backgroundColor:
+                                              'var(--color-brand-tint)',
+                                            color: 'var(--color-brand-text)',
+                                          }}
+                                        >
+                                          {
+                                            UK_STRINGS.plansView
+                                              .projectArchivedBadge
+                                          }
+                                        </span>
+                                      )}
+                                    </div>
+                                    {goal.purposeUk && (
+                                      <p
+                                        className="text-[13px] m-0"
+                                        style={{
+                                          color: 'var(--text-secondary)',
+                                        }}
+                                      >
+                                        {goal.purposeUk}
+                                      </p>
+                                    )}
+                                    <div
+                                      className="text-[12px]"
+                                      style={{ color: 'var(--text-secondary)' }}
+                                    >
+                                      {goalProg.directTasks.totalCountable > 0
+                                        ? UK_STRINGS.plansView.goalProgressLabel(
+                                            goalProg.directTasks.completedCount,
+                                            goalProg.directTasks.totalCountable
+                                          )
+                                        : UK_STRINGS.plansView
+                                            .goalProgressEmpty}
+                                      {linkedProjectsCount > 0 &&
+                                        ` • Проєктів: ${linkedProjectsCount}`}
+                                    </div>
+                                  </button>
+
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    <Button
+                                      variant="secondary"
+                                      size="sm"
+                                      onClick={() =>
+                                        onUpdatePlansContext({
+                                          activeGoalId: goal.id,
+                                          activeProjectId: null,
+                                        })
+                                      }
+                                      data-testid={`open-goal-btn-${goal.title}`}
+                                    >
+                                      <span>
+                                        {UK_STRINGS.plansView.openGoalButton}
+                                      </span>
+                                      <ChevronRight
+                                        className="w-4 h-4"
+                                        aria-hidden="true"
+                                      />
+                                    </Button>
+                                    <Button
+                                      variant="subtle"
+                                      size="icon"
+                                      aria-label={`${UK_STRINGS.plansView.editGoalButton}: ${goal.title}`}
+                                      onClick={() => openGoalEditModal(goal)}
+                                    >
+                                      <Edit3
+                                        className="w-4 h-4"
+                                        aria-hidden="true"
+                                      />
+                                    </Button>
+                                    <Button
+                                      variant="subtle"
+                                      size="icon"
+                                      aria-label={`${UK_STRINGS.plansView.deleteGoalButton}: ${goal.title}`}
+                                      onClick={() => openGoalDeleteModal(goal)}
+                                    >
+                                      <Trash2
+                                        className="w-4 h-4"
+                                        aria-hidden="true"
+                                      />
+                                    </Button>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    )}
+
+                    {/* Ideas and Paused goals */}
+                    {containerGoals.some(
+                      (g) => g.state === 'idea' || g.state === 'paused'
+                    ) && (
+                      <div className="space-y-2 pt-2">
+                        <div
+                          className="text-[13px] font-semibold"
+                          style={{ color: 'var(--text-secondary)' }}
+                        >
+                          {UK_STRINGS.plansView.ideasAndPausedHeading}
+                        </div>
+                        {containerGoals
+                          .filter(
+                            (g) => g.state === 'idea' || g.state === 'paused'
+                          )
+                          .map((goal) => {
+                            const goalProg = calculateGoalProgress(
+                              goal.id,
+                              tasks,
+                              projects
+                            );
+                            const linkedProjectsCount = projects.filter(
+                              (p) => p.goalId === goal.id
+                            ).length;
+                            return (
+                              <div
+                                key={goal.id}
+                                data-testid={`goal-card-${goal.title}`}
+                                className="p-3.5 rounded-xl space-y-2.5 opacity-85"
+                                style={{
+                                  backgroundColor: 'var(--bg-elevated)',
+                                  border: '1px dashed var(--border-subtle)',
+                                }}
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <button
+                                    type="button"
+                                    data-testid={`open-goal-${goal.title}`}
+                                    onClick={() =>
+                                      onUpdatePlansContext({
+                                        activeGoalId: goal.id,
+                                        activeProjectId: null,
+                                      })
+                                    }
+                                    className="text-left flex-1 cursor-pointer space-y-1"
+                                  >
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <Target
+                                        className="w-4 h-4 shrink-0"
+                                        style={{
+                                          color: 'var(--text-secondary)',
+                                        }}
+                                        aria-hidden="true"
+                                      />
+                                      <span className="text-[16px] font-semibold">
+                                        {goal.title}
+                                      </span>
+                                      <span
+                                        className="px-2 py-0.5 rounded-md text-[11px] font-medium"
+                                        style={{
+                                          backgroundColor: 'var(--bg-surface)',
+                                          color: 'var(--text-secondary)',
+                                        }}
+                                      >
+                                        {goal.state === 'idea'
+                                          ? UK_STRINGS.plansView.stateIdea
+                                          : UK_STRINGS.plansView.statePaused}
+                                      </span>
+                                    </div>
+                                    {goal.purposeUk && (
+                                      <p
+                                        className="text-[13px] m-0"
+                                        style={{
+                                          color: 'var(--text-secondary)',
+                                        }}
+                                      >
+                                        {goal.purposeUk}
+                                      </p>
+                                    )}
+                                    <div
+                                      className="text-[12px]"
+                                      style={{ color: 'var(--text-secondary)' }}
+                                    >
+                                      {goalProg.directTasks.totalCountable > 0
+                                        ? UK_STRINGS.plansView.goalProgressLabel(
+                                            goalProg.directTasks.completedCount,
+                                            goalProg.directTasks.totalCountable
+                                          )
+                                        : UK_STRINGS.plansView
+                                            .goalProgressEmpty}
+                                      {linkedProjectsCount > 0 &&
+                                        ` • Проєктів: ${linkedProjectsCount}`}
+                                    </div>
+                                  </button>
+
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    <Button
+                                      variant="secondary"
+                                      size="sm"
+                                      onClick={() =>
+                                        onUpdatePlansContext({
+                                          activeGoalId: goal.id,
+                                          activeProjectId: null,
+                                        })
+                                      }
+                                      data-testid={`open-goal-btn-${goal.title}`}
+                                    >
+                                      <span>
+                                        {UK_STRINGS.plansView.openGoalButton}
+                                      </span>
+                                      <ChevronRight
+                                        className="w-4 h-4"
+                                        aria-hidden="true"
+                                      />
+                                    </Button>
+                                    <Button
+                                      variant="subtle"
+                                      size="icon"
+                                      aria-label={`${UK_STRINGS.plansView.editGoalButton}: ${goal.title}`}
+                                      onClick={() => openGoalEditModal(goal)}
+                                    >
+                                      <Edit3
+                                        className="w-4 h-4"
+                                        aria-hidden="true"
+                                      />
+                                    </Button>
+                                    <Button
+                                      variant="subtle"
+                                      size="icon"
+                                      aria-label={`${UK_STRINGS.plansView.deleteGoalButton}: ${goal.title}`}
+                                      onClick={() => openGoalDeleteModal(goal)}
+                                    >
+                                      <Trash2
+                                        className="w-4 h-4"
+                                        aria-hidden="true"
+                                      />
+                                    </Button>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    )}
+
+                    {/* Completed goals */}
+                    {containerGoals.some((g) => g.state === 'completed') && (
+                      <div className="space-y-2 pt-2">
+                        <div
+                          className="text-[13px] font-semibold"
+                          style={{ color: 'var(--color-dayoff)' }}
+                        >
+                          {UK_STRINGS.plansView.completedGoalsHeading}
+                        </div>
+                        {containerGoals
+                          .filter((g) => g.state === 'completed')
+                          .map((goal) => (
+                            <div
+                              key={goal.id}
+                              data-testid={`goal-card-${goal.title}`}
+                              className="p-3 rounded-xl flex items-center justify-between gap-2.5 opacity-70"
+                              style={{
+                                backgroundColor: 'var(--bg-elevated)',
+                                border: '1px solid var(--border-subtle)',
+                              }}
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <CheckCircle2
+                                  className="w-4 h-4 shrink-0"
+                                  style={{ color: 'var(--color-dayoff)' }}
+                                  aria-hidden="true"
+                                />
+                                <span className="text-[15px] font-medium truncate">
+                                  {goal.title}
+                                </span>
+                                <span
+                                  className="px-2 py-0.5 rounded-md text-[11px] font-medium"
+                                  style={{
+                                    backgroundColor: 'var(--bg-surface)',
+                                    color: 'var(--color-dayoff)',
+                                  }}
+                                >
+                                  {UK_STRINGS.plansView.stateCompleted}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <Button
+                                  variant="subtle"
+                                  size="sm"
+                                  onClick={() =>
+                                    void handleToggleGoalCompleted(goal)
+                                  }
+                                >
+                                  {UK_STRINGS.plansView.reopenGoalButton}
+                                </Button>
+                                <Button
+                                  variant="subtle"
+                                  size="icon"
+                                  aria-label={`${UK_STRINGS.plansView.deleteGoalButton}: ${goal.title}`}
+                                  onClick={() => openGoalDeleteModal(goal)}
+                                >
+                                  <Trash2
+                                    className="w-4 h-4"
+                                    aria-hidden="true"
+                                  />
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                </Card>
+              )}
+
               {/* Projects Card */}
               {containerProjects.length > 0 && (
                 <Card title={UK_STRINGS.destinations.plans.projectsHeading}>
@@ -2380,6 +3460,9 @@ export const PlansView: React.FC<PlansViewProps> = ({
                         tasks,
                         project.id
                       );
+                      const linkedGoal = project.goalId
+                        ? goals.find((g) => g.id === project.goalId)
+                        : null;
                       return (
                         <div
                           key={project.id}
@@ -2423,6 +3506,18 @@ export const PlansView: React.FC<PlansViewProps> = ({
                                     ? UK_STRINGS.plansView.projectStatePaused
                                     : UK_STRINGS.plansView.projectStateCompleted}
                                 </span>
+                                {linkedGoal && (
+                                  <span
+                                    className="px-2 py-0.5 rounded-md text-[11px] font-medium"
+                                    style={{
+                                      backgroundColor: 'var(--bg-surface)',
+                                      color: 'var(--color-brand)',
+                                      border: '1px solid var(--border-subtle)',
+                                    }}
+                                  >
+                                    Ціль: {linkedGoal.title}
+                                  </span>
+                                )}
                                 {project.archived && (
                                   <span
                                     className="px-2 py-0.5 rounded-md text-[11px] font-semibold"
@@ -3660,17 +4755,47 @@ export const PlansView: React.FC<PlansViewProps> = ({
                   label={UK_STRINGS.plansView.ownershipModeLabel}
                   value={taskEditOwnershipMode}
                   onChange={(e) => {
-                    const mode = e.target.value as 'standalone' | 'project';
+                    const mode = e.target.value as
+                      | 'standalone'
+                      | 'folder'
+                      | 'goal'
+                      | 'project';
                     setTaskEditOwnershipMode(mode);
-                    if (mode === 'project' && !taskEditProjectId && projects[0]) {
+                    if (
+                      mode === 'project' &&
+                      !taskEditProjectId &&
+                      projects.length > 0
+                    ) {
                       setTaskEditProjectId(projects[0].id);
                       setTaskEditStageId(null);
+                    }
+                    if (
+                      mode === 'goal' &&
+                      !taskEditGoalId &&
+                      goals.length > 0
+                    ) {
+                      setTaskEditGoalId(goals[0].id);
+                    }
+                    if (
+                      mode === 'folder' &&
+                      !taskEditFolderId &&
+                      folders.length > 0
+                    ) {
+                      setTaskEditFolderId(folders[0].id);
                     }
                   }}
                   options={[
                     {
                       value: 'standalone',
                       label: UK_STRINGS.plansView.ownershipStandalone,
+                    },
+                    {
+                      value: 'folder',
+                      label: UK_STRINGS.plansView.ownershipFolder,
+                    },
+                    {
+                      value: 'goal',
+                      label: UK_STRINGS.plansView.ownershipGoal,
                     },
                     {
                       value: 'project',
@@ -3680,7 +4805,7 @@ export const PlansView: React.FC<PlansViewProps> = ({
                   data-testid="edit-task-ownership-mode-select"
                 />
 
-                {taskEditOwnershipMode === 'standalone' ? (
+                {taskEditOwnershipMode === 'folder' && (
                   <SelectField
                     label={UK_STRINGS.creation.fieldFolderContext}
                     value={taskEditFolderId ?? ''}
@@ -3689,16 +4814,32 @@ export const PlansView: React.FC<PlansViewProps> = ({
                         e.target.value ? e.target.value : null
                       )
                     }
-                    options={[
-                      {
-                        value: '',
-                        label: UK_STRINGS.creation.rootFolderOption,
-                      },
-                      ...folders.map((f) => ({ value: f.id, label: f.name })),
-                    ]}
+                    options={folders.map((f) => ({
+                      value: f.id,
+                      label: f.name,
+                    }))}
                     data-testid="edit-task-folder-select"
                   />
-                ) : (
+                )}
+
+                {taskEditOwnershipMode === 'goal' && (
+                  <SelectField
+                    label="Ціль"
+                    value={taskEditGoalId ?? ''}
+                    onChange={(e) =>
+                      setTaskEditGoalId(
+                        e.target.value ? e.target.value : null
+                      )
+                    }
+                    options={goals.map((g) => ({
+                      value: g.id,
+                      label: g.title,
+                    }))}
+                    data-testid="edit-task-goal-select"
+                  />
+                )}
+
+                {taskEditOwnershipMode === 'project' && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <SelectField
                       label={UK_STRINGS.creation.fieldProjectContext}
@@ -3876,6 +5017,275 @@ export const PlansView: React.FC<PlansViewProps> = ({
                 </div>
               </div>
             </form>
+          </div>
+        )}
+      </ModalSheet>
+
+      {/* MODAL 10: Goal Edit Modal (Stage M1 / M3) */}
+      <ModalSheet
+        isOpen={Boolean(editingGoal)}
+        title={UK_STRINGS.plansView.editGoalModalTitle}
+        onClose={() => setEditingGoal(null)}
+      >
+        {editingGoal && (
+          <form
+            onSubmit={handleSaveGoalEdit}
+            className="space-y-4"
+            data-testid="edit-goal-form"
+          >
+            {modalError && (
+              <div
+                className="p-3 rounded-xl text-[14px]"
+                style={{
+                  backgroundColor: 'var(--color-brand-tint)',
+                  color: 'var(--color-brand-text)',
+                }}
+              >
+                {modalError}
+              </div>
+            )}
+
+            <InputField
+              label={UK_STRINGS.creation.goalForm.titleLabel}
+              placeholder={UK_STRINGS.creation.goalForm.titlePlaceholder}
+              value={goalEditTitle}
+              onChange={(e) => setGoalEditTitle(e.target.value)}
+              required
+              data-testid="edit-goal-title-input"
+            />
+
+            <SelectField
+              label={UK_STRINGS.creation.goalForm.stateLabel}
+              value={goalEditState}
+              onChange={(e) => setGoalEditState(e.target.value as GoalState)}
+              options={[
+                {
+                  value: 'idea',
+                  label: UK_STRINGS.creation.goalForm.stateIdea,
+                },
+                {
+                  value: 'active',
+                  label: UK_STRINGS.creation.goalForm.stateActive,
+                },
+                {
+                  value: 'paused',
+                  label: UK_STRINGS.creation.goalForm.statePaused,
+                },
+                {
+                  value: 'completed',
+                  label: UK_STRINGS.creation.goalForm.stateCompleted,
+                },
+              ]}
+              data-testid="edit-goal-state-select"
+            />
+
+            <SelectField
+              label={UK_STRINGS.creation.goalForm.folderLabel}
+              value={goalEditFolderId ?? ''}
+              onChange={(e) =>
+                setGoalEditFolderId(e.target.value ? e.target.value : null)
+              }
+              options={[
+                { value: '', label: UK_STRINGS.creation.rootFolderOption },
+                ...folders.map((f) => ({ value: f.id, label: f.name })),
+              ]}
+              data-testid="edit-goal-folder-select"
+            />
+
+            <InputField
+              label={UK_STRINGS.creation.goalForm.purposeLabel}
+              placeholder={UK_STRINGS.creation.goalForm.purposePlaceholder}
+              value={goalEditPurpose}
+              onChange={(e) => setGoalEditPurpose(e.target.value)}
+              data-testid="edit-goal-purpose-input"
+            />
+
+            <InputField
+              label={UK_STRINGS.creation.goalForm.criteriaLabel}
+              placeholder={UK_STRINGS.creation.goalForm.criteriaPlaceholder}
+              value={goalEditCriteria}
+              onChange={(e) => setGoalEditCriteria(e.target.value)}
+              data-testid="edit-goal-criteria-input"
+            />
+
+            <InputField
+              label={UK_STRINGS.creation.goalForm.implementationIntentionLabel}
+              placeholder={
+                UK_STRINGS.creation.goalForm.implementationIntentionPlaceholder
+              }
+              value={goalEditIntention}
+              onChange={(e) => setGoalEditIntention(e.target.value)}
+              data-testid="edit-goal-intention-input"
+            />
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <InputField
+                label={UK_STRINGS.creation.goalForm.targetDateLabel}
+                type="date"
+                lang="uk"
+                value={goalEditTargetDate ?? ''}
+                onChange={(e) =>
+                  setGoalEditTargetDate(
+                    e.target.value ? e.target.value : null
+                  )
+                }
+                data-testid="edit-goal-target-date-input"
+              />
+              <InputField
+                label={UK_STRINGS.creation.goalForm.targetPeriodLabel}
+                placeholder={UK_STRINGS.creation.goalForm.targetPeriodLabel}
+                value={goalEditTargetPeriod}
+                onChange={(e) => setGoalEditTargetPeriod(e.target.value)}
+                data-testid="edit-goal-target-period-input"
+              />
+            </div>
+
+            <SelectField
+              label={UK_STRINGS.creation.goalForm.nextActionLabel}
+              value={goalEditNextActionTaskId ?? ''}
+              onChange={(e) =>
+                setGoalEditNextActionTaskId(
+                  e.target.value ? e.target.value : null
+                )
+              }
+              options={[
+                {
+                  value: '',
+                  label: UK_STRINGS.creation.goalForm.noNextActionOption,
+                },
+                ...tasks
+                  .filter((t) => t.state === 'open')
+                  .map((t) => ({ value: t.id, label: t.title })),
+              ]}
+              data-testid="edit-goal-next-action-select"
+            />
+
+            <div className="flex items-center justify-end gap-2 pt-3">
+              <Button
+                variant="secondary"
+                onClick={() => setEditingGoal(null)}
+              >
+                {UK_STRINGS.app.cancelButton}
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                data-testid="edit-goal-submit-button"
+              >
+                {UK_STRINGS.app.saveButton}
+              </Button>
+            </div>
+          </form>
+        )}
+      </ModalSheet>
+
+      {/* MODAL 11: Goal Delete Modal (Stage M1 / M3) */}
+      <ModalSheet
+        isOpen={Boolean(deletingGoal)}
+        title={UK_STRINGS.plansView.deleteGoalModalTitle}
+        onClose={() => setDeletingGoal(null)}
+      >
+        {deletingGoal && (
+          <div className="space-y-4" data-testid="delete-goal-modal">
+            {modalError && (
+              <div
+                className="p-3 rounded-xl text-[14px]"
+                style={{
+                  backgroundColor: 'var(--color-brand-tint)',
+                  color: 'var(--color-brand-text)',
+                }}
+              >
+                {modalError}
+              </div>
+            )}
+
+            <p
+              className="text-[14px] m-0"
+              style={{ color: 'var(--text-secondary)' }}
+            >
+              Ви збираєтеся видалити ціль{' '}
+              <strong style={{ color: 'var(--text-primary)' }}>
+                {deletingGoal.title}
+              </strong>
+              . Оберіть дію для пов&apos;язаних справ та проєктів:
+            </p>
+
+            <div className="space-y-2">
+              <label
+                className="p-3 rounded-xl flex items-start gap-3 cursor-pointer"
+                style={{
+                  backgroundColor:
+                    goalDeleteMode === 'unlink_children'
+                      ? 'var(--bg-elevated)'
+                      : 'var(--bg-surface)',
+                  border:
+                    goalDeleteMode === 'unlink_children'
+                      ? '1.5px solid var(--color-brand)'
+                      : '1px solid var(--border-subtle)',
+                }}
+              >
+                <input
+                  type="radio"
+                  name="goalDeleteMode"
+                  value="unlink_children"
+                  checked={goalDeleteMode === 'unlink_children'}
+                  onChange={() => setGoalDeleteMode('unlink_children')}
+                  className="mt-0.5"
+                  data-testid="goal-delete-unlink-radio"
+                />
+                <div>
+                  <div className="text-[14px] font-medium">
+                    {UK_STRINGS.plansView.goalDeleteUnlinkChildren}
+                  </div>
+                </div>
+              </label>
+
+              <label
+                className="p-3 rounded-xl flex items-start gap-3 cursor-pointer"
+                style={{
+                  backgroundColor:
+                    goalDeleteMode === 'delete_direct_tasks'
+                      ? 'var(--bg-elevated)'
+                      : 'var(--bg-surface)',
+                  border:
+                    goalDeleteMode === 'delete_direct_tasks'
+                      ? '1.5px solid var(--color-brand)'
+                      : '1px solid var(--border-subtle)',
+                }}
+              >
+                <input
+                  type="radio"
+                  name="goalDeleteMode"
+                  value="delete_direct_tasks"
+                  checked={goalDeleteMode === 'delete_direct_tasks'}
+                  onChange={() => setGoalDeleteMode('delete_direct_tasks')}
+                  className="mt-0.5"
+                  data-testid="goal-delete-tasks-radio"
+                />
+                <div>
+                  <div className="text-[14px] font-medium">
+                    {UK_STRINGS.plansView.goalDeleteDirectTasks}
+                  </div>
+                </div>
+              </label>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3">
+              <Button
+                variant="secondary"
+                onClick={() => setDeletingGoal(null)}
+              >
+                {UK_STRINGS.app.cancelButton}
+              </Button>
+              <Button
+                variant="danger"
+                onClick={() => void handleConfirmDeleteGoal()}
+                data-testid="confirm-delete-goal-button"
+              >
+                <Trash2 className="w-4 h-4" aria-hidden="true" />
+                <span>{UK_STRINGS.app.deleteButton}</span>
+              </Button>
+            </div>
           </div>
         )}
       </ModalSheet>

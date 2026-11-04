@@ -1,12 +1,14 @@
-import React, { useMemo, useState } from 'react';
+import { TodayMode, DailyPlan } from '../domain/types';
+import { EMPTY_DAILY_PLAN, shouldRevealNow, projectTodayTasks, deadlineDate } from '../domain/today';
+import { DailyFocusPanel } from '../components/today/DailyFocusPanel';
+import { TodayTasksPanel } from '../components/today/TodayTasksPanel';
+import { TaskPlanningSheet } from '../components/today/TaskPlanningSheet';
+import React, { useEffect, useRef, useMemo, useState } from 'react';
 import {
-  CheckCircle2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
-  Circle,
-  Clock,
   Repeat,
 } from 'lucide-react';
 import {
@@ -27,7 +29,6 @@ import {
 } from '../domain/temporal';
 import {
   UnoccupiedTimeGap,
-  collectOlderUnresolvedAndOverdueTasks,
   computeCollapsedNextDaySummary,
   computeNearestCommitment,
   projectScheduleForDate,
@@ -47,6 +48,13 @@ import { Button, Card } from '../components/ui/primitives';
 import { SharedDayTimeline } from '../components/timeline/SharedDayTimeline';
 
 export interface TodayWorkspaceViewProps {
+  mode?: TodayMode;
+  hasInteraction?: boolean;
+  savedScrollTop?: number;
+  dailyPlan?: DailyPlan;
+  onChangeMode: (mode: TodayMode) => void;
+  onInteraction: () => void;
+  onModalStateChange?: (open: boolean) => void;
   selectedDate: LocalDateString;
   actualTodayDate: LocalDateString;
   activeZone: IanaTimeZone;
@@ -62,6 +70,7 @@ export interface TodayWorkspaceViewProps {
   dayOffAnnotations: readonly DayOffAnnotation[];
   habits: readonly Habit[];
   habitEntries: readonly HabitEntry[];
+  habitsEnabled?: boolean;
   repositories: PlanuiRepositories;
   onSelectDate: (nextDate: LocalDateString) => void;
   onToggleUntimedCollapsed: () => void;
@@ -78,6 +87,8 @@ export interface TodayWorkspaceViewProps {
 }
 
 export function TodayWorkspaceView({
+  mode = 'day', hasInteraction = false, savedScrollTop = 0, dailyPlan = EMPTY_DAILY_PLAN,
+  onChangeMode, onInteraction, onModalStateChange,
   selectedDate,
   actualTodayDate,
   activeZone,
@@ -92,6 +103,7 @@ export function TodayWorkspaceView({
   dayOffAnnotations,
   habits,
   habitEntries,
+  habitsEnabled = true,
   repositories,
   onSelectDate,
   onToggleUntimedCollapsed,
@@ -106,8 +118,16 @@ export function TodayWorkspaceView({
   onNavigateToHabits,
   onDataChanged,
 }: TodayWorkspaceViewProps) {
-  const [olderPlansExpanded, setOlderPlansExpanded] = useState(false);
-  const [overdueExpanded, setOverdueExpanded] = useState(false);
+  const effectiveMode = mode === 'habits' && !habitsEnabled ? 'day' : mode;
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [planningTask, setPlanningTask] = useState<{ task: Task; reservationId?: string } | null>(null);
+  useEffect(() => { onModalStateChange?.(Boolean(planningTask)); return () => onModalStateChange?.(false); }, [Boolean(planningTask)]);
+  const revealCurrentTime = () => rootRef.current?.querySelector('[data-testid="today-current-time-indicator"]')?.scrollIntoView({ block: 'center', behavior: 'instant' as ScrollBehavior });
+  useEffect(() => {
+    if (!shouldRevealNow({ selectedDate, mode: effectiveMode, hasInteraction, scrollTop: savedScrollTop }, actualTodayDate)) return;
+    const frame = requestAnimationFrame(() => { revealCurrentTime(); onInteraction(); });
+    return () => cancelAnimationFrame(frame);
+  }, [selectedDate, actualTodayDate, effectiveMode, hasInteraction]);
   const [recordHabitForPreviousDate, setRecordHabitForPreviousDate] =
     useState(false);
 
@@ -187,18 +207,6 @@ export function TodayWorkspaceView({
     [nextDayProjection]
   );
 
-  const { olderUnresolvedPlannedTasks, overdueDeadlineTasks } = useMemo(
-    () =>
-      collectOlderUnresolvedAndOverdueTasks({
-        tasks,
-        reservations,
-        selectedDate,
-        displayZone: activeZone,
-        nowMs,
-      }),
-    [tasks, reservations, selectedDate, activeZone, nowMs]
-  );
-
   // 6.2 & 9.4 Compact habits when real active habits exist, filtered by selected-date relevance
   const activeRealHabits = useMemo(
     () => habits.filter((h) => h.state === 'active'),
@@ -224,56 +232,8 @@ export function TodayWorkspaceView({
     [habits, habitEntries, effectiveHabitRecordingDate]
   );
 
-  const todayUntimedTasks = todayProjection.untimedDateOnlyTasks;
-
-  const handleMoveTaskToSelectedDate = async (task: Task) => {
-    try {
-      const nowIso = new Date().toISOString();
-      if (task.planningState === 'timed') {
-        await repositories.removeTaskCurrentPlanningTransactionally(
-          task.id,
-          nowIso
-        );
-      }
-      const freshSnap = await repositories.captureCoherentSnapshot();
-      const currentTask =
-        freshSnap.snapshot.tasks.find((t) => t.id === task.id) ?? task;
-      await repositories.saveTask(
-        {
-          ...currentTask,
-          planningState: 'date_only',
-          plannedDate: selectedDate,
-          updatedAt: nowIso,
-          revision: currentTask.revision + 1,
-        },
-        currentTask.revision
-      );
-      await onDataChanged(`Справу «${task.title}» заплановано на ${selectedDate}.`);
-    } catch (err) {
-      await onDataChanged(
-        err instanceof Error ? err.message : 'Не вдалося перенести справу.'
-      );
-    }
-  };
-
-  const handleClearTaskPlanning = async (task: Task) => {
-    try {
-      await repositories.removeTaskCurrentPlanningTransactionally(
-        task.id,
-        new Date().toISOString()
-      );
-      await onDataChanged(
-        `Планування для справи «${task.title}» знято (справа залишилась у «Планах»).`
-      );
-    } catch (err) {
-      await onDataChanged(
-        err instanceof Error ? err.message : 'Не вдалося зняти планування.'
-      );
-    }
-  };
-
   return (
-    <div className="space-y-4" data-testid="destination-view-today">
+    <div ref={rootRef} className="space-y-4" data-testid="destination-view-today" onPointerDownCapture={onInteraction} onWheelCapture={onInteraction} onKeyDownCapture={onInteraction}>
       {/* 1. Selected Date / Weekday, Navigation, and One-Action Return to Actual Today (6.2) */}
       <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="space-y-1">
@@ -332,6 +292,17 @@ export function TodayWorkspaceView({
         </div>
       </header>
 
+      <nav aria-label="Режими Сьогодні" className="flex flex-wrap gap-2">
+        {([{ value: 'day', label: 'День' }, { value: 'tasks', label: 'Завдання' }, ...(habitsEnabled ? [{ value: 'habits', label: 'Звички' }] : [])] as { value: TodayMode; label: string }[]).map(option => <Button key={option.value} aria-pressed={effectiveMode === option.value} variant={effectiveMode === option.value ? 'primary' : 'secondary'} onClick={() => onChangeMode(option.value)}>{option.label}</Button>)}
+        {selectedDate === actualTodayDate && effectiveMode === 'day' && <Button onClick={revealCurrentTime}>До поточного часу</Button>}
+      </nav>
+      <DailyFocusPanel key={selectedDate + ':' + JSON.stringify(dailyPlan)} date={selectedDate} zone={activeZone} plan={dailyPlan} tasks={tasks} reservations={reservations} repositories={repositories} onChanged={() => onDataChanged()} />
+      {dailyPlan.minimalDay && effectiveMode !== 'day' && <Card className="space-y-2" data-testid="today-minimal-commitments">
+        <h2 className="font-semibold">Зобов’язання та зайнятий час залишаються видимими</h2>
+        <p>Зайнято: {Math.round(todayProjection.availability.totalOccupiedMinutes)} хв. Це планування, а не облік виконаної роботи.</p>
+        <ul>{todayProjection.timelineItems.filter(item => item.isBlocking).map(item => <li key={item.itemKey}>{item.segment.displayStartLocalTime} – {item.segment.displayEndLocalTime}: {item.title}</li>)}{todayProjection.allDayItems.filter(item => item.isBlocking).map(item => <li key={item.eventId}>Увесь день: {item.title}</li>)}{projectTodayTasks(tasks, reservations, selectedDate, activeZone, dailyPlan).relevant.filter(task => task.deadline).map(task => <li key={task.id}>Термін: {task.title}, {formatUkrainianDateHeading(deadlineDate(task, activeZone)!)}</li>)}</ul>
+      </Card>}
+      {planningTask && <TaskPlanningSheet key={planningTask.task.id + ':' + (planningTask.reservationId ?? '')} task={planningTask.task} initialReservationId={planningTask.reservationId} date={selectedDate} zone={activeZone} tasks={tasks} events={events} reservations={reservations} repositories={repositories} onClose={() => setPlanningTask(null)} onSaved={() => onDataChanged()} />}
       {/* Midnight Rollover Notice Banner (6.3 Preserve viewport at midnight and offer actual-today return) */}
       {midnightRolloverDate && (
         <div
@@ -394,6 +365,7 @@ export function TodayWorkspaceView({
         </div>
       )}
 
+      {effectiveMode === 'day' && <>
       {/* 2. Compact Nearest Commitment (6.2) */}
       <Card
         title={UK_STRINGS.destinations.today.nearestCommitmentLabel}
@@ -425,8 +397,9 @@ export function TodayWorkspaceView({
         )}
       </Card>
 
-      {/* 3. Compact Habits ONLY when real data exists (6.2 & 9.4: Selected-date relevance, shared entries, previous-date night-shift toggle) */}
-      {activeRealHabits.length > 0 && (
+      </>}
+      {/* 3. Compact Habits ONLY when real data exists and module is enabled (6.2 & 9.4) */}
+      {effectiveMode === 'habits' && habitsEnabled && activeRealHabits.length > 0 && (
         <Card
           title={UK_STRINGS.destinations.today.compactHabitsSection}
           data-testid="today-compact-habits-card"
@@ -443,19 +416,6 @@ export function TodayWorkspaceView({
                   ? `За вчора (${previousLocalDateForHabits})`
                   : `За вчора після нічної зміни (${previousLocalDateForHabits})`}
               </Button>
-              {onNavigateToHabits && (
-                <Button
-                  type="button"
-                  variant="subtle"
-                  size="sm"
-                  data-testid="today-open-habits-view-button"
-                  onClick={() =>
-                    onNavigateToHabits(effectiveHabitRecordingDate)
-                  }
-                >
-                  Усі звички
-                </Button>
-              )}
             </div>
           }
         >
@@ -682,268 +642,9 @@ export function TodayWorkspaceView({
         </Card>
       )}
 
-      {/* 4. Collapsible Untimed Date-Planned Tasks + Separate Compact Older Plans & Overdue Deadlines (6.2 / 6.4) */}
-      <Card
-        title={UK_STRINGS.destinations.today.untimedTasksSection}
-        data-testid="today-untimed-tasks-card"
-        headerRight={
-          <div className="flex items-center gap-2">
-            <span
-              className="text-[13px] font-semibold tabular-nums"
-              style={{ color: 'var(--text-secondary)' }}
-              data-testid="today-untimed-count"
-            >
-              {todayUntimedTasks.length}
-            </span>
-            <Button
-              type="button"
-              variant="subtle"
-              size="sm"
-              aria-expanded={!untimedCollapsed}
-              data-testid="today-toggle-untimed-button"
-              onClick={onToggleUntimedCollapsed}
-            >
-              {untimedCollapsed ? (
-                <>
-                  <span>{UK_STRINGS.destinations.today.expandUntimedTasks}</span>
-                  <ChevronDown className="w-4 h-4 ml-1" aria-hidden="true" />
-                </>
-              ) : (
-                <>
-                  <span>
-                    {UK_STRINGS.destinations.today.collapseUntimedTasks}
-                  </span>
-                  <ChevronUp className="w-4 h-4 ml-1" aria-hidden="true" />
-                </>
-              )}
-            </Button>
-          </div>
-        }
-      >
-        <div className="space-y-3">
-          {!untimedCollapsed && (
-            <>
-              {todayUntimedTasks.length === 0 ? (
-                <p
-                  className="text-[14px] m-0"
-                  style={{ color: 'var(--text-secondary)' }}
-                >
-                  {UK_STRINGS.destinations.today.noUntimedTasks}
-                </p>
-              ) : (
-                <ul className="space-y-2 m-0 p-0 list-none">
-                  {todayUntimedTasks.map((task) => {
-                    const completed = task.state === 'completed';
-                    return (
-                      <li
-                        key={task.id}
-                        data-testid={`today-untimed-task-${task.title}`}
-                        className="p-3 rounded-xl flex items-center justify-between gap-3"
-                        style={{ backgroundColor: 'var(--bg-elevated)' }}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => void onToggleTaskState(task.id)}
-                          className="min-h-[44px] flex items-center gap-3 text-left flex-1 cursor-pointer"
-                        >
-                          {completed ? (
-                            <CheckCircle2
-                              className="w-5 h-5 shrink-0"
-                              style={{ color: 'var(--color-dayoff)' }}
-                              aria-hidden="true"
-                            />
-                          ) : (
-                            <Circle
-                              className="w-5 h-5 shrink-0"
-                              style={{ color: 'var(--text-secondary)' }}
-                              aria-hidden="true"
-                            />
-                          )}
-                          <span
-                            className={`text-[15px] font-medium ${
-                              completed ? 'line-through opacity-70' : ''
-                            }`}
-                          >
-                            {task.title}
-                          </span>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </>
-          )}
-
-          {/* Compact Access to Older Unresolved Plans (6.4: Never auto-copied into Today) */}
-          {olderUnresolvedPlannedTasks.length > 0 && (
-            <div
-              className="pt-2 border-t space-y-2"
-              style={{ borderColor: 'var(--border-subtle)' }}
-              data-testid="today-older-unresolved-section"
-            >
-              <button
-                type="button"
-                aria-expanded={olderPlansExpanded}
-                data-testid="today-older-unresolved-toggle"
-                onClick={() => setOlderPlansExpanded((prev) => !prev)}
-                className="w-full min-h-[44px] flex items-center justify-between text-left text-[13px] font-semibold cursor-pointer"
-                style={{ color: 'var(--text-secondary)' }}
-              >
-                <span>
-                  {UK_STRINGS.destinations.today.olderUnresolvedPlansToggle(
-                    olderUnresolvedPlannedTasks.length
-                  )}
-                </span>
-                {olderPlansExpanded ? (
-                  <ChevronUp className="w-4 h-4" aria-hidden="true" />
-                ) : (
-                  <ChevronDown className="w-4 h-4" aria-hidden="true" />
-                )}
-              </button>
-
-              {olderPlansExpanded && (
-                <div className="space-y-2">
-                  <p
-                    className="text-[12px] m-0"
-                    style={{ color: 'var(--text-secondary)' }}
-                  >
-                    {UK_STRINGS.destinations.today.olderUnresolvedPlansSubtitle}
-                  </p>
-                  <ul className="space-y-1.5 m-0 p-0 list-none">
-                    {olderUnresolvedPlannedTasks.map(({ task, reasonUk }) => (
-                      <li
-                        key={task.id}
-                        data-testid={`today-older-unresolved-item-${task.title}`}
-                        className="p-2.5 rounded-xl flex flex-wrap items-center justify-between gap-2 text-[13px]"
-                        style={{ backgroundColor: 'var(--bg-elevated)' }}
-                      >
-                        <div className="space-y-0.5">
-                          <div className="font-semibold">{task.title}</div>
-                          <div
-                            className="text-[11px]"
-                            style={{ color: 'var(--text-secondary)' }}
-                          >
-                            {reasonUk}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            data-testid={`today-reschedule-older-to-selected-${task.title}`}
-                            onClick={() =>
-                              void handleMoveTaskToSelectedDate(task)
-                            }
-                          >
-                            {
-                              UK_STRINGS.destinations.today
-                                .rescheduleToSelectedDateButton
-                            }
-                          </Button>
-                          <Button
-                            variant="subtle"
-                            size="sm"
-                            data-testid={`today-clear-older-planning-${task.title}`}
-                            onClick={() => void handleClearTaskPlanning(task)}
-                          >
-                            {
-                              UK_STRINGS.destinations.today
-                                .clearTaskPlanningButton
-                            }
-                          </Button>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Separate Overdue Deadlines Drawer (6.4: Keep overdue deadlines separate from elapsed planning) */}
-          {overdueDeadlineTasks.length > 0 && (
-            <div
-              className="pt-2 border-t space-y-2"
-              style={{ borderColor: 'var(--border-subtle)' }}
-              data-testid="today-overdue-deadlines-section"
-            >
-              <button
-                type="button"
-                aria-expanded={overdueExpanded}
-                data-testid="today-overdue-deadlines-toggle"
-                onClick={() => setOverdueExpanded((prev) => !prev)}
-                className="w-full min-h-[44px] flex items-center justify-between text-left text-[13px] font-semibold cursor-pointer"
-                style={{ color: 'var(--color-brand-text)' }}
-              >
-                <span>
-                  {UK_STRINGS.destinations.today.overdueDeadlinesToggle(
-                    overdueDeadlineTasks.length
-                  )}
-                </span>
-                {overdueExpanded ? (
-                  <ChevronUp className="w-4 h-4" aria-hidden="true" />
-                ) : (
-                  <ChevronDown className="w-4 h-4" aria-hidden="true" />
-                )}
-              </button>
-
-              {overdueExpanded && (
-                <div className="space-y-2">
-                  <p
-                    className="text-[12px] m-0"
-                    style={{ color: 'var(--text-secondary)' }}
-                  >
-                    {UK_STRINGS.destinations.today.overdueDeadlinesSubtitle}
-                  </p>
-                  <ul className="space-y-1.5 m-0 p-0 list-none">
-                    {overdueDeadlineTasks.map(({ task, deadlineLabelUk }) => (
-                      <li
-                        key={task.id}
-                        data-testid={`today-overdue-deadline-item-${task.title}`}
-                        className="p-2.5 rounded-xl flex flex-wrap items-center justify-between gap-2 text-[13px]"
-                        style={{ backgroundColor: 'var(--bg-elevated)' }}
-                      >
-                        <div className="space-y-0.5">
-                          <div className="font-semibold">{task.title}</div>
-                          <div
-                            className="text-[11px] font-medium"
-                            style={{ color: 'var(--color-brand-text)' }}
-                          >
-                            {deadlineLabelUk}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => void onToggleTaskState(task.id)}
-                          >
-                            {UK_STRINGS.plansView.completeTaskButton}
-                          </Button>
-                          <Button
-                            variant="subtle"
-                            size="sm"
-                            onClick={() =>
-                              void handleMoveTaskToSelectedDate(task)
-                            }
-                          >
-                            {
-                              UK_STRINGS.destinations.today
-                                .rescheduleToSelectedDateButton
-                            }
-                          </Button>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </Card>
-
+      {effectiveMode === 'habits' && habitsEnabled && activeRealHabits.length === 0 && <Card><p>Активних звичок поки немає.</p><Button onClick={() => onOpenGlobalCreation('habit')}>Додати звичку</Button></Card>}
+      {effectiveMode === 'tasks' && <TodayTasksPanel actualTodayDate={actualTodayDate} nowMs={nowMs} date={selectedDate} zone={activeZone} plan={dailyPlan} tasks={tasks} reservations={reservations} repositories={repositories} onChanged={() => onDataChanged()} onToggle={onToggleTaskState} onPlan={task => setPlanningTask({ task })} />}
+      {effectiveMode === 'day' && <>
       {/* 5. Main Proportional Timeline for Selected Date (6.1 / 6.5) */}
       <SharedDayTimeline
         testIdPrefix="today"
@@ -956,6 +657,7 @@ export function TodayWorkspaceView({
         onToggleTaskState={onToggleTaskState}
         onCancelEvent={onCancelEvent}
         onInspectEvent={onInspectEvent}
+        onInspectTask={(task, reservationId) => setPlanningTask({ task, reservationId })}
         onOpenGapPicker={onOpenGapPicker}
         onEmptyCreateAction={() => onOpenGlobalCreation('task')}
         emptyActionLabel={UK_STRINGS.creation.actions.task.label}
@@ -1032,44 +734,7 @@ export function TodayWorkspaceView({
               className="space-y-4"
               data-testid="today-next-day-expanded-content"
             >
-              {nextDayProjection.timelineItems.length === 0 &&
-              nextDayProjection.untimedDateOnlyTasks.length === 0 &&
-              nextDayProjection.allDayItems.length === 0 ? (
-                <p
-                  className="text-[14px] m-0"
-                  style={{ color: 'var(--text-secondary)' }}
-                >
-                  {UK_STRINGS.destinations.today.nextDaySummaryEmpty}
-                </p>
-              ) : (
-                <ul className="space-y-1.5 m-0 p-0 list-none">
-                  {nextDayProjection.timelineItems.map((item) => (
-                    <li
-                      key={item.itemKey}
-                      className="p-2.5 rounded-xl text-[13px] flex items-center justify-between gap-2"
-                      style={{ backgroundColor: 'var(--bg-elevated)' }}
-                    >
-                      <span>
-                        <strong className="font-mono tabular-nums">
-                          {item.segment.displayStartLocalTime} –{' '}
-                          {item.segment.displayEndLocalTime}
-                        </strong>{' '}
-                        {item.title}
-                      </span>
-                      {item.segment.continuesBeforeDayStart && (
-                        <span
-                          className="text-[11px] font-medium"
-                          style={{ color: 'var(--color-work-text)' }}
-                        >
-                          {UK_STRINGS.scheduling.continuationFromPrevDayBadge}
-                        </span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-
-              {/* Next Day Shared Proportional Timeline (compact mode in same scroll flow) */}
+              {/* Next Day Shared Proportional Timeline (same scale and scroll flow) */}
               <SharedDayTimeline
                 testIdPrefix="today-next-day"
                 projection={nextDayProjection}
@@ -1081,13 +746,14 @@ export function TodayWorkspaceView({
                 onToggleTaskState={onToggleTaskState}
                 onCancelEvent={onCancelEvent}
                 onInspectEvent={onInspectEvent}
+                onInspectTask={(task, reservationId) => setPlanningTask({ task, reservationId })}
                 onOpenGapPicker={onOpenGapPicker}
-                compactMode
               />
             </div>
           )}
         </Card>
       </div>
+      </>}
     </div>
   );
 }

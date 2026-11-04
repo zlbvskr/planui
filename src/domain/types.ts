@@ -3,9 +3,9 @@
  */
 
 export const PLANUI_APP_VERSION = '0.3.0';
-export const PLANUI_DB_SCHEMA_VERSION = 1;
+export const PLANUI_DB_SCHEMA_VERSION = 5;
 export const PLANUI_BACKUP_FORMAT = 'planui-backup-zip' as const;
-export const PLANUI_BACKUP_VERSION = 1;
+export const PLANUI_BACKUP_VERSION = 5;
 
 export type EntityId = string;
 export type IsoInstantString = string;
@@ -24,6 +24,7 @@ export interface ZonedInterval {
 }
 
 export interface Folder {
+  lifeAreaId?: EntityId | null;
   id: EntityId;
   name: string;
   parentId: EntityId | null;
@@ -33,9 +34,61 @@ export interface Folder {
   revision: number;
 }
 
-export type ProjectResultState = 'active' | 'paused' | 'completed';
+/**
+ * M1 / PLANUI-LIFE-ALIGNMENT-1: Goal & Project Planning States
+ * States: idea | active | paused | completed.
+ * Archiving is a separate boolean orthogonal flag; cancelling is distinct.
+ */
+export type PlanningEntityState = 'idea' | 'active' | 'paused' | 'completed';
+export type GoalState = PlanningEntityState;
+export type ProjectResultState = PlanningEntityState;
 
-export interface Project {
+export type RoadmapPeriod =
+  | { precision: 'month'; month: string }
+  | { precision: 'quarter'; year: number; quarter: 1 | 2 | 3 | 4 }
+  | { precision: 'range'; startDate: LocalDateString; endDateExclusive: LocalDateString };
+
+export interface RoadmapCheckpoint {
+  id: EntityId;
+  title: string;
+  localDate: LocalDateString | null;
+  order: number;
+}
+
+export interface RoadmapMetadata {
+  roadmapPeriod?: RoadmapPeriod | null;
+  checkpoints?: RoadmapCheckpoint[];
+}
+
+export type RoadmapOwner = { kind: 'goal' | 'project' | 'stage'; id: EntityId };
+export type RoadmapLayer = 'hidden' | 'key_dates' | 'periods';
+
+export interface GoalTimingMetadata {
+  targetDate: LocalDateString | null;
+  targetPeriodUk: string | null;
+}
+
+export interface Goal extends RoadmapMetadata {
+  id: EntityId;
+  title: string;
+  description: string | null;
+  purposeUk: string | null; // "Навіщо це мені"
+  completionCriteriaUk: string | null; // "Як я зрозумію, що ціль досягнуто"
+  nextActionTaskId: EntityId | null; // посилання на канонічну справу
+  timing: GoalTimingMetadata | null;
+  folderId: EntityId | null; // прив'язка до напряму (папки)
+  lifeAreaId: EntityId | null; // пряма прив'язка до сфери життя
+  implementationIntentionUk: string | null; // "Якщо..., то..."
+  state: GoalState;
+  archived: boolean;
+  order: number;
+  createdAt: IsoInstantString;
+  updatedAt: IsoInstantString;
+  completedAt: IsoInstantString | null;
+  revision: number;
+}
+
+export interface Project extends RoadmapMetadata {
   id: EntityId;
   title: string;
   description: string | null;
@@ -43,8 +96,12 @@ export interface Project {
   completionCriteria: string | null;
   targetDate: LocalDateString | null;
   folderId: EntityId | null;
+  goalId?: EntityId | null; // M1: опціональне посилання на ціль
   lifeAreaId: EntityId | null;
   collaboratorText: string | null;
+  purposeUk?: string | null; // M1: сенс / мета
+  completionCriteriaUk?: string | null; // M1: критерії завершення
+  nextActionTaskId?: EntityId | null; // M1: канонічна справа наступного кроку
   state: ProjectResultState;
   archived: boolean;
   createdAt: IsoInstantString;
@@ -53,9 +110,10 @@ export interface Project {
   revision: number;
 }
 
-export interface ProjectStage {
+export interface ProjectStage extends RoadmapMetadata {
   id: EntityId;
-  projectId: EntityId;
+  projectId: EntityId | null;
+  goalId?: EntityId | null;
   title: string;
   expectedOutcome: string | null;
   targetDate: LocalDateString | null;
@@ -68,13 +126,29 @@ export interface ProjectStage {
 export type TaskState = 'open' | 'completed' | 'canceled';
 export type TaskPriority = 'high' | 'normal' | 'low';
 export type TaskPlanningState = 'unplanned' | 'date_only' | 'timed';
+export type TaskEffort = 'small' | 'medium' | 'large';
+export type TodayMode = 'day' | 'tasks' | 'habits';
+export interface DailyPlan {
+  focusTaskIds: EntityId[];
+  focusNoteUk: string | null;
+  minimalDay: boolean;
+}
 
 export type TaskDeadline =
   | { kind: 'date_only'; localDate: LocalDateString }
   | { kind: 'exact_instant'; instant: IsoInstantString; zoneId: IanaTimeZone };
 
+/**
+ * TaskOwnership discriminated union (M1):
+ * - standalone: справа без напряму (folderId === null або для сумісності з v1: string | null)
+ * - folder: справа напряму/папки (folderId !== null)
+ * - goal: пряма справа цілі (goalId !== null)
+ * - project: справа проєкту (projectId !== null; опціональний stageId)
+ */
 export type TaskOwnership =
-  | { kind: 'standalone'; folderId: EntityId | null }
+  | { kind: 'standalone'; folderId?: EntityId | null }
+  | { kind: 'folder'; folderId: EntityId }
+  | { kind: 'goal'; goalId: EntityId }
   | { kind: 'project'; projectId: EntityId; stageId: EntityId | null };
 
 export interface ChecklistItem {
@@ -85,6 +159,8 @@ export interface ChecklistItem {
 }
 
 export interface Task {
+  lifeAreaId?: EntityId | null;
+  effort?: TaskEffort | null;
   id: EntityId;
   title: string;
   description: string | null;
@@ -151,6 +227,7 @@ export interface WorkShiftProperties {
 }
 
 export interface CalendarEvent {
+  lifeAreaId?: EntityId | null;
   id: EntityId;
   title: string;
   note: string | null;
@@ -256,6 +333,10 @@ export interface PersonalRecord {
 }
 
 export interface LifeAreaQuestion {
+  archived?: boolean;
+  mergedIntoId?: EntityId | null;
+  goodEnoughUk?: string | null;
+  starterKeys?: string[];
   id: EntityId;
   order: number;
   questionTextUk: string;
@@ -265,14 +346,19 @@ export interface LifeAreaQuestion {
 }
 
 export interface LifeAreaAnswerItem {
+  attentionNow?: boolean | null;
+  usefulChangeUk?: string | null;
+  definitionSnapshotUk?: string | null;
+  satisfactionQuestionSnapshotUk?: string;
   questionId: EntityId;
   questionTextSnapshotUk: string;
   questionVersionSnapshot: number;
-  score: Scale1To10 | null;
+  score: 0 | Scale1To10 | null;
   note: string | null;
 }
 
 export interface LifeAreaAssessment {
+  scale?: { min: 0 | 1; max: 10; labelUk: string };
   id: EntityId;
   recordedAt: IsoInstantString;
   periodStartLocalDate: LocalDateString;
@@ -370,7 +456,17 @@ export interface WishItem {
 export type ThemePreference = 'system' | 'light' | 'dark';
 export type TimeZoneMode = 'device' | 'manual';
 
+export interface OptionalModulesSettings {
+  habitsEnabled: boolean;
+  stateCheckInsEnabled: boolean;
+  desiredLifeEnabled: boolean;
+  wishlistEnabled: boolean;
+  userConfigured?: boolean;
+}
+
 export interface PlanuiSettings {
+  dailyPlans?: Record<LocalDateString, DailyPlan>;
+  roadmapLayer?: RoadmapLayer;
   id: 'singleton';
   theme: ThemePreference;
   timeZoneMode: TimeZoneMode;
@@ -380,6 +476,7 @@ export interface PlanuiSettings {
   reducedMotionOverride: boolean;
   reducedTransparencyOverride: boolean;
   preferredWishlistCurrency: SupportedCurrencyCode | null;
+  modules?: OptionalModulesSettings;
   dbGeneration: number;
   appVersion: string;
   dbSchemaVersion: number;
@@ -387,8 +484,10 @@ export interface PlanuiSettings {
   revision: number;
 }
 
+
 export interface PlanuiDomainSnapshot {
   folders: Folder[];
+  goals: Goal[];
   projects: Project[];
   stages: ProjectStage[];
   tasks: Task[];

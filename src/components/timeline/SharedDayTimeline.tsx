@@ -34,6 +34,7 @@ export interface SharedDayTimelineProps {
   onEmptyCreateAction?: () => void;
   emptyActionLabel?: string;
   compactMode?: boolean;
+  onInspectTask?: (task: Task, reservationId?: string) => void;
 }
 
 const MINUTE_HEIGHT_PX = 1.05; // ~63px per hour -> ~1512px for a 24h day
@@ -98,6 +99,7 @@ export function SharedDayTimeline({
   onEmptyCreateAction,
   emptyActionLabel,
   compactMode = false,
+  onInspectTask,
 }: SharedDayTimelineProps) {
   const [showReleasedHistory, setShowReleasedHistory] = useState(false);
   const [activeClusterModal, setActiveClusterModal] =
@@ -677,6 +679,7 @@ export function SharedDayTimeline({
                                   : UK_STRINGS.plansView.completeTaskButton}
                               </Button>
                             )}
+                          {isReservation && sourceTask && onInspectTask && <Button size="sm" variant="subtle" aria-label={`Планування справи: ${sourceTask.title}`} onClick={() => onInspectTask(sourceTask, item.sourceId)}>Дата й сеанси</Button>}
                           {!isReservation &&
                             sourceEvent &&
                             sourceEvent.state === 'active' && (

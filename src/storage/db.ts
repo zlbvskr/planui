@@ -1,3 +1,4 @@
+import { createStarterAreas } from '../domain/lifeAreas';
 import { PlanuiError } from '../i18n/errorsUk';
 import {
   PLANUI_APP_VERSION,
@@ -9,6 +10,7 @@ import { detectDeviceTimeZone } from '../domain/temporal';
 
 export const STORE_NAMES = {
   folders: 'folders',
+  goals: 'goals',
   projects: 'projects',
   stages: 'stages',
   tasks: 'tasks',
@@ -37,29 +39,14 @@ export const ALL_STORE_NAMES: StoreName[] = Object.values(STORE_NAMES);
 export function createDefaultLifeAreaQuestions(
   nowIso: string
 ): LifeAreaQuestion[] {
-  const textsUk = [
-    'Наскільки задовільним було ваше фізичне самопочуття протягом останнього тижня?',
-    'Наскільки ви відчували емоційний спокій і внутрішню стабільність останнім часом?',
-    'Наскільки достатніми були ваш сон і фізичне відновлення?',
-    'Наскільки ви задоволені близькістю, підтримкою та контактом із важливими людьми?',
-    'Чи вистачало вам простору для музики, ідей та творчості?',
-    'Наскільки прийнятним було ваше робоче навантаження?',
-    'Наскільки ви відчуваєте фінансову стабільність і контроль?',
-    'Чи достатньо у вас було особистого часу для себе?',
-  ];
-  return textsUk.map((questionTextUk, idx) => ({
-    id: `life-q-${idx + 1}`,
-    order: idx + 1,
-    questionTextUk,
-    version: 1,
-    updatedAt: nowIso,
-    revision: 1,
-  }));
+  return createStarterAreas(nowIso);
 }
 
 export function createDefaultSettings(nowIso: string): PlanuiSettings {
   const detected = detectDeviceTimeZone() ?? 'Europe/Kyiv';
   return {
+    dailyPlans: {},
+    roadmapLayer: 'hidden',
     id: 'singleton',
     theme: 'system',
     timeZoneMode: 'device',
@@ -69,6 +56,12 @@ export function createDefaultSettings(nowIso: string): PlanuiSettings {
     reducedMotionOverride: false,
     reducedTransparencyOverride: false,
     preferredWishlistCurrency: null,
+    modules: {
+      habitsEnabled: false,
+      stateCheckInsEnabled: false,
+      desiredLifeEnabled: false,
+      wishlistEnabled: false,
+    },
     dbGeneration: 1,
     appVersion: PLANUI_APP_VERSION,
     dbSchemaVersion: PLANUI_DB_SCHEMA_VERSION,
@@ -219,15 +212,23 @@ export class IndexedDbStorageEngine implements StorageEngine {
         reject(new PlanuiError('DB_VERSION_BLOCKED'));
       };
 
-      req.onupgradeneeded = () => {
+      req.onupgradeneeded = (event) => {
         const db = req.result;
+        const oldVersion = event.oldVersion;
+
         for (const storeName of ALL_STORE_NAMES) {
           if (!db.objectStoreNames.contains(storeName)) {
             const store = db.createObjectStore(storeName, { keyPath: 'id' });
             if (storeName === STORE_NAMES.folders) {
               store.createIndex('by_parentId', 'parentId', { unique: false });
+            } else if (storeName === STORE_NAMES.goals) {
+              store.createIndex('by_folderId', 'folderId', { unique: false });
+              store.createIndex('by_lifeAreaId', 'lifeAreaId', { unique: false });
+              store.createIndex('by_state', 'state', { unique: false });
+              store.createIndex('by_archived', 'archived', { unique: false });
             } else if (storeName === STORE_NAMES.projects) {
               store.createIndex('by_folderId', 'folderId', { unique: false });
+              store.createIndex('by_goalId', 'goalId', { unique: false });
               store.createIndex('by_state', 'state', { unique: false });
             } else if (storeName === STORE_NAMES.stages) {
               store.createIndex('by_projectId', 'projectId', { unique: false });
@@ -250,6 +251,77 @@ export class IndexedDbStorageEngine implements StorageEngine {
               store.createIndex('by_state', 'state', { unique: false });
             }
           }
+        }
+
+        // v3 adds metadata without inferring any dates or changing old records.
+        if (oldVersion < 3 && req.transaction) {
+          for (const name of [STORE_NAMES.goals, STORE_NAMES.projects, STORE_NAMES.stages, STORE_NAMES.settings]) {
+            const cursorRequest = req.transaction.objectStore(name).openCursor();
+            cursorRequest.onsuccess = () => {
+              const cursor = cursorRequest.result;
+              if (!cursor) return;
+              const record = cursor.value;
+              if (name === STORE_NAMES.settings) {
+                record.roadmapLayer ??= 'hidden';
+                record.dailyPlans ??= {};
+                record.dbSchemaVersion = PLANUI_DB_SCHEMA_VERSION;
+              } else {
+                record.roadmapPeriod ??= null;
+                record.checkpoints ??= [];
+              }
+              cursor.update(record);
+              cursor.continue();
+            };
+          }
+        }
+
+        // v4: optional effort and per-calendar-date focus; never infer content.
+        if (oldVersion >= 3 && oldVersion < 4 && req.transaction) {
+          const request = req.transaction.objectStore(STORE_NAMES.settings).openCursor();
+          request.onsuccess = () => {
+            const cursor = request.result;
+            if (!cursor) return;
+            cursor.update({ ...cursor.value, dailyPlans: cursor.value.dailyPlans ?? {}, dbSchemaVersion: PLANUI_DB_SCHEMA_VERSION });
+            cursor.continue();
+          };
+        }
+
+        // v5 only advances storage metadata. Existing areas/assessments remain byte-for-byte intact.
+        if (oldVersion >= 4 && oldVersion < 5 && req.transaction) {
+          const request = req.transaction.objectStore(STORE_NAMES.settings).openCursor();
+          request.onsuccess = () => {
+            const cursor = request.result;
+            if (!cursor) return;
+            cursor.update({ ...cursor.value, dbSchemaVersion: PLANUI_DB_SCHEMA_VERSION });
+            cursor.continue();
+          };
+        }
+
+        // Migration from schema version 1 to 2
+        if (oldVersion < 2 && req.transaction) {
+          const taskStore = req.transaction.objectStore(STORE_NAMES.tasks);
+          const cursorReq = taskStore.openCursor();
+          cursorReq.onsuccess = () => {
+            const cursor = cursorReq.result;
+            if (cursor) {
+              const task = cursor.value;
+              let changed = false;
+              if (task && task.ownership) {
+                if (task.ownership.kind === 'standalone' && task.ownership.folderId !== null) {
+                  // In v1, standalone with folderId meant folder task
+                  task.ownership = {
+                    kind: 'folder',
+                    folderId: task.ownership.folderId,
+                  };
+                  changed = true;
+                }
+              }
+              if (changed) {
+                cursor.update(task);
+              }
+              cursor.continue();
+            }
+          };
         }
       };
 

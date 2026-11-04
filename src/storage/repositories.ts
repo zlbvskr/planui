@@ -1,3 +1,8 @@
+import { LifeLinkKind, LifeLinkSource, STARTER_LIFE_AREAS, directMergeLinks, lifeAreaMergeSignature } from '../domain/lifeAreas';
+import { DailyPlan, TaskEffort } from '../domain/types';
+import { validateDailyPlans } from '../domain/today';
+import { RoadmapOwner, RoadmapMetadata } from '../domain/types';
+import { validateRoadmapMetadata } from '../domain/roadmap';
 import { PlanuiError } from '../i18n/errorsUk';
 import {
   collectDescendantFolderIds,
@@ -9,6 +14,7 @@ import {
   EntityId,
   EventTemporalSchedule,
   Folder,
+  Goal,
   Habit,
   HabitEntry,
   HabitLifecycleState,
@@ -23,6 +29,7 @@ import {
   PersonalRecord,
   PlanuiDomainSnapshot,
   PlanuiSettings,
+  OptionalModulesSettings,
   Project,
   ProjectStage,
   RecoverySnapshotRecord,
@@ -34,8 +41,9 @@ import {
   WishItem,
   WishlistCategory,
   ZonedInterval,
+  PLANUI_DB_SCHEMA_VERSION,
 } from '../domain/types';
-import { formatInstantInZone, validateZonedInterval } from '../domain/temporal';
+import { assertValidLocalDate, formatInstantInZone, validateZonedInterval } from '../domain/temporal';
 import {
   HabitRecordingInput,
   appendEffectiveHabitRuleRevision,
@@ -51,6 +59,7 @@ import {
   validateCalendarEventRecord,
   validateDayOffAnnotationRecord,
   validateFolderRecord,
+  validateGoalRecord,
   validateHabitEntryRecord,
   validateHabitRecord,
   validateInspirationItemRecord,
@@ -81,6 +90,7 @@ import { TabSyncCoordinator } from './tabSync';
 
 export const DOMAIN_DATA_STORES: readonly StoreName[] = [
   STORE_NAMES.folders,
+  STORE_NAMES.goals,
   STORE_NAMES.projects,
   STORE_NAMES.stages,
   STORE_NAMES.tasks,
@@ -287,11 +297,12 @@ export class PlanuiRepositories {
       [STORE_NAMES.settings, STORE_NAMES.lifeAreaQuestions],
       'readwrite',
       async (tx) => {
+        const wasFresh = !(await tx.get<PlanuiSettings>(STORE_NAMES.settings, 'singleton'));
         const settings = await this.ensureSettingsInTx(tx, nowIso);
         const questions = await tx.getAll<LifeAreaQuestion>(
           STORE_NAMES.lifeAreaQuestions
         );
-        if (questions.length === 0) {
+        if (wasFresh && questions.length === 0) {
           for (const q of createDefaultLifeAreaQuestions(nowIso)) {
             await tx.put(STORE_NAMES.lifeAreaQuestions, q);
           }
@@ -502,7 +513,7 @@ export class PlanuiRepositories {
 
         const allStages = await tx.getAll<ProjectStage>(STORE_NAMES.stages);
         for (const st of allStages) {
-          if (deletedProjectIds.has(st.projectId)) {
+          if (st.projectId !== null && deletedProjectIds.has(st.projectId)) {
             await tx.delete(STORE_NAMES.stages, st.id);
           }
         }
@@ -510,9 +521,10 @@ export class PlanuiRepositories {
         const deletedTaskIds = new Set<EntityId>();
         for (const task of allTasks) {
           const inSubtreeFolder =
-            task.ownership.kind === 'standalone' &&
-            task.ownership.folderId !== null &&
-            subtreeIds.has(task.ownership.folderId);
+            (task.ownership.kind === 'folder' && subtreeIds.has(task.ownership.folderId)) ||
+            (task.ownership.kind === 'standalone' &&
+              task.ownership.folderId &&
+              subtreeIds.has(task.ownership.folderId));
           const inDeletedProject =
             task.ownership.kind === 'project' &&
             deletedProjectIds.has(task.ownership.projectId);
@@ -545,6 +557,203 @@ export class PlanuiRepositories {
     );
   }
 
+  /** Shared by roadmap and calendar. No cascading dates or reservations. */
+  public async updateRoadmapItem(owner: RoadmapOwner, patch: RoadmapMetadata & { deadline?: string | null }, expectedRevision: number): Promise<void> {
+    this.tabSync.assertNoRemoteImportInProgress();
+    const store = owner.kind === 'goal' ? STORE_NAMES.goals : owner.kind === 'project' ? STORE_NAMES.projects : STORE_NAMES.stages;
+    await this.engine.runTransaction([store], 'readwrite', async tx => {
+      const current = await tx.get<Goal | Project | ProjectStage>(store, owner.id);
+      if (!current) throw new PlanuiError('ENTITY_NOT_FOUND');
+      const revision = this.assertRevisionMatch(current, expectedRevision);
+      const { deadline, ...metadata } = patch;
+      const next = { ...current, ...metadata, revision, updatedAt: new Date().toISOString() };
+      validateRoadmapMetadata(next);
+      if (deadline !== undefined) {
+        if (deadline !== null) assertValidLocalDate(deadline);
+        if (owner.kind === 'goal') {
+          const goal = next as Goal;
+          goal.timing = { targetDate: deadline, targetPeriodUk: goal.timing?.targetPeriodUk ?? null };
+        } else (next as Project | ProjectStage).targetDate = deadline;
+      }
+      await tx.put(store, next);
+    });
+  }
+
+  public async reorderRoadmapStages(owner: { kind: 'goal' | 'project'; id: string }, ids: readonly string[]): Promise<void> {
+    this.tabSync.assertNoRemoteImportInProgress();
+    await this.engine.runTransaction([STORE_NAMES.stages], 'readwrite', async tx => {
+      const stages = (await tx.getAll<ProjectStage>(STORE_NAMES.stages)).filter(s => owner.kind === 'goal' ? s.goalId === owner.id : s.projectId === owner.id);
+      if (ids.length !== stages.length || new Set(ids).size !== ids.length || stages.some(s => !ids.includes(s.id))) throw new PlanuiError('VALIDATION_FAILED');
+      for (const stage of stages) await tx.put(STORE_NAMES.stages, { ...stage, order: ids.indexOf(stage.id), revision: stage.revision + 1, updatedAt: new Date().toISOString() });
+    });
+  }
+
+  public async saveDailyPlan(date: string, plan: DailyPlan, expectedPlan?: DailyPlan): Promise<void> {
+    this.tabSync.assertNoRemoteImportInProgress();
+    assertValidLocalDate(date); validateDailyPlans({ [date]: plan });
+    await this.engine.runTransaction([STORE_NAMES.settings, STORE_NAMES.tasks], 'readwrite', async tx => {
+      const settings = await this.ensureSettingsInTx(tx, new Date().toISOString());
+      if (expectedPlan && JSON.stringify(settings.dailyPlans?.[date] ?? { focusTaskIds: [], focusNoteUk: null, minimalDay: false }) !== JSON.stringify(expectedPlan)) throw new PlanuiError('STALE_WRITE_CONFLICT');
+      const tasks = await tx.getAll<Task>(STORE_NAMES.tasks);
+      const oldIds = settings.dailyPlans?.[date]?.focusTaskIds ?? [];
+      if (plan.focusTaskIds.some(id => !oldIds.includes(id) && !tasks.some(t => t.id === id))) throw new PlanuiError('ENTITY_NOT_FOUND');
+      await tx.put(STORE_NAMES.settings, { ...settings, dailyPlans: { ...settings.dailyPlans, [date]: plan }, revision: settings.revision + 1, updatedAt: new Date().toISOString() });
+    });
+  }
+
+  public async setTaskEffort(taskId: string, effort: TaskEffort | null, expectedRevision: number): Promise<void> {
+    this.tabSync.assertNoRemoteImportInProgress();
+    if (effort !== null && !['small', 'medium', 'large'].includes(effort)) throw new PlanuiError('VALIDATION_FAILED');
+    await this.engine.runTransaction([STORE_NAMES.tasks], 'readwrite', async tx => {
+      const task = await tx.get<Task>(STORE_NAMES.tasks, taskId);
+      if (!task) throw new PlanuiError('ENTITY_NOT_FOUND');
+      await tx.put(STORE_NAMES.tasks, { ...task, effort, revision: this.assertRevisionMatch(task, expectedRevision), updatedAt: new Date().toISOString() });
+    });
+  }
+
+  public async saveGoal(
+    goal: Goal,
+    expectedRevision?: number
+  ): Promise<Goal> {
+    this.tabSync.assertNoRemoteImportInProgress();
+
+    return this.engine.runTransaction(
+      [STORE_NAMES.goals, STORE_NAMES.folders, STORE_NAMES.tasks],
+      'readwrite',
+      async (tx) => {
+        const folders = await tx.getAll<Folder>(STORE_NAMES.folders);
+        const tasks = await tx.getAll<Task>(STORE_NAMES.tasks);
+        const folderIds = new Set(folders.map((f) => f.id));
+        const taskIds = new Set(tasks.map((t) => t.id));
+
+        const existing = await tx.get<Goal>(STORE_NAMES.goals, goal.id);
+        const nextRev = this.assertRevisionMatch(existing, expectedRevision);
+        const record: Goal = { ...goal, revision: nextRev };
+        validateGoalRecord(record, { folderIds, taskIds });
+        await tx.put(STORE_NAMES.goals, record);
+        return record;
+      }
+    );
+  }
+
+  public async deleteGoalTransactionally(
+    goalId: EntityId,
+    mode: 'unlink_children' | 'delete_direct_tasks',
+    nowIso: IsoInstantString = new Date().toISOString()
+  ): Promise<{ unlinkedProjects: number; deletedTasks: number; unlinkedTasks: number }> {
+    this.tabSync.assertNoRemoteImportInProgress();
+
+    return this.engine.runTransaction(
+      [
+        STORE_NAMES.goals,
+        STORE_NAMES.projects,
+        STORE_NAMES.stages,
+        STORE_NAMES.tasks,
+        STORE_NAMES.reservations,
+      ],
+      'readwrite',
+      async (tx) => {
+        const goal = await tx.get<Goal>(STORE_NAMES.goals, goalId);
+        if (!goal) {
+          throw new PlanuiError('GOAL_NOT_FOUND', goalId);
+        }
+
+        // Unlink any projects pointing to this goal
+        const projects = await tx.getAll<Project>(STORE_NAMES.projects);
+        let unlinkedProjects = 0;
+        for (const proj of projects) {
+          if (proj.goalId === goalId) {
+            await tx.put(STORE_NAMES.projects, {
+              ...proj,
+              goalId: null,
+              updatedAt: nowIso,
+              revision: proj.revision + 1,
+            });
+            unlinkedProjects++;
+          }
+        }
+
+        // Direct tasks of this goal
+        const allTasks = await tx.getAll<Task>(STORE_NAMES.tasks);
+        const directTasks = allTasks.filter(
+          (t) => t.ownership.kind === 'goal' && t.ownership.goalId === goalId
+        );
+
+        let deletedTasks = 0;
+        let unlinkedTasks = 0;
+
+        if (mode === 'delete_direct_tasks') {
+          const deletedIds = new Set(directTasks.map((t) => t.id));
+          for (const t of directTasks) {
+            await tx.delete(STORE_NAMES.tasks, t.id);
+            deletedTasks++;
+          }
+          const reservations = await tx.getAll<TaskReservation>(STORE_NAMES.reservations);
+          for (const r of reservations) {
+            if (deletedIds.has(r.taskId)) {
+              await tx.delete(STORE_NAMES.reservations, r.id);
+            }
+          }
+        } else {
+          // unlink_children: rehome direct tasks to the goal's folder, or standalone if goal had no folder
+          for (const t of directTasks) {
+            const nextOwnership: TaskOwnership = goal.folderId !== null
+              ? { kind: 'folder', folderId: goal.folderId }
+              : { kind: 'standalone', folderId: null };
+            await tx.put(STORE_NAMES.tasks, {
+              ...t,
+              ownership: nextOwnership,
+              updatedAt: nowIso,
+              revision: t.revision + 1,
+            });
+            unlinkedTasks++;
+          }
+        }
+
+        for (const stage of await tx.getAll<ProjectStage>(STORE_NAMES.stages)) {
+          if (stage.goalId === goalId) await tx.delete(STORE_NAMES.stages, stage.id);
+        }
+        await tx.delete(STORE_NAMES.goals, goalId);
+
+        return {
+          unlinkedProjects,
+          deletedTasks,
+          unlinkedTasks,
+        };
+      }
+    );
+  }
+
+  public async archiveGoalTransactionally(
+    goalId: EntityId,
+    archived: boolean,
+    nowIso: IsoInstantString = new Date().toISOString(),
+    expectedRevision?: number
+  ): Promise<Goal> {
+    this.tabSync.assertNoRemoteImportInProgress();
+
+    return this.engine.runTransaction(
+      [STORE_NAMES.goals],
+      'readwrite',
+      async (tx) => {
+        const existing = await tx.get<Goal>(STORE_NAMES.goals, goalId);
+        if (!existing) {
+          throw new PlanuiError('GOAL_NOT_FOUND', goalId);
+        }
+        const nextRev = this.assertRevisionMatch(existing, expectedRevision);
+        const updated: Goal = {
+          ...existing,
+          archived,
+          updatedAt: nowIso,
+          revision: nextRev,
+        };
+        validateGoalRecord(updated);
+        await tx.put(STORE_NAMES.goals, updated);
+        return updated;
+      }
+    );
+  }
+
   public async saveProject(
     project: Project,
     expectedRevision?: number
@@ -552,18 +761,23 @@ export class PlanuiRepositories {
     this.tabSync.assertNoRemoteImportInProgress();
 
     return this.engine.runTransaction(
-      [STORE_NAMES.projects, STORE_NAMES.folders],
+      [STORE_NAMES.projects, STORE_NAMES.folders, STORE_NAMES.goals, STORE_NAMES.tasks],
       'readwrite',
       async (tx) => {
         const folders = await tx.getAll<Folder>(STORE_NAMES.folders);
+        const goals = await tx.getAll<Goal>(STORE_NAMES.goals);
+        const tasks = await tx.getAll<Task>(STORE_NAMES.tasks);
         const folderIds = new Set(folders.map((f) => f.id));
+        const goalIds = new Set(goals.map((g) => g.id));
+        const taskIds = new Set(tasks.map((t) => t.id));
+
         const existing = await tx.get<Project>(
           STORE_NAMES.projects,
           project.id
         );
         const nextRev = this.assertRevisionMatch(existing, expectedRevision);
         const record: Project = { ...project, revision: nextRev };
-        validateProjectRecord(record, folderIds);
+        validateProjectRecord(record, { folderIds, goalIds, taskIds });
         await tx.put(STORE_NAMES.projects, record);
         return record;
       }
@@ -577,7 +791,7 @@ export class PlanuiRepositories {
     this.tabSync.assertNoRemoteImportInProgress();
 
     return this.engine.runTransaction(
-      [STORE_NAMES.stages, STORE_NAMES.projects],
+      [STORE_NAMES.stages, STORE_NAMES.projects, STORE_NAMES.goals],
       'readwrite',
       async (tx) => {
         const projects = await tx.getAll<Project>(STORE_NAMES.projects);
@@ -588,7 +802,7 @@ export class PlanuiRepositories {
         );
         const nextRev = this.assertRevisionMatch(existing, expectedRevision);
         const record: ProjectStage = { ...stage, revision: nextRev };
-        validateStageRecord(record, projectIds);
+        validateStageRecord(record, projectIds, new Set((await tx.getAll<Goal>(STORE_NAMES.goals)).map(g => g.id)));
         await tx.put(STORE_NAMES.stages, record);
         return record;
       }
@@ -604,17 +818,24 @@ export class PlanuiRepositories {
     return this.engine.runTransaction(
       [
         STORE_NAMES.tasks,
+        STORE_NAMES.lifeAreaQuestions,
         STORE_NAMES.folders,
+        STORE_NAMES.goals,
         STORE_NAMES.projects,
         STORE_NAMES.stages,
         STORE_NAMES.reservations,
       ],
       'readwrite',
       async (tx) => {
+        if (task.lifeAreaId != null) {
+          const area = await tx.get<LifeAreaQuestion>(STORE_NAMES.lifeAreaQuestions, task.lifeAreaId);
+          if (!area || area.mergedIntoId) throw new PlanuiError('ENTITY_NOT_FOUND');
+        }
         const existing = await tx.get<Task>(STORE_NAMES.tasks, task.id);
         const nextRev = this.assertRevisionMatch(existing, expectedRevision);
 
         const folders = await tx.getAll<Folder>(STORE_NAMES.folders);
+        const goals = await tx.getAll<Goal>(STORE_NAMES.goals);
         const projects = await tx.getAll<Project>(STORE_NAMES.projects);
         const stages = await tx.getAll<ProjectStage>(STORE_NAMES.stages);
         const reservations = await tx.getAll<TaskReservation>(
@@ -622,9 +843,10 @@ export class PlanuiRepositories {
         );
 
         const folderIds = new Set(folders.map((f) => f.id));
+        const goalIds = new Set(goals.map((g) => g.id));
         const projectIds = new Set(projects.map((p) => p.id));
         const stageProjectMap = new Map(
-          stages.map((s) => [s.id, s.projectId])
+          stages.filter((s) => s.projectId !== null).map((s) => [s.id, s.projectId!])
         );
         const activeReservationsByTaskId = new Map<string, number>();
         for (const r of reservations) {
@@ -639,6 +861,7 @@ export class PlanuiRepositories {
         const record: Task = { ...task, revision: nextRev };
         validateTaskRecord(record, {
           folderIds,
+          goalIds,
           projectIds,
           stageProjectMap,
           activeReservationsByTaskId,
@@ -662,6 +885,7 @@ export class PlanuiRepositories {
       [
         STORE_NAMES.tasks,
         STORE_NAMES.folders,
+        STORE_NAMES.goals,
         STORE_NAMES.projects,
         STORE_NAMES.stages,
       ],
@@ -674,9 +898,10 @@ export class PlanuiRepositories {
         const nextRev = this.assertRevisionMatch(existing, expectedRevision);
 
         const folders = await tx.getAll<Folder>(STORE_NAMES.folders);
+        const goals = await tx.getAll<Goal>(STORE_NAMES.goals);
         const projects = await tx.getAll<Project>(STORE_NAMES.projects);
         const stages = await tx.getAll<ProjectStage>(STORE_NAMES.stages);
-        const stageProjectMap = new Map(stages.map((s) => [s.id, s.projectId]));
+        const stageProjectMap = new Map(stages.filter((s) => s.projectId !== null).map((s) => [s.id, s.projectId!]));
 
         let normalizedOwnership: TaskOwnership = nextOwnership;
         if (
@@ -701,9 +926,13 @@ export class PlanuiRepositories {
           revision: nextRev,
         };
 
+        const folderIds = new Set(folders.map((f) => f.id));
+        const goalIds = new Set(goals.map((g) => g.id));
+        const projectIds = new Set(projects.map((p) => p.id));
         validateTaskRecord(updated, {
-          folderIds: new Set(folders.map((f) => f.id)),
-          projectIds: new Set(projects.map((p) => p.id)),
+          folderIds,
+          goalIds,
+          projectIds,
           stageProjectMap,
         });
 
@@ -715,7 +944,8 @@ export class PlanuiRepositories {
 
   public async saveReservationTransactionally(
     reservation: TaskReservation,
-    expectedRevision?: number
+    expectedRevision?: number,
+    expectedTaskRevision?: number
   ): Promise<{ reservation: TaskReservation; task: Task }> {
     this.tabSync.assertNoRemoteImportInProgress();
 
@@ -731,6 +961,7 @@ export class PlanuiRepositories {
           );
         }
 
+        if (expectedTaskRevision !== undefined && (task.revision !== expectedTaskRevision || task.state !== 'open')) throw new PlanuiError('STALE_WRITE_CONFLICT');
         const existingRes = await tx.get<TaskReservation>(
           STORE_NAMES.reservations,
           reservation.id
@@ -842,6 +1073,12 @@ export class PlanuiRepositories {
           updatedAt: nowIso,
           revision: nextResRev,
         };
+        if (mode === 'release' && Date.parse(existing.interval.startInstant) < Date.parse(nowIso) && Date.parse(existing.interval.endInstant) > Date.parse(nowIso)) {
+          const wall = formatInstantInZone(nowIso, existing.interval.originZone);
+          // Retain the elapsed blocking slice, as in explicit task completion.
+          updatedRes.state = 'active';
+          updatedRes.interval = { ...existing.interval, endInstant: nowIso, originEndLocalDate: wall.localDate, originEndLocalTime: wall.localTime };
+        }
         validateReservationRecord(updatedRes, new Set([task.id]));
         await tx.put(STORE_NAMES.reservations, updatedRes);
 
@@ -879,7 +1116,8 @@ export class PlanuiRepositories {
     taskId: EntityId,
     plannedDate: LocalDateString | null,
     nowIso: IsoInstantString,
-    expectedTaskRevision?: number
+    expectedTaskRevision?: number,
+    expectedReservationRevisions?: Record<string, number>
   ): Promise<{ task: Task; modifiedReservations: TaskReservation[] }> {
     this.tabSync.assertNoRemoteImportInProgress();
 
@@ -903,6 +1141,7 @@ export class PlanuiRepositories {
           (r) => r.taskId === taskId && r.state === 'active'
         );
 
+        if (expectedReservationRevisions && (activeTaskReservations.length !== Object.keys(expectedReservationRevisions).length || activeTaskReservations.some(r => expectedReservationRevisions[r.id] !== r.revision))) throw new PlanuiError('STALE_WRITE_CONFLICT');
         const actionMs = Date.parse(nowIso);
         const modifiedReservations: TaskReservation[] = [];
 
@@ -1372,17 +1611,7 @@ export class PlanuiRepositories {
           estimatedDurationMinutes: null,
           planningState: 'unplanned',
           plannedDate: null,
-          ownership:
-            parentTask.ownership.kind === 'standalone'
-              ? {
-                  kind: 'standalone',
-                  folderId: parentTask.ownership.folderId,
-                }
-              : {
-                  kind: 'project',
-                  projectId: parentTask.ownership.projectId,
-                  stageId: parentTask.ownership.stageId,
-                },
+          ownership: { ...parentTask.ownership },
           checklist: [],
           createdAt: nowIso,
           updatedAt: nowIso,
@@ -1397,7 +1626,7 @@ export class PlanuiRepositories {
         const validationCtx = {
           folderIds: new Set(folders.map((f) => f.id)),
           projectIds: new Set(projects.map((p) => p.id)),
-          stageProjectMap: new Map(stages.map((s) => [s.id, s.projectId])),
+          stageProjectMap: new Map(stages.filter((s) => s.projectId !== null).map((s) => [s.id, s.projectId!])),
         };
 
         validateTaskRecord(updatedParentTask, validationCtx);
@@ -1533,10 +1762,9 @@ export class PlanuiRepositories {
           updatedAt: nowIso,
           revision: nextRev,
         };
-        validateProjectRecord(
-          completedProject,
-          new Set(folders.map((f) => f.id))
-        );
+        validateProjectRecord(completedProject, {
+          folderIds: new Set(folders.map((f) => f.id)),
+        });
         await tx.put(STORE_NAMES.projects, completedProject);
         return completedProject;
       }
@@ -1804,7 +2032,7 @@ export class PlanuiRepositories {
         const validationCtx = {
           folderIds: new Set(folders.map((f) => f.id)),
           projectIds: new Set(projects.map((p) => p.id)),
-          stageProjectMap: new Map(stages.map((s) => [s.id, s.projectId])),
+          stageProjectMap: new Map(stages.filter((s) => s.projectId !== null).map((s) => [s.id, s.projectId!])),
         };
 
         const nowMs = Date.parse(nowIso);
@@ -2863,6 +3091,69 @@ export class PlanuiRepositories {
     });
   }
 
+  public async setLifeAreaLink(kind: Exclude<LifeLinkKind, 'reservation'>, id: string, areaId: string | null, expectedRevision: number): Promise<void> {
+    this.tabSync.assertNoRemoteImportInProgress();
+    const stores = { folder: STORE_NAMES.folders, goal: STORE_NAMES.goals, project: STORE_NAMES.projects, task: STORE_NAMES.tasks, habit: STORE_NAMES.habits, event: STORE_NAMES.events };
+    const store = stores[kind];
+    if (!store) throw new PlanuiError('VALIDATION_FAILED');
+    await this.engine.runTransaction([store, STORE_NAMES.lifeAreaQuestions], 'readwrite', async tx => {
+      if (areaId) { const area = await tx.get<LifeAreaQuestion>(STORE_NAMES.lifeAreaQuestions, areaId); if (!area || area.mergedIntoId) throw new PlanuiError('ENTITY_NOT_FOUND'); }
+      const current = await tx.get<{ id: string; revision: number }>(store, id);
+      if (!current) throw new PlanuiError('ENTITY_NOT_FOUND');
+      await tx.put(store, { ...current, lifeAreaId: areaId, revision: this.assertRevisionMatch(current, expectedRevision), updatedAt: new Date().toISOString() });
+    });
+  }
+
+  public async addOrMapStarterArea(key: string, targetId: string | null): Promise<void> {
+    this.tabSync.assertNoRemoteImportInProgress();
+    const starter = STARTER_LIFE_AREAS.find(([id]) => id === key);
+    if (!starter) throw new PlanuiError('VALIDATION_FAILED');
+    await this.engine.runTransaction([STORE_NAMES.lifeAreaQuestions], 'readwrite', async tx => {
+      const areas = await tx.getAll<LifeAreaQuestion>(STORE_NAMES.lifeAreaQuestions);
+      if (areas.some(a => a.starterKeys?.includes(key))) throw new PlanuiError('STALE_WRITE_CONFLICT');
+      const now = new Date().toISOString();
+      if (targetId) {
+        const target = areas.find(a => a.id === targetId && !a.mergedIntoId);
+        if (!target) throw new PlanuiError('ENTITY_NOT_FOUND');
+        await tx.put(STORE_NAMES.lifeAreaQuestions, { ...target, starterKeys: [...(target.starterKeys ?? []), key], updatedAt: now, revision: target.revision + 1 });
+      } else {
+        await tx.put(STORE_NAMES.lifeAreaQuestions, { id: crypto.randomUUID(), questionTextUk: starter[1], starterKeys: [key], order: Math.max(-1, ...areas.map(a => a.order)) + 1, version: 1, revision: 1, updatedAt: now, archived: false, mergedIntoId: null, goodEnoughUk: null });
+      }
+    });
+  }
+
+  public async reorderLifeAreas(ids: readonly string[], revisions: Record<string, number>): Promise<void> {
+    this.tabSync.assertNoRemoteImportInProgress();
+    await this.engine.runTransaction([STORE_NAMES.lifeAreaQuestions], 'readwrite', async tx => {
+      const areas = await tx.getAll<LifeAreaQuestion>(STORE_NAMES.lifeAreaQuestions);
+      if (ids.length !== areas.length || new Set(ids).size !== ids.length || areas.some(a => !ids.includes(a.id) || revisions[a.id] !== a.revision)) throw new PlanuiError('STALE_WRITE_CONFLICT');
+      for (const area of areas) await tx.put(STORE_NAMES.lifeAreaQuestions, { ...area, order: ids.indexOf(area.id), revision: area.revision + 1, updatedAt: new Date().toISOString() });
+    });
+  }
+
+  public async mergeLifeAreas(sourceId: string, targetId: string, sourceRevision: number, targetRevision: number, reviewedSignature: string, explicitConfirmation: boolean): Promise<void> {
+    this.tabSync.assertNoRemoteImportInProgress();
+    if (!explicitConfirmation || sourceId === targetId) throw new PlanuiError('VALIDATION_FAILED');
+    const stores = { folder: STORE_NAMES.folders, goal: STORE_NAMES.goals, project: STORE_NAMES.projects, task: STORE_NAMES.tasks, habit: STORE_NAMES.habits, event: STORE_NAMES.events };
+    await this.engine.runTransaction([STORE_NAMES.lifeAreaQuestions, ...Object.values(stores), STORE_NAMES.reservations], 'readwrite', async tx => {
+      const areas = await tx.getAll<LifeAreaQuestion>(STORE_NAMES.lifeAreaQuestions);
+      const source = areas.find(a => a.id === sourceId), target = areas.find(a => a.id === targetId);
+      if (!source || !target || source.mergedIntoId || target.mergedIntoId || target.archived) throw new PlanuiError('VALIDATION_FAILED');
+      this.assertRevisionMatch(source, sourceRevision); this.assertRevisionMatch(target, targetRevision);
+      const data: LifeLinkSource = { folders: await tx.getAll(STORE_NAMES.folders), goals: await tx.getAll(STORE_NAMES.goals), projects: await tx.getAll(STORE_NAMES.projects), tasks: await tx.getAll(STORE_NAMES.tasks), habits: await tx.getAll(STORE_NAMES.habits), events: await tx.getAll(STORE_NAMES.events), reservations: await tx.getAll(STORE_NAMES.reservations) };
+      if (lifeAreaMergeSignature(data, sourceId) !== reviewedSignature) throw new PlanuiError('STALE_WRITE_CONFLICT');
+      const now = new Date().toISOString();
+      for (const link of directMergeLinks(data, sourceId)) {
+        if (link.kind === 'reservation') continue;
+        const store = stores[link.kind];
+        const record = await tx.get<{ id: string; revision: number }>(store, link.id);
+        if (record) await tx.put(store, { ...record, lifeAreaId: targetId, revision: record.revision + 1, updatedAt: now });
+      }
+      await tx.put(STORE_NAMES.lifeAreaQuestions, { ...source, archived: true, mergedIntoId: targetId, revision: source.revision + 1, updatedAt: now });
+      await tx.put(STORE_NAMES.lifeAreaQuestions, { ...target, starterKeys: [...new Set([...(target.starterKeys ?? []), ...(source.starterKeys ?? [])])], revision: target.revision + 1, updatedAt: now });
+    });
+  }
+
   public async saveLifeAreaQuestion(
     question: LifeAreaQuestion,
     expectedRevision?: number
@@ -2911,6 +3202,7 @@ export class PlanuiRepositories {
           STORE_NAMES.lifeAreaAssessments,
           assessment.id
         );
+        if (existing) throw new PlanuiError('REVIEW_IMMUTABLE');
         const nextRev = this.assertRevisionMatch(existing, expectedRevision);
         const record: LifeAreaAssessment = { ...assessment, revision: nextRev };
         validateLifeAreaAssessment(record);
@@ -3291,7 +3583,7 @@ export class PlanuiRepositories {
         return { s, hasQuestions: q.length > 0 };
       }
     );
-    if (!existingSettings.s || !existingSettings.hasQuestions) {
+    if (!existingSettings.s) {
       await this.getOrInitSettings(nowIso);
     }
 
@@ -3301,6 +3593,7 @@ export class PlanuiRepositories {
       async (tx) => {
         const [
           folders,
+          goals,
           projects,
           stages,
           tasks,
@@ -3321,6 +3614,7 @@ export class PlanuiRepositories {
           settingsRec,
         ] = await Promise.all([
           tx.getAll<Folder>(STORE_NAMES.folders),
+          tx.getAll<Goal>(STORE_NAMES.goals),
           tx.getAll<Project>(STORE_NAMES.projects),
           tx.getAll<ProjectStage>(STORE_NAMES.stages),
           tx.getAll<Task>(STORE_NAMES.tasks),
@@ -3350,8 +3644,37 @@ export class PlanuiRepositories {
           mediaBlobs.set(mb.id, bytes);
         }
 
+        const baseSettings = settingsRec ?? createDefaultSettings(nowIso);
+        let resolvedModules: OptionalModulesSettings;
+        if (!baseSettings.modules) {
+          resolvedModules = {
+            habitsEnabled: habits.length > 0,
+            stateCheckInsEnabled:
+              personalRecords.length > 0,
+            desiredLifeEnabled: inspirationItems.length > 0,
+            wishlistEnabled:
+              wishes.length > 0 || wishlistCategories.length > 0,
+          };
+        } else if (baseSettings.modules.userConfigured) {
+          resolvedModules = { ...baseSettings.modules };
+        } else {
+          resolvedModules = {
+            habitsEnabled: baseSettings.modules.habitsEnabled || habits.length > 0,
+            stateCheckInsEnabled:
+              baseSettings.modules.stateCheckInsEnabled ||
+              personalRecords.length > 0,
+            desiredLifeEnabled:
+              baseSettings.modules.desiredLifeEnabled ||
+              inspirationItems.length > 0,
+            wishlistEnabled:
+              baseSettings.modules.wishlistEnabled ||
+              wishes.length > 0 ||
+              wishlistCategories.length > 0,
+          };
+        }
         const snapshot: PlanuiDomainSnapshot = {
           folders,
+          goals,
           projects,
           stages,
           tasks,
@@ -3368,7 +3691,10 @@ export class PlanuiRepositories {
           mediaMeta,
           wishlistCategories,
           wishes,
-          settings: settingsRec ?? createDefaultSettings(nowIso),
+          settings: {
+            ...baseSettings,
+            modules: resolvedModules,
+          },
         };
 
         return { snapshot, mediaBlobs };

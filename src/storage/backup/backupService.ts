@@ -31,6 +31,7 @@ export const MAX_RECOVERY_SNAPSHOTS = 3;
 
 const CLEARABLE_DOMAIN_STORES = [
   STORE_NAMES.folders,
+  STORE_NAMES.goals,
   STORE_NAMES.projects,
   STORE_NAMES.stages,
   STORE_NAMES.tasks,
@@ -86,8 +87,8 @@ export function migrateSupportedDomainSnapshot(
   }
   if (
     manifest.format !== PLANUI_BACKUP_FORMAT ||
-    manifest.backupVersion !== PLANUI_BACKUP_VERSION ||
-    manifest.dbSchemaVersion !== 1
+    (![1, 2, 3, 4, 5].includes(manifest.backupVersion)) ||
+    (![1, 2, 3, 4, 5].includes(manifest.dbSchemaVersion))
   ) {
     throw new PlanuiError('BACKUP_UNSUPPORTED_VERSION');
   }
@@ -111,6 +112,51 @@ export function migrateSupportedDomainSnapshot(
       wasPreWishlistMigrated = true;
     }
     obj.settings = settingsObj;
+  }
+
+  // v1/v2 imports acquire informational defaults only; preserve all original dates.
+  if (manifest.dbSchemaVersion < 3) {
+    for (const key of ['goals', 'projects', 'stages']) {
+      if (Array.isArray(obj[key])) obj[key] = (obj[key] as unknown[]).map(record =>
+        record && typeof record === 'object' ? { roadmapPeriod: null, checkpoints: [], ...record } : record
+      );
+    }
+    if (obj.settings && typeof obj.settings === 'object') obj.settings = {
+      roadmapLayer: 'hidden', ...obj.settings, dbSchemaVersion: PLANUI_DB_SCHEMA_VERSION,
+    };
+  }
+
+  if (manifest.dbSchemaVersion < 4 && obj.settings && typeof obj.settings === 'object') {
+    obj.settings = { dailyPlans: {}, ...obj.settings, dbSchemaVersion: PLANUI_DB_SCHEMA_VERSION };
+  }
+
+  if (manifest.dbSchemaVersion < 5 && obj.settings && typeof obj.settings === 'object') {
+    obj.settings = { ...obj.settings, dbSchemaVersion: PLANUI_DB_SCHEMA_VERSION };
+  }
+
+  // M1: Ensure goals collection exists and task ownership format is migrated from v1
+  if (obj.goals === undefined) {
+    obj.goals = [];
+    warningsUk.push(
+      'Виконано міграцію схеми v1: додано порожню колекцію цілей і збережено всі наявні записи.'
+    );
+  }
+
+  if (Array.isArray(obj.tasks)) {
+    obj.tasks = obj.tasks.map((taskItem: unknown) => {
+      if (!taskItem || typeof taskItem !== 'object') return taskItem;
+      const t = { ...(taskItem as Record<string, unknown>) };
+      if (t.ownership && typeof t.ownership === 'object') {
+        const own = { ...(t.ownership as Record<string, unknown>) };
+        if (own.kind === 'standalone' && own.folderId !== null && own.folderId !== undefined) {
+          t.ownership = {
+            kind: 'folder',
+            folderId: own.folderId,
+          };
+        }
+      }
+      return t;
+    });
   }
 
   if (wasPreWishlistMigrated) {
@@ -185,6 +231,7 @@ async function buildBackupZipFromSnapshot(
     createdAt: nowIso,
     entityCounts: {
       folders: snapshot.folders.length,
+      goals: snapshot.goals ? snapshot.goals.length : 0,
       projects: snapshot.projects.length,
       stages: snapshot.stages.length,
       tasks: snapshot.tasks.length,
@@ -400,6 +447,7 @@ export async function validateBackupArchive(
   }
   const actualCounts: Record<string, number> = {
     folders: snapshot.folders.length,
+    goals: snapshot.goals ? snapshot.goals.length : 0,
     projects: snapshot.projects.length,
     stages: snapshot.stages.length,
     tasks: snapshot.tasks.length,
@@ -420,6 +468,14 @@ export async function validateBackupArchive(
 
   for (const [key, actualLen] of Object.entries(actualCounts)) {
     const declaredLen = manifest.entityCounts[key];
+    if (
+      declaredLen === undefined &&
+      key === 'goals' &&
+      manifest.backupVersion === 1 &&
+      actualLen === 0
+    ) {
+      continue;
+    }
     if (
       declaredLen === undefined &&
       wasPreWishlistMigrated &&
@@ -462,6 +518,9 @@ async function writeSnapshotIntoDomainStoresInTx(
     await tx.clear(storeName);
   }
   for (const f of incoming.folders) await tx.put(STORE_NAMES.folders, f);
+  if (Array.isArray(incoming.goals)) {
+    for (const g of incoming.goals) await tx.put(STORE_NAMES.goals, g);
+  }
   for (const p of incoming.projects) await tx.put(STORE_NAMES.projects, p);
   for (const s of incoming.stages) await tx.put(STORE_NAMES.stages, s);
   for (const t of incoming.tasks) await tx.put(STORE_NAMES.tasks, t);

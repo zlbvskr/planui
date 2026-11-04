@@ -1,5 +1,5 @@
-import { PrimaryDestinationId, UK_STRINGS } from '../i18n/uk';
-import { TaskPriority, TaskState, ThemePreference } from '../domain/types';
+import { AnyDestinationId, PrimaryDestinationId, UK_STRINGS } from '../i18n/uk';
+import { TaskPriority, TaskState, ThemePreference, TodayMode } from '../domain/types';
 import { CalendarSecondaryFilter } from '../domain/scheduling';
 
 export interface PrimaryNavItem {
@@ -10,10 +10,9 @@ export interface PrimaryNavItem {
 }
 
 export const PRIMARY_NAV_ITEMS: readonly PrimaryNavItem[] = [
+  { id: 'today', labelUk: UK_STRINGS.nav.today, hashPath: '#/today', isCenter: false },
   { id: 'calendar', labelUk: UK_STRINGS.nav.calendar, hashPath: '#/calendar', isCenter: false },
-  { id: 'plans', labelUk: UK_STRINGS.nav.plans, hashPath: '#/plans', isCenter: false },
-  { id: 'today', labelUk: UK_STRINGS.nav.today, hashPath: '#/today', isCenter: true },
-  { id: 'habits', labelUk: UK_STRINGS.nav.habits, hashPath: '#/habits', isCenter: false },
+  { id: 'directions', labelUk: UK_STRINGS.nav.directions, hashPath: '#/directions', isCenter: false },
   { id: 'me', labelUk: UK_STRINGS.nav.me, hashPath: '#/me', isCenter: false },
 ] as const;
 
@@ -29,87 +28,114 @@ export type MeSubViewMode =
 export type PlansTaskStateFilter = 'all' | TaskState;
 export type PlansPriorityFilter = 'all' | TaskPriority;
 
+export interface DirectionsDestinationContext {
+  activeFolderId: string | null;
+  activeGoalId?: string | null;
+  activeProjectId: string | null;
+  searchQuery: string;
+  taskStateFilter: PlansTaskStateFilter;
+  priorityFilter: PlansPriorityFilter;
+  showCompletedTasks: boolean;
+  showArchivedProjects: boolean;
+  scrollTop: number;
+}
+
 export interface DestinationContextMap {
+  today: {
+    selectedDate: string;
+    nextDayCollapsed: boolean;
+    untimedCollapsed: boolean;
+    habitsExpanded?: boolean;
+    mode?: TodayMode;
+    modeScrollTops?: Partial<Record<TodayMode, number>>;
+    hasInteraction?: boolean;
+    scrollTop: number;
+  };
   calendar: {
     selectedDate: string;
     mode: CalendarViewMode;
     secondaryFilter: CalendarSecondaryFilter;
     scrollTop: number;
   };
-  plans: {
-    activeFolderId: string | null;
-    activeProjectId: string | null;
-    searchQuery: string;
-    taskStateFilter: PlansTaskStateFilter;
-    priorityFilter: PlansPriorityFilter;
-    showCompletedTasks: boolean;
-    showArchivedProjects: boolean;
-    scrollTop: number;
-  };
-  today: {
-    selectedDate: string;
-    nextDayCollapsed: boolean;
-    untimedCollapsed: boolean;
-    scrollTop: number;
-  };
-  habits: {
-    selectedDate: string;
-    filter: HabitsFilterMode;
-    scrollTop: number;
-  };
+  directions: DirectionsDestinationContext;
   me: {
     subView: MeSubViewMode;
     activeWishlistCategoryId?: string | null;
     scrollTop: number;
   };
+  // Backwards compatibility aliases for existing components and tests
+  plans: DirectionsDestinationContext;
+  habits: {
+    selectedDate: string;
+    filter: HabitsFilterMode;
+    scrollTop: number;
+  };
 }
 
 export function createInitialDestinationContextMap(todayDate: string): DestinationContextMap {
+  const directionsCtx: DirectionsDestinationContext = {
+    activeFolderId: null,
+    activeGoalId: null,
+    activeProjectId: null,
+    searchQuery: '',
+    taskStateFilter: 'all',
+    priorityFilter: 'all',
+    showCompletedTasks: true,
+    showArchivedProjects: false,
+    scrollTop: 0,
+  };
+
   return {
+    today: {
+      selectedDate: todayDate,
+      mode: 'day',
+      hasInteraction: false,
+      nextDayCollapsed: false,
+      untimedCollapsed: false,
+      scrollTop: 0,
+    },
     calendar: {
       selectedDate: todayDate,
       mode: 'month',
       secondaryFilter: 'all',
       scrollTop: 0,
     },
-    plans: {
-      activeFolderId: null,
-      activeProjectId: null,
-      searchQuery: '',
-      taskStateFilter: 'all',
-      priorityFilter: 'all',
-      showCompletedTasks: true,
-      showArchivedProjects: false,
-      scrollTop: 0,
-    },
-    today: {
-      selectedDate: todayDate,
-      nextDayCollapsed: false,
-      untimedCollapsed: false,
-      scrollTop: 0,
-    },
-    habits: {
-      selectedDate: todayDate,
-      filter: 'active',
-      scrollTop: 0,
-    },
+    directions: directionsCtx,
     me: {
       subView: 'overview',
       activeWishlistCategoryId: null,
       scrollTop: 0,
     },
+    plans: directionsCtx,
+    habits: {
+      selectedDate: todayDate,
+      filter: 'active',
+      scrollTop: 0,
+    },
   };
 }
 
-export function updateDestinationContext<K extends PrimaryDestinationId>(
+export function updateDestinationContext<K extends PrimaryDestinationId | 'plans' | 'habits'>(
   map: DestinationContextMap,
   destination: K,
-  patch: Partial<DestinationContextMap[K]>
+  patch: Partial<any>
 ): DestinationContextMap {
+  if (destination === 'plans' || destination === 'directions') {
+    const updated: DirectionsDestinationContext = {
+      ...(map.directions ?? map.plans),
+      ...patch,
+    };
+    return {
+      ...map,
+      directions: updated,
+      plans: updated,
+    };
+  }
+
   return {
     ...map,
     [destination]: {
-      ...map[destination],
+      ...(map as any)[destination],
       ...patch,
     },
   };
@@ -118,27 +144,57 @@ export function updateDestinationContext<K extends PrimaryDestinationId>(
 export function parseDestinationFromHash(hash: string): PrimaryDestinationId {
   const cleaned = hash.replace(/^#\/?/, '').split(/[/?]/)[0]?.toLowerCase() ?? '';
   switch (cleaned) {
-    case 'calendar':
-      return 'calendar';
-    case 'plans':
-      return 'plans';
     case 'today':
       return 'today';
-    case 'habits':
-      return 'habits';
+    case 'calendar':
+      return 'calendar';
+    case 'directions':
+    case 'plans': // Former Plans route migrated to Directions context
+      return 'directions';
     case 'me':
+    case 'diary': // Former diary/records routes lead to accessible legacy history in 'me'
+    case 'records':
+    case 'settings':
+    case 'wishlist':
+    case 'inspiration':
+    case 'life_areas':
       return 'me';
+    case 'habits': // Former Habits route opens Today
+      return 'today';
     default:
       return 'today';
   }
 }
 
-export function formatHashForDestination(destination: PrimaryDestinationId): string {
+export function extractSubViewFromHash(hash: string): MeSubViewMode | null {
+  const cleaned = hash.replace(/^#\/?/, '').split(/[/?]/)[0]?.toLowerCase() ?? '';
+  if (cleaned === 'diary' || cleaned === 'records') {
+    return 'records';
+  }
+  if (cleaned === 'settings') {
+    return 'settings';
+  }
+  if (cleaned === 'wishlist') {
+    return 'wishlist';
+  }
+  if (cleaned === 'inspiration') {
+    return 'inspiration';
+  }
+  if (cleaned === 'life_areas') {
+    return 'life_areas';
+  }
+  return null;
+}
+
+export function formatHashForDestination(destination: PrimaryDestinationId | AnyDestinationId): string {
+  if (destination === 'plans') return '#/directions';
+  if (destination === 'habits') return '#/today';
   return `#/${destination}`;
 }
 
 export type CreationActionKind =
   | 'task'
+  | 'goal'
   | 'project'
   | 'stage'
   | 'folder'
@@ -156,7 +212,7 @@ export interface CreationActionDescriptor {
   labelUk: string;
   descriptionUk: string;
   implementedInCurrentStage: boolean;
-  prioritizedInDestinations: PrimaryDestinationId[];
+  prioritizedInDestinations: (PrimaryDestinationId | 'plans' | 'habits')[];
   prioritizedInMeSubViews?: MeSubViewMode[];
   prioritizedInCalendarModes?: CalendarViewMode[];
 }
@@ -167,28 +223,35 @@ export const CREATION_ACTION_REGISTRY: readonly CreationActionDescriptor[] = [
     labelUk: UK_STRINGS.creation.actions.task.label,
     descriptionUk: UK_STRINGS.creation.actions.task.description,
     implementedInCurrentStage: true,
-    prioritizedInDestinations: ['plans', 'today', 'calendar'],
+    prioritizedInDestinations: ['today', 'calendar', 'directions', 'plans'],
+  },
+  {
+    kind: 'goal',
+    labelUk: 'Нова ціль',
+    descriptionUk: 'Особиста ціль із критеріями завершення та наступним кроком',
+    implementedInCurrentStage: true,
+    prioritizedInDestinations: ['directions', 'plans'],
   },
   {
     kind: 'project',
     labelUk: UK_STRINGS.creation.actions.project.label,
     descriptionUk: UK_STRINGS.creation.actions.project.description,
     implementedInCurrentStage: true,
-    prioritizedInDestinations: ['plans'],
+    prioritizedInDestinations: ['directions', 'plans'],
   },
   {
     kind: 'stage',
     labelUk: UK_STRINGS.creation.actions.stage.label,
     descriptionUk: UK_STRINGS.creation.actions.stage.description,
     implementedInCurrentStage: true,
-    prioritizedInDestinations: ['plans'],
+    prioritizedInDestinations: ['directions', 'plans'],
   },
   {
     kind: 'folder',
     labelUk: UK_STRINGS.creation.actions.folder.label,
     descriptionUk: UK_STRINGS.creation.actions.folder.description,
     implementedInCurrentStage: true,
-    prioritizedInDestinations: ['plans'],
+    prioritizedInDestinations: ['directions', 'plans'],
   },
   {
     kind: 'personal_record',
@@ -226,7 +289,7 @@ export const CREATION_ACTION_REGISTRY: readonly CreationActionDescriptor[] = [
     labelUk: 'Нова звичка',
     descriptionUk: 'Підтримувальна регулярна дія за правилом без часових слотів',
     implementedInCurrentStage: true,
-    prioritizedInDestinations: ['habits', 'today'],
+    prioritizedInDestinations: ['today'],
   },
   {
     kind: 'inspiration',
@@ -256,6 +319,7 @@ export const CREATION_ACTION_REGISTRY: readonly CreationActionDescriptor[] = [
 
 export type ImplementedCreationActionKind =
   | 'task'
+  | 'goal'
   | 'project'
   | 'stage'
   | 'folder'
@@ -269,24 +333,27 @@ export type ImplementedCreationActionKind =
   | 'wishlist_category';
 
 export interface EditableCreationContext {
-  originDestination: PrimaryDestinationId;
+  originDestination: PrimaryDestinationId | 'plans' | 'habits';
   targetDate: string | null;
   folderId: string | null;
+  goalId: string | null;
   projectId: string | null;
   stageId: string | null;
   wishlistCategoryId: string | null;
 }
 
 export function buildInitialCreationContext(
-  activeDestination: PrimaryDestinationId,
+  activeDestination: PrimaryDestinationId | 'plans' | 'habits',
   contexts: DestinationContextMap
 ): EditableCreationContext {
-  if (activeDestination === 'plans') {
+  if (activeDestination === 'directions' || activeDestination === 'plans') {
+    const dir = contexts.directions ?? contexts.plans;
     return {
-      originDestination: 'plans',
+      originDestination: 'directions',
       targetDate: null,
-      folderId: contexts.plans.activeFolderId,
-      projectId: contexts.plans.activeProjectId,
+      folderId: dir?.activeFolderId ?? null,
+      goalId: dir?.activeGoalId ?? null,
+      projectId: dir?.activeProjectId ?? null,
       stageId: null,
       wishlistCategoryId: null,
     };
@@ -296,6 +363,7 @@ export function buildInitialCreationContext(
       originDestination: 'calendar',
       targetDate: contexts.calendar.selectedDate,
       folderId: null,
+      goalId: null,
       projectId: null,
       stageId: null,
       wishlistCategoryId: null,
@@ -306,6 +374,7 @@ export function buildInitialCreationContext(
       originDestination: 'today',
       targetDate: contexts.today.selectedDate,
       folderId: null,
+      goalId: null,
       projectId: null,
       stageId: null,
       wishlistCategoryId: null,
@@ -313,9 +382,10 @@ export function buildInitialCreationContext(
   }
   if (activeDestination === 'habits') {
     return {
-      originDestination: 'habits',
-      targetDate: contexts.habits.selectedDate,
+      originDestination: 'today',
+      targetDate: contexts.today.selectedDate,
       folderId: null,
+      goalId: null,
       projectId: null,
       stageId: null,
       wishlistCategoryId: null,
@@ -326,15 +396,17 @@ export function buildInitialCreationContext(
       originDestination: 'me',
       targetDate: contexts.today.selectedDate,
       folderId: null,
+      goalId: null,
       projectId: null,
       stageId: null,
       wishlistCategoryId: contexts.me.activeWishlistCategoryId ?? null,
     };
   }
   return {
-    originDestination: activeDestination,
+    originDestination: 'today',
     targetDate: null,
     folderId: null,
+    goalId: null,
     projectId: null,
     stageId: null,
     wishlistCategoryId: null,
@@ -342,22 +414,52 @@ export function buildInitialCreationContext(
 }
 
 /**
- * C04 contextual creation prioritization:
- * - Calendar: event, task, shift
- * - Work Schedule: shift, day_off, event, task
- * - Plans (container view): task, project, folder, stage
- * - Project (inside an open project): task, stage, project, folder
- * - Today: task, event, shift, habit, personal_record
- * - Habits: habit, task, event, personal_record
- * - Me: personal_record, task
- * Do not show all creation types in one oversized menu. Only show implemented actions.
+ * Contextual creation prioritization for 4 destinations:
+ * - "Сьогодні": task & event with selected date prefilled (+ habit/check-in if enabled)
+ * - "Календар": creation in selected date/mode (event/task or shift/day_off)
+ * - "Напрями": creation in current direction/goal/project
+ * - "Я": appropriate creation for currently open enabled module
+ * Compact action set, fast title-only task creation, no clutter.
  */
 export function getContextualCreationActions(
-  activeDestination: PrimaryDestinationId,
-  contexts?: DestinationContextMap
+  activeDestination: PrimaryDestinationId | 'plans' | 'habits',
+  contextsOrModules?: DestinationContextMap | {
+    habitsEnabled?: boolean;
+    stateCheckInsEnabled?: boolean;
+    desiredLifeEnabled?: boolean;
+    wishlistEnabled?: boolean;
+  },
+  maybeModules?: {
+    habitsEnabled?: boolean;
+    stateCheckInsEnabled?: boolean;
+    desiredLifeEnabled?: boolean;
+    wishlistEnabled?: boolean;
+  }
 ): CreationActionDescriptor[] {
+  const isModulesObject = (obj: any): obj is { habitsEnabled?: boolean } =>
+    obj && typeof obj === 'object' && ('habitsEnabled' in obj || 'stateCheckInsEnabled' in obj || 'desiredLifeEnabled' in obj || 'wishlistEnabled' in obj);
+
+  const contexts = isModulesObject(contextsOrModules)
+    ? undefined
+    : (contextsOrModules as DestinationContextMap | undefined);
+  const enabledModules = isModulesObject(contextsOrModules)
+    ? contextsOrModules
+    : maybeModules;
+
   const implemented = CREATION_ACTION_REGISTRY.filter((a) => a.implementedInCurrentStage);
   const byKind = new Map(implemented.map((a) => [a.kind, a]));
+
+  const habitsOn = enabledModules?.habitsEnabled !== false;
+  const stateCheckInsOn = enabledModules?.stateCheckInsEnabled !== false;
+  const desiredLifeOn = enabledModules?.desiredLifeEnabled !== false;
+  const wishlistOn = enabledModules?.wishlistEnabled !== false;
+
+  if (activeDestination === 'today' || activeDestination === 'habits') {
+    const order: ImplementedCreationActionKind[] = ['task', 'event'];
+    if (habitsOn) order.push('habit');
+    if (stateCheckInsOn) order.push('personal_record');
+    return order.map((k) => byKind.get(k)!).filter(Boolean);
+  }
 
   if (activeDestination === 'calendar') {
     if (contexts?.calendar.mode === 'work_schedule') {
@@ -378,18 +480,20 @@ export function getContextualCreationActions(
     return order.map((k) => byKind.get(k)!).filter(Boolean);
   }
 
-  if (activeDestination === 'plans') {
-    if (contexts?.plans.activeProjectId) {
+  if (activeDestination === 'directions' || activeDestination === 'plans') {
+    const dir = contexts?.directions ?? contexts?.plans;
+    if (dir?.activeProjectId) {
       const order: ImplementedCreationActionKind[] = [
         'task',
         'stage',
         'project',
-        'folder',
+        'goal',
       ];
       return order.map((k) => byKind.get(k)!).filter(Boolean);
     }
     const order: ImplementedCreationActionKind[] = [
       'task',
+      'goal',
       'project',
       'folder',
       'stage',
@@ -397,57 +501,41 @@ export function getContextualCreationActions(
     return order.map((k) => byKind.get(k)!).filter(Boolean);
   }
 
-  if (activeDestination === 'today') {
-    const order: ImplementedCreationActionKind[] = [
-      'task',
-      'event',
-      'shift',
-      'habit',
-      'personal_record',
-    ];
-    return order.map((k) => byKind.get(k)!).filter(Boolean);
-  }
-
-  if (activeDestination === 'habits') {
-    const order: ImplementedCreationActionKind[] = [
-      'habit',
-      'task',
-      'event',
-      'personal_record',
-    ];
-    return order.map((k) => byKind.get(k)!).filter(Boolean);
-  }
-
   if (activeDestination === 'me') {
     const subView = contexts?.me.subView ?? 'overview';
     if (subView === 'wishlist') {
-      const order: ImplementedCreationActionKind[] = [
-        'wish',
-        'wishlist_category',
-        'personal_record',
-        'task',
-      ];
+      const order: ImplementedCreationActionKind[] = [];
+      if (wishlistOn) {
+        order.push('wish', 'wishlist_category');
+      }
+      order.push('task');
       return order.map((k) => byKind.get(k)!).filter(Boolean);
     }
     if (subView === 'inspiration') {
-      const order: ImplementedCreationActionKind[] = [
-        'inspiration',
-        'personal_record',
-        'wish',
-        'task',
-      ];
+      const order: ImplementedCreationActionKind[] = [];
+      if (desiredLifeOn) {
+        order.push('inspiration');
+      }
+      order.push('task');
       return order.map((k) => byKind.get(k)!).filter(Boolean);
     }
-    const order: ImplementedCreationActionKind[] = [
-      'personal_record',
-      'inspiration',
-      'wish',
-      'task',
-    ];
+    if (subView === 'records') {
+      const order: ImplementedCreationActionKind[] = [];
+      if (stateCheckInsOn) {
+        order.push('personal_record');
+      }
+      order.push('task');
+      return order.map((k) => byKind.get(k)!).filter(Boolean);
+    }
+    const order: ImplementedCreationActionKind[] = [];
+    if (stateCheckInsOn) order.push('personal_record');
+    if (desiredLifeOn) order.push('inspiration');
+    if (wishlistOn) order.push('wish');
+    order.push('task');
     return order.map((k) => byKind.get(k)!).filter(Boolean);
   }
 
-  const order: ImplementedCreationActionKind[] = ['task', 'event', 'personal_record'];
+  const order: ImplementedCreationActionKind[] = ['task', 'event'];
   return order.map((k) => byKind.get(k)!).filter(Boolean);
 }
 

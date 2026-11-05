@@ -159,6 +159,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
 }) => {
   const [initialPlanningReview, setInitialPlanningReview] = useState(false);
   const [weeklyHub, setWeeklyHub] = useState(false);
+  useEffect(()=>{const addGoal=()=>onOpenGlobalCreation('goal');window.addEventListener('planui:add-goal',addGoal);return()=>window.removeEventListener('planui:add-goal',addGoal);},[onOpenGlobalCreation]);
   useEffect(()=>{const add=()=>onOpenGlobalCreation('event');window.addEventListener('planui:add-recovery',add);return()=>window.removeEventListener('planui:add-recovery',add);},[onOpenGlobalCreation]);
   const [localError, setLocalError] = useState<string | null>(null);
 

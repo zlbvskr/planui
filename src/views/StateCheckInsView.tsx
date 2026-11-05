@@ -1,5 +1,5 @@
 import {Section, Row, Slider, DateField, DurationField, Sheet, Toggle, Disclosure, ActionMenu, InfoSheet} from '../ui';
-import { formatDate, formatInstant } from '../lib/format';
+import { formatDate, formatInstant, formatDuration } from '../lib/format';
 import { StateHistoryChart } from '../components/today/StateHistoryChart';
 import type { CalendarEvent } from '../domain/types';
 import { OptionalSlider } from '../components/ui/OptionalSlider';
@@ -40,7 +40,7 @@ export function StateCheckInsView({ records, events = [], today, zone, enabled, 
     {[...records].filter(r => r.id===recordOpen).sort((a,b) => b.localDate.localeCompare(a.localDate) || b.recordedAt.localeCompare(a.recordedAt)).map(r => <Card key={r.id} title={`${formatDate(r.localDate,{dateStyle:'long'})} · ${formatInstant(r.recordedAt,r.zoneId,{timeStyle:'short'})}`}>
 
       {r.text && <><p className="whitespace-pre-wrap">{r.text}</p><Button onClick={async () => { try { await navigator.clipboard.writeText(r.text!); } catch { setError('Копіювання недоступне. Виділіть текст вручну.'); } }}>Копіювати текст</Button></>}
-      <p>{[['Настрій',r.mood],['Енергія',r.energy],['Напруга',r.stress],['Сон, хв',r.sleepMinutes],['Якість сну',r.sleepQuality]].filter(([,v]) => v != null).map(([k,v]) => `${k}: ${v}`).join(' · ')}</p>
+      <p>{[['Настрій',r.mood],['Енергія',r.energy],['Напруга',r.stress],['Сон',r.sleepMinutes==null?null:formatDuration(r.sleepMinutes)],['Якість сну',r.sleepQuality]].filter(([,v]) => v != null).map(([k,v]) => `${k}: ${v}`).join(' · ')}</p>
       {!archive && <Button onClick={() => { setRecordOpen(null); setEditing(r); setDate(r.localDate); setMood(r.mood == null ? '' : String(r.mood)); setEnergy(r.energy == null ? '' : String(r.energy)); setStress(r.stress == null ? '' : String(r.stress)); setSleep(r.sleepMinutes == null ? '' : String(r.sleepMinutes)); setQuality(r.sleepQuality == null ? '' : String(r.sleepQuality)); }}>Редагувати</Button>}
       <Button onClick={async () => { if (!window.confirm('Остаточно видалити цей запис разом із текстом та оцінками?')) return; try { await repositories.deletePersonalRecordTransactionally(r.id); if (editing?.id === r.id) reset(); await onChanged(); } catch { setError('Не вдалося видалити запис. Оновіть дані та повторіть.'); } }}>Видалити</Button>
     </Card>)}

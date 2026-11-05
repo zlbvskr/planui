@@ -1,3 +1,4 @@
+import { DateField, TimeField } from '../../ui';
 import { formatDuration, formatDate } from '../../lib/format';
 import { PillMenu as SelectField } from '../ui/design';
 import { WishExtrasFields, emptyWishExtras, resolveWishExtras } from '../wishlist/WishExtrasFields';
@@ -77,12 +78,17 @@ import {
 import { PlanuiRepositories } from '../../storage/repositories';
 import {
   Button,
-  InputField,
+  InputField as LegacyInputField,
   ModalSheet,
   SegmentedControl,
   TextAreaField,
   FeedbackBanner,
 } from '../ui/primitives';
+
+function InputField(props: React.ComponentProps<typeof LegacyInputField>) {
+  if(props.type==='date' || props.type==='time') { const {type,hint,error,...field}=props; const Field=type==='date'?DateField:TimeField; return <Field {...field} value={String(props.value??'')}/>; }
+  return <LegacyInputField {...props}/>;
+}
 
 export interface SharedEditorHostProps {
   isOpen: boolean;
@@ -138,7 +144,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
   onClose,
   onEntityCreated,
 }) => {
-  const quickKinds: ImplementedCreationActionKind[] = ['task', 'shift', 'event', 'goal', 'project', ...(enabledModules?.habitsEnabled !== false ? ['habit' as const] : []), ...(enabledModules?.stateCheckInsEnabled !== false ? ['personal_record' as const] : []), ...(enabledModules?.wishlistEnabled !== false ? ['wish' as const] : [])];
+  const quickKinds: ImplementedCreationActionKind[] = ['task', 'shift', 'event', 'goal', ...(enabledModules?.habitsEnabled !== false ? ['habit' as const] : []), ...(enabledModules?.stateCheckInsEnabled !== false ? ['personal_record' as const] : []), ...(enabledModules?.wishlistEnabled !== false ? ['wish' as const] : [])];
   const availableActions = globalQuickAdd ? quickKinds.map(kind => CREATION_ACTION_REGISTRY.find(action => action.kind === kind)!) : getContextualCreationActions(
     activeDestination,
     contexts,
@@ -1223,8 +1229,10 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
               required
             />
 )}
+        {globalQuickAdd&&selectedAction!=='task'&&<InputField label="Що потрібно зробити?" placeholder="Що потрібно зробити?" autoFocus value={selectedAction==='habit'?habitName:selectedAction==='wish'?wishTitle:selectedAction==='goal'?goalTitle:selectedAction==='personal_record'?recordText:eventTitle} onChange={e=>{const set=selectedAction==='habit'?setHabitName:selectedAction==='wish'?setWishTitle:selectedAction==='goal'?setGoalTitle:selectedAction==='personal_record'?setRecordText:setEventTitle;set(e.target.value);}}/>}
         {/* Contextual Action Switcher — Only shows implemented actions, prioritized by active destination */}
         <div
+          data-ui={globalQuickAdd?"pill-row":undefined}
           role="radiogroup"
           aria-label={UK_STRINGS.creation.sheetTitleChooseAction}
           className="flex gap-2 overflow-x-auto pb-2"
@@ -1326,7 +1334,9 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
           <button type="button" className="ui-pill" aria-expanded={quickPanel==='direction'} onClick={()=>setQuickPanel(quickPanel==='direction'?null:'direction')}>Напрям{editableContext.folderId ? ` · ${folders.find(f=>f.id===editableContext.folderId)?.name??''}` : ''}</button>
           <SelectField label="Сфера" value={taskLifeArea} onChange={e=>setTaskLifeArea(e.target.value)} options={[{value:'',label:'Успадкувати'},...lifeAreaQuestions.filter(a=>!a.archived&&!a.mergedIntoId).map(a=>({value:a.id,label:a.questionTextUk}))]} />
         </div>}
-        <details className={globalQuickAdd && selectedAction==='task' ? 'quick-context-panel' : ''} open={globalQuickAdd && selectedAction==='task' ? quickPanel==='date'||quickPanel==='direction' : selectedAction !== 'task'}>
+        {globalQuickAdd&&selectedAction!=='task'&&<div className="quick-options">{(selectedAction==='habit'?['Як часто','Мінімальний варіант','Контекст','Напрям','Сфера']:selectedAction==='wish'?['Ціна','Категорія']:['Дата й час','Тривалість','Сфера']).map(label=><button type="button" className="ui-pill" key={label} onClick={()=>setQuickPanel(quickPanel?'':label)}>{label}</button>)}</div>}
+        <div className={globalQuickAdd?'quick-fields':''} hidden={globalQuickAdd&&!quickPanel}>
+        <details className={globalQuickAdd ? 'quick-context-panel' : ''} open={globalQuickAdd && selectedAction==='task' ? quickPanel==='date'||quickPanel==='direction' : selectedAction !== 'task'}>
           <summary className="min-h-[44px] py-3 cursor-pointer">Дата / час · Напрям / проєкт</summary>
         {/* Editable Prefilled Context Block (C04: Prefilled date/folder/project/stage must be visible and editable) */}
         <div
@@ -2611,8 +2621,8 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
               data-testid="create-habit-description-input"
             />
 
-            <InputField label="Мінімальна версія (текст, необов’язково)" value={habitMinimum} onChange={e => setHabitMinimum(e.target.value)} />
-            <InputField label="Контекст / підказка (необов’язково)" placeholder="Наприклад: після пробудження" value={habitCue} onChange={e => setHabitCue(e.target.value)} />
+            <InputField label="Мінімальний варіант" value={habitMinimum} onChange={e => setHabitMinimum(e.target.value)} />
+            <InputField label="Зручний контекст" placeholder="Наприклад: після пробудження" value={habitCue} onChange={e => setHabitCue(e.target.value)} />
             <InputField label="Мій намір нагадати собі (без будильника)" value={habitReminder} onChange={e => setHabitReminder(e.target.value)} />
             <SelectField label="Напрям (без проєкту)" value={editableContext.projectId ? '' : habitFolder} disabled={Boolean(editableContext.projectId)} onChange={e => setHabitFolder(e.target.value)} options={[{value:'',label:'Без напряму'},...folders.map(f => ({value:f.id,label:f.name}))]} />
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -3060,6 +3070,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
           </div>
         )}
 
+        </div>
         {errorMessage && (
           <FeedbackBanner
             tone="error"

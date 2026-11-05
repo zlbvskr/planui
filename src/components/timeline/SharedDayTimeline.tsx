@@ -305,11 +305,11 @@ const TimelineDay = memo(
     const positions = useMemo(
       () =>
         layoutTimelineOverlapLanes({
-          items: projection.timelineItems,
+          items: plan.minimalDay ? projection.timelineItems.filter(item=>{if(!item.taskId)return true;const task=props.tasks.find(t=>t.id===item.taskId);const optional=props.tasks.find(t=>t.state==='open'&&t.effort==='small'&&plan.focusTaskIds.includes(t.id)&&!t.deadline);return Boolean(task?.deadline||task?.id===optional?.id);}) : projection.timelineItems,
           dayDurationMinutes: projection.dayDurationMinutes,
           nowMs: initialNow,
         }).positionedItems,
-      [projection, initialNow],
+      [projection, initialNow, plan, props.tasks],
     );
     const gap = plan.minimalDay
       ? undefined

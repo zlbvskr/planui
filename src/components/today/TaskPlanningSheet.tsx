@@ -26,6 +26,7 @@ import { Button, InputField, TextAreaField } from "../ui/primitives";
 
 export function TaskPlanningSheet({
   reviewAction,
+  initialDate,
   task,
   date,
   zone,
@@ -38,6 +39,7 @@ export function TaskPlanningSheet({
   onSaved,
 }: {
   reviewAction?: string;
+  initialDate?: string;
   task: Task;
   date: string;
   zone: string;
@@ -72,7 +74,7 @@ export function TaskPlanningSheet({
         )
       : "30",
   );
-  const [assignedDate, setAssignedDate] = useState(task.plannedDate ?? date);
+  const [assignedDate, setAssignedDate] = useState(initialDate ?? task.plannedDate ?? date);
   const [preview, setPreview] = useState<PlanningChangePreview | null>(
     reviewAction === "Поставити на паузу"
       ? previewPlanningChange(

@@ -1,0 +1,194 @@
+[
+  {
+    "route": "me-hub",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "me-areas",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "me-area-sheet",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "me-areas-review",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "me-planning",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "me-state",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "me-hub",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "me-areas",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "me-area-sheet",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "me-areas-review",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "me-planning",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "me-state",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "me-hub",
+    "theme": "light",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "me-areas",
+    "theme": "light",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "me-area-sheet",
+    "theme": "light",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "me-areas-review",
+    "theme": "light",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "me-planning",
+    "theme": "light",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "me-state",
+    "theme": "light",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "me-hub",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "me-areas",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "me-area-sheet",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "me-areas-review",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "me-planning",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "me-state",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  }
+]

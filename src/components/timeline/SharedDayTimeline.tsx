@@ -158,6 +158,7 @@ const TimelineItem = memo(function TimelineItem({
       key={item.itemKey}
       hue={hue}
       data-source={item.sourceId}
+      data-collision={p.hasConflict}
       data-continues-before={before}
       data-continues-after={after}
       className={`today-time-item ${reminder ? "today-reminder" : ""}`}

@@ -1,0 +1,130 @@
+[
+  {
+    "route": "today-day",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "today-day-midnight",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "today-tasks",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "today-habits",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "today-day",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "today-day-midnight",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "today-tasks",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "today-habits",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "today-day",
+    "theme": "light",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "today-day-midnight",
+    "theme": "light",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "today-tasks",
+    "theme": "light",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "today-habits",
+    "theme": "light",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "today-day",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "today-day-midnight",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "today-tasks",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "today-habits",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  }
+]

@@ -1,0 +1,146 @@
+[
+  {
+    "route": "today-day",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 1,
+    "counts": {
+      "content-start": 1
+    },
+    "findings": [
+      {
+        "rule": "content-start",
+        "target": "section.today-day-canvas",
+        "detail": "410.2 > 320"
+      }
+    ]
+  },
+  {
+    "route": "today-tasks",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 1,
+    "counts": {
+      "content-start": 1
+    },
+    "findings": [
+      {
+        "rule": "content-start",
+        "target": "today-tasks-mode",
+        "detail": "410.2 > 320"
+      }
+    ]
+  },
+  {
+    "route": "today-habits",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 1,
+    "counts": {
+      "content-start": 1
+    },
+    "findings": [
+      {
+        "rule": "content-start",
+        "target": "section.today-habits.space-y-4",
+        "detail": "410.2 > 320"
+      }
+    ]
+  },
+  {
+    "route": "today-day",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "today-tasks",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "today-habits",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "today-day",
+    "theme": "light",
+    "variant": "filled",
+    "total": 1,
+    "counts": {
+      "content-start": 1
+    },
+    "findings": [
+      {
+        "rule": "content-start",
+        "target": "section.today-day-canvas",
+        "detail": "410.2 > 320"
+      }
+    ]
+  },
+  {
+    "route": "today-tasks",
+    "theme": "light",
+    "variant": "filled",
+    "total": 1,
+    "counts": {
+      "content-start": 1
+    },
+    "findings": [
+      {
+        "rule": "content-start",
+        "target": "today-tasks-mode",
+        "detail": "410.2 > 320"
+      }
+    ]
+  },
+  {
+    "route": "today-habits",
+    "theme": "light",
+    "variant": "filled",
+    "total": 1,
+    "counts": {
+      "content-start": 1
+    },
+    "findings": [
+      {
+        "rule": "content-start",
+        "target": "section.today-habits.space-y-4",
+        "detail": "410.2 > 320"
+      }
+    ]
+  },
+  {
+    "route": "today-day",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "today-tasks",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "today-habits",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  }
+]

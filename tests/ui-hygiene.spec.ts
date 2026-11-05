@@ -3,7 +3,8 @@ import { startUiRuntime, installUiFixture, loadAxe, UI_CONTEXT } from './ui-runt
 
 /** Later stages extend this list; never silently exclude a failing screen. */
 export const ROUTES = [
-  {id:'today-day',path:'/#/today',mode:'День'},
+  {id:'today-day',path:'/#/today',mode:'День',position:'now'},
+  {id:'today-day-midnight',path:'/#/today',mode:'День',position:'midnight'},
   {id:'today-tasks',path:'/#/today',mode:'Завдання'},
   {id:'today-habits',path:'/#/today',mode:'Звички'},
 ] as const;
@@ -57,6 +58,10 @@ export async function runUiHygiene() {
         await page.getByTestId('destination-view-today').waitFor();await page.waitForTimeout(100);
         await page.getByRole('button',{name:route.mode,exact:true}).click();await page.waitForTimeout(100);
         await page.evaluate(()=>{scrollTo(0,0);document.getAnimations().forEach(a=>{try{a.finish();}catch{}});});
+        if('position' in route && route.position==='midnight') {
+          await page.evaluate(()=>{const el=document.querySelector<HTMLElement>('.continuous-time-scroll')!;const day=el.querySelector<HTMLElement>('[data-date="2026-11-06"]')!;el.scrollTop+=day.getBoundingClientRect().top-el.getBoundingClientRect().top+day.offsetHeight-140;});
+          await page.waitForTimeout(100);
+        }
         const findings=await page.evaluate(inspectUiHygiene);
         for(const error of errors)findings.push({rule:'page-error',target:'page',detail:error});
         await loadAxe(page);

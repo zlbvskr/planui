@@ -489,6 +489,7 @@ export function App() {
               mode={todayCtx.mode ?? 'day'}
               hasInteraction={todayCtx.hasInteraction}
               savedScrollTop={todayCtx.scrollTop}
+              dailyPlans={snapshot.settings.dailyPlans}
               dailyPlan={snapshot.settings.dailyPlans?.[todayCtx.selectedDate]}
               onInteraction={() => { if (!todayCtx.hasInteraction) setContexts(prev => updateDestinationContext(prev, 'today', { hasInteraction: true })); }}
               onChangeMode={mode => { const currentScroll = window.scrollY; setContexts(prev => updateDestinationContext(prev, 'today', { mode, hasInteraction: true, scrollTop: prev.today.modeScrollTops?.[mode] ?? 0, modeScrollTops: { ...prev.today.modeScrollTops, [prev.today.mode ?? 'day']: currentScroll } })); }}

@@ -11,7 +11,7 @@ Only the personal hub, life areas, planning overview and state presentation are 
 
 ## Actual verification
 
-`npm run lint`, `npm run build`, `npm test` (214/214) and `npm run test:stage5` passed. The WebKit functional test checks all ten areas in the first viewport, no score writes from opening details or completing a task, explicit score saving and shift overlays.
+`npm run lint`, `npm run build`, `npm test` (214/214) and `npm run test:stage5` passed. The WebKit functional test checks all ten areas in the first viewport, no score writes from opening details or completing a task, explicit score saving, preservation of untouched scores in partial/focus-only reviews, and shift overlays.
 
 `ROUTES` includes all six stage screens, tested in dark/light and filled/empty fixtures at 390×844. Final hygiene/axe results: **24 cases, 0 findings**, after an isolated four-case retry. The first final matrix had one page startup timeout under concurrent browser load (23 clean cases); `hygiene-first-check.json` preserves it. `hygiene-retry.json` records all four isolated area-sheet cases passing. `hygiene-baseline.json`/`.md` combine those exact cases, without suppressing rules. Screenshots show the second visual pass; the light area sheet was recaptured after its contrast correction.
 

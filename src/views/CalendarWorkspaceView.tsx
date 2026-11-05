@@ -1684,7 +1684,7 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
       {/* =================================================================== */}
       {effectiveMode === 'day' && (
         <div className="space-y-4">
-          <SharedDayTimeline
+          <SharedDayTimeline folders={roadmapSource.folders} projects={roadmapSource.projects}
             testIdPrefix="calendar"
             projection={selectedDayFilteredProjection}
             projectionWithReleased={selectedDayWithReleasedFilteredProjection}

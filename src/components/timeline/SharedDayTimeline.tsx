@@ -1,26 +1,55 @@
-import { formatDuration } from '../../lib/format';
-import React, { useMemo, useState } from 'react';
-import { Clock, Layers, Plus, Trash2 } from 'lucide-react';
-import {
+import React, {
+  memo,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { ArrowDown, ArrowUp, ChevronDown, Moon } from "lucide-react";
+import type {
   CalendarEvent,
+  DailyPlan,
   EntityId,
+  Folder,
   IanaTimeZone,
+  Project,
   Task,
   TaskReservation,
-} from '../../domain/types';
+} from "../../domain/types";
 import {
-  ProjectedDaySchedule,
-  ProjectedTimelineItem,
-  TimelineOverlapCluster,
-  UnoccupiedTimeGap,
   buildDayTimelineHourRail,
-  computeCurrentTimeIndicatorPosition,
   layoutTimelineOverlapLanes,
-} from '../../domain/scheduling';
-import { UK_STRINGS } from '../../i18n/uk';
-import { Button, Card, EmptyStateCard, ModalSheet } from '../ui/primitives';
-
+  projectScheduleForDate,
+} from "../../domain/scheduling";
+import type {
+  ProjectedDaySchedule,
+  UnoccupiedTimeGap,
+} from "../../domain/scheduling";
+import {
+  addDaysToLocalDate,
+  formatInstantInZone,
+  getLocalDateBoundariesInZone,
+  resolveLocalDateTimeToInstant,
+} from "../../domain/temporal";
+import { EMPTY_DAILY_PLAN } from "../../domain/today";
+import {
+  formatDeadline,
+  formatInstant,
+  formatShortDate,
+  formatTime,
+  formatTimeRange,
+  sentenceCase,
+} from "../../lib/format";
+import { ActionMenu, ItemCard, Pill } from "../ui/design";
+import { directionFor, Effort } from "./itemPresentation";
+import { dayOffset, futureGaps, minutePixels } from "./viewport";
 export interface SharedDayTimelineProps {
+  folders?: readonly Folder[];
+  projects?: readonly Project[];
+  plan?: DailyPlan;
+  plans?: Record<string, DailyPlan>;
+  onDayInView?: (date: string) => void;
   testIdPrefix: string;
   projection: ProjectedDaySchedule;
   projectionWithReleased?: ProjectedDaySchedule;
@@ -39,940 +68,732 @@ export interface SharedDayTimelineProps {
   onInspectTask?: (task: Task, reservationId?: string) => void;
 }
 
-const MINUTE_HEIGHT_PX = 1.05; // ~63px per hour -> ~1512px for a 24h day
+const EMPTY: readonly never[] = [];
 
-export function paletteColorToken(color: string): {
-  accentVar: string;
-  tintVar: string;
-  textVar: string;
-} {
-  switch (color) {
-    case 'work':
-      return {
-        accentVar: 'var(--color-work)',
-        tintVar: 'var(--color-work-tint, var(--bg-elevated))',
-        textVar: 'var(--color-work-text)',
-      };
-    case 'dayoff':
-      return {
-        accentVar: 'var(--color-dayoff)',
-        tintVar: 'var(--color-dayoff-tint, var(--bg-elevated))',
-        textVar: 'var(--color-dayoff-text, var(--text-primary))',
-      };
-    case 'reservation':
-      return {
-        accentVar: 'var(--color-reservation)',
-        tintVar: 'var(--color-reservation-tint, var(--bg-elevated))',
-        textVar: 'var(--color-reservation)',
-      };
-    case 'rest':
-      return {
-        accentVar: 'var(--color-rest)',
-        tintVar: 'var(--bg-elevated)',
-        textVar: 'var(--text-secondary)',
-      };
-    case 'brand':
-      return {
-        accentVar: 'var(--color-brand)',
-        tintVar: 'var(--color-brand-tint)',
-        textVar: 'var(--color-brand-text)',
-      };
-    default:
-      return {
-        accentVar: 'var(--color-personal)',
-        tintVar: 'var(--bg-elevated)',
-        textVar: 'var(--color-personal)',
-      };
-  }
+/** Minute ticks are isolated here: no schedule projection or day rerenders. */
+function NowLine({
+  date,
+  zone,
+  initialNow,
+}: {
+  date: string;
+  zone: string;
+  initialNow: number;
+}) {
+  const [now, setNow] = useState(initialNow);
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60000);
+    return () => clearInterval(id);
+  }, []);
+  const line = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const section = line.current?.closest(".timeline-day");
+    const b = getLocalDateBoundariesInZone(date, zone);
+    const y = minutePixels((now - b.startMs) / 60000);
+    section?.querySelectorAll<HTMLElement>("[data-hour-y]").forEach((label) => {
+      label.style.visibility =
+        Math.abs(Number(label.dataset.hourY) - y) < 14 ? "hidden" : "";
+    });
+  }, [now, date, zone]);
+  const b = getLocalDateBoundariesInZone(date, zone);
+  if (now < b.startMs || now >= b.endMs) return null;
+  const top = minutePixels((now - b.startMs) / 60000);
+  return (
+    <div
+      ref={line}
+      className="today-now-line"
+      style={{ transform: `translateY(${top}px)` }}
+      data-testid="today-current-time-indicator"
+    >
+      <span>
+        {formatTime(
+          formatInstantInZone(new Date(now).toISOString(), zone).localTime,
+        )}
+      </span>
+      <i />
+    </div>
+  );
 }
 
-export function SharedDayTimeline({
-  testIdPrefix,
-  projection,
-  projectionWithReleased,
-  nowMs,
-  events,
-  tasks,
-  reservations,
-  onToggleTaskState,
-  onCancelEvent,
-  onInspectEvent,
-  onOpenGapPicker,
-  onEmptyCreateAction,
-  emptyActionLabel,
-  compactMode = false,
-  onInspectTask, onInspectHabitSession,
-}: SharedDayTimelineProps) {
-  const [showReleasedHistory, setShowReleasedHistory] = useState(false);
-  const [activeClusterModal, setActiveClusterModal] =
-    useState<TimelineOverlapCluster | null>(null);
-
-  const hasReleasedItemsOnDate = useMemo(() => {
-    if (!projectionWithReleased) return false;
-    return projectionWithReleased.timelineItems.some(
-      (it) => it.state === 'released'
-    );
-  }, [projectionWithReleased]);
-
-  const effectiveProjection =
-    showReleasedHistory && projectionWithReleased
-      ? projectionWithReleased
-      : projection;
-
-  const hourRail = useMemo(
-    () =>
-      buildDayTimelineHourRail(
-        effectiveProjection.localDate,
-        effectiveProjection.displayZone
-      ),
-    [effectiveProjection.localDate, effectiveProjection.displayZone]
-  );
-
-  const { positionedItems, clusters } = useMemo(
-    () =>
-      layoutTimelineOverlapLanes({
-        items: effectiveProjection.timelineItems,
-        dayDurationMinutes: effectiveProjection.dayDurationMinutes,
-        nowMs,
-      }),
-    [
-      effectiveProjection.timelineItems,
-      effectiveProjection.dayDurationMinutes,
-      nowMs,
-    ]
-  );
-
-  const currentTimeIndicator = useMemo(
-    () =>
-      computeCurrentTimeIndicatorPosition({
-        localDate: effectiveProjection.localDate,
-        displayZone: effectiveProjection.displayZone,
-        nowMs,
-      }),
-    [effectiveProjection.localDate, effectiveProjection.displayZone, nowMs]
-  );
-
-  const totalCanvasHeightPx = Math.round(
-    effectiveProjection.dayDurationMinutes *
-      (compactMode ? 0.8 : MINUTE_HEIGHT_PX)
-  );
-
-  const blockingAllDayItems = effectiveProjection.allDayItems.filter(
-    (ad) => ad.isBlocking
-  );
-  const informationalAllDayItems = effectiveProjection.allDayItems.filter(
-    (ad) => !ad.isBlocking
-  );
-
-  const handleTimelineItemPrimaryClick = (item: ProjectedTimelineItem) => {
-    if (item.sourceKind === 'reservation') {
-      const session = reservations.find(r => r.id === item.sourceId);
-      if (session?.habitOccurrence) onInspectHabitSession?.(session);
-    } else {
-      const ev = events.find((e) => e.id === item.sourceId);
-      if (ev) {
-        onInspectEvent(ev);
-      }
-    }
+const TimelineItem = memo(function TimelineItem({
+  p,
+  height,
+  shared,
+  presentationKey,
+  plan,
+}: {
+  plan: DailyPlan;
+  presentationKey: string;
+  p: ReturnType<typeof layoutTimelineOverlapLanes>["positionedItems"][number];
+  height: number;
+  shared: React.RefObject<SharedDayTimelineProps>;
+}) {
+  const props = shared.current;
+  const { tasks, events, reservations } = props;
+  const folders = props.folders ?? EMPTY,
+    projects = props.projects ?? EMPTY;
+  const item = p.item,
+    task = tasks.find((t) => t.id === item.taskId),
+    ev = events.find((e) => e.id === item.sourceId),
+    dir = directionFor(task, folders, projects);
+  const reminder = item.segment.elapsedDurationMinutes < 10;
+  const hue = task
+    ? dir.hue
+    : ev?.type === "work_shift"
+      ? "#e4b86d"
+      : ev?.type === "sleep"
+        ? "#8aabdb"
+        : "#8ed4a6";
+  const inspect = () => {
+    const current = shared.current;
+    if (task) current.onInspectTask?.(task, item.sourceId);
+    else if (ev) current.onInspectEvent(ev);
   };
-
+  const before = item.segment.continuesBeforeDayStart,
+    after = item.segment.continuesAfterDayEnd;
   return (
-    <div className="space-y-4" data-testid={`${testIdPrefix}-shared-timeline-root`}>
-      {/* Day-off annotations banner (retaining sourceZone & mixed-state overnight carryover note) */}
-      {effectiveProjection.dayOffAnnotations.length > 0 && (
-        <div
-          className="p-3.5 rounded-2xl space-y-1"
-          style={{
-            backgroundColor: 'var(--bg-surface)',
-            border: '1px solid var(--border-subtle)',
-          }}
-          data-testid={`${testIdPrefix}-dayoff-banner`}
-        >
-          {effectiveProjection.dayOffAnnotations.map((ann) => (
-            <div key={ann.annotationId} className="space-y-0.5">
-              <div
-                className="text-[14px] font-semibold"
-                style={{ color: 'var(--color-dayoff)' }}
-              >
-                {UK_STRINGS.timeline.dayOffBannerTitle}
-                {ann.code ? ` (${ann.code})` : ''}
-              </div>
-              {ann.note && (
-                <div className="text-[13px]">{ann.note}</div>
-              )}
-              {ann.zoneNoticeUk && (
-                <div
-                  className="text-[12px]"
-                  style={{ color: 'var(--text-secondary)' }}
-                  data-testid={`${testIdPrefix}-dayoff-zone-notice`}
-                >
-                  {ann.zoneNoticeUk}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* DST Skipped / Repeated Hours Banner (6.1) */}
-      {effectiveProjection.dstKind !== 'normal' && (
-        <div
-          className="p-3 rounded-2xl text-[13px] font-medium"
-          style={{
-            backgroundColor: 'var(--bg-surface)',
-            border: '1px solid var(--border-subtle)',
-            color: 'var(--text-primary)',
-          }}
-          data-testid={`${testIdPrefix}-dst-banner`}
-        >
-          {effectiveProjection.dstKind === 'spring_forward_short'
-            ? UK_STRINGS.timeline.dstSpringForwardBanner(
-                effectiveProjection.dayDurationMinutes
-              )
-            : UK_STRINGS.timeline.dstFallBackBanner(
-                effectiveProjection.dayDurationMinutes
-              )}
-        </div>
-      )}
-
-      {/* All-Day Events (Blocking & Informational) */}
-      {effectiveProjection.allDayItems.length > 0 && (
-        <Card
-          title={testIdPrefix.startsWith('today') || testIdPrefix === 'calendar' ? 'Увесь день' : `Події на весь день (${effectiveProjection.localDate})`}
-          data-testid={`${testIdPrefix}-allday-section`}
-        >
-          <div className="space-y-2">
-            {blockingAllDayItems.map((ad) => {
-              const ev = events.find((e) => e.id === ad.eventId);
-              return (
-                <div
-                  key={ad.eventId}
-                  data-testid={`${testIdPrefix}-allday-item-${ad.title}`}
-                  className="p-3 rounded-xl flex items-start justify-between gap-2"
-                  style={{
-                    backgroundColor: 'var(--bg-elevated)',
-                    border: '1px solid var(--border-subtle)',
-                  }}
-                >
-                  <div className="space-y-1">
-                    <div className="text-[14px] font-semibold">
-                      {ad.title} · Увесь день · Блокує час
-                    </div>
-                    <div
-                      className="text-[12px]"
-                      style={{ color: 'var(--text-secondary)' }}
-                    >
-                      Межі в поясі запису ({ad.originZone}): {ad.startLocalDate}{' '}
-                      – {ad.endLocalDateExclusive}
-                    </div>
-                    {ad.travelBoundaryNoteUk && (
-                      <div
-                        className="text-[12px] font-medium"
-                        style={{ color: 'var(--color-personal)' }}
-                        data-testid={`${testIdPrefix}-allday-zone-note-${ad.title}`}
-                      >
-                        {ad.travelBoundaryNoteUk}
-                      </div>
-                    )}
-                  </div>
-                  {ev && (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => onInspectEvent(ev)}
-                    >
-                      {UK_STRINGS.timeline.inspectRecordButton}
-                    </Button>
-                  )}
-                </div>
-              );
-            })}
-
-            {informationalAllDayItems.map((ad) => {
-              const ev = events.find((e) => e.id === ad.eventId);
-              return (
-                <div
-                  key={ad.eventId}
-                  data-testid={`${testIdPrefix}-info-allday-item-${ad.title}`}
-                  className="p-3 rounded-xl flex items-center justify-between gap-2"
-                  style={{
-                    backgroundColor: 'var(--bg-elevated)',
-                    border: '1px solid var(--border-subtle)',
-                  }}
-                >
-                  <div className="text-[14px] font-semibold">
-                    {ad.title} · Увесь день · Інформаційна
-                  </div>
-                  {ev && (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => onInspectEvent(ev)}
-                    >
-                      {UK_STRINGS.timeline.inspectRecordButton}
-                    </Button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </Card>
-      )}
-
-      {/* Honest empty state notice when no timed or all-day items exist */}
-      {effectiveProjection.timelineItems.length === 0 &&
-        effectiveProjection.allDayItems.length === 0 &&
-        onEmptyCreateAction &&
-        !testIdPrefix.startsWith('today') && testIdPrefix !== 'calendar' && !compactMode && (
-          <EmptyStateCard
-            icon={<Clock className="w-5 h-5" />}
-            title={UK_STRINGS.destinations.today.emptyTimelineTitle}
-            description={UK_STRINGS.destinations.today.emptyTimelineDescription}
-            actionLabel={
-              emptyActionLabel ?? UK_STRINGS.creation.actions.task.label
-            }
-            onAction={onEmptyCreateAction}
-          />
-        )}
-
-      {/* Main Proportional 24h Chronological Timeline Card (6.1 / 6.3 / 6.5) */}
-      <Card
-        title={testIdPrefix.startsWith('today') || testIdPrefix === 'calendar' ? undefined : `Розклад на ${effectiveProjection.localDate} (${effectiveProjection.displayZone})`}
-        data-testid={`${testIdPrefix}-schedule-card`}
-        headerRight={
-          hasReleasedItemsOnDate ? (
-            <label className="flex items-center gap-2 text-[12px] cursor-pointer">
-              <input
-                type="checkbox"
-                checked={showReleasedHistory}
-                onChange={(e) => setShowReleasedHistory(e.target.checked)}
-                data-testid={`${testIdPrefix}-toggle-released-history`}
-                className="w-4 h-4"
-              />
-              <span>{UK_STRINGS.timeline.showReleasedHistoryToggle}</span>
-            </label>
-          ) : undefined
-        }
+    <ItemCard
+      key={item.itemKey}
+      hue={hue}
+      data-source={item.sourceId}
+      data-continues-before={before}
+      data-continues-after={after}
+      className={`today-time-item ${reminder ? "today-reminder" : ""}`}
+      style={{
+        top: `${p.topPercent}%`,
+        height: Math.max(
+          44,
+          (p.heightPercent / 100) * height - (after ? 0 : 4),
+        ),
+        left: `calc(52px + (100% - 52px) * ${p.laneIndex / p.totalLanes})`,
+        width: `calc((100% - 52px) / ${p.totalLanes} - 2px)`,
+        borderTopLeftRadius: before ? 0 : undefined,
+        borderTopRightRadius: before ? 0 : undefined,
+        borderBottomLeftRadius: after ? 0 : undefined,
+        borderBottomRightRadius: after ? 0 : undefined,
+      }}
+    >
+      <button
+        className="today-item-open"
+        onClick={inspect}
+        aria-label={`Відкрити: ${item.title}`}
       >
-        <div className="space-y-4">
-          {/* Accessible Summary List & Dense Cluster Controls */}
-          {clusters.some((c) => c.totalLanes > 1) && (
-            <div
-              className="flex flex-wrap items-center gap-2 p-2.5 rounded-xl text-[12px]"
-              style={{
-                backgroundColor: 'var(--bg-elevated)',
-                border: '1px solid var(--border-subtle)',
-              }}
-              data-testid={`${testIdPrefix}-overlap-clusters-bar`}
-            >
-              <Layers
-                className="w-4 h-4 shrink-0"
-                style={{ color: 'var(--color-brand)' }}
-                aria-hidden="true"
-              />
-              <span>Виявлено паралельні смуги у часовій шкалі:</span>
-              {clusters
-                .filter((c) => c.totalLanes > 1)
-                .map((cluster) => (
-                  <Button
-                    key={cluster.clusterId}
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    data-testid={`${testIdPrefix}-cluster-details-btn-${cluster.clusterId}`}
-                    onClick={() => setActiveClusterModal(cluster)}
-                  >
-                    {cluster.displayStartLocalTime}–{cluster.displayEndLocalTime}{' '}
-                    · {UK_STRINGS.timeline.clusterDetailsButton(cluster.items.length)}
-                  </Button>
-                ))}
-            </div>
-          )}
-
-          {/* Proportional Chronological Canvas with Time Rail */}
-          <div
-            className="relative rounded-2xl overflow-hidden select-none"
-            style={{
-              height: `${totalCanvasHeightPx}px`,
-              backgroundColor: 'var(--bg-elevated)',
-              border: '1px solid var(--border-subtle)',
-            }}
-            data-testid={`${testIdPrefix}-proportional-timeline`}
-            data-day-duration-minutes={effectiveProjection.dayDurationMinutes}
-          >
-            {/* 1. Hour Rail & Horizontal Hour Hairlines */}
-            {hourRail.map((slot) => (
-              <div
-                key={`rail-${slot.slotIndex}`}
-                className="absolute inset-x-0 flex items-start pointer-events-none"
-                style={{
-                  top: `${slot.topPercent}%`,
-                  height: `${slot.heightPercent}%`,
-                  borderTop:
-                    slot.slotIndex === 0
-                      ? 'none'
-                      : '1px solid var(--border-subtle)',
-                }}
-                data-testid={`${testIdPrefix}-hour-slot-${slot.slotIndex}`}
-              >
-                <div
-                  className="w-16 sm:w-20 shrink-0 px-2 pt-1 text-[11px] font-mono tabular-nums leading-tight"
-                  style={{ color: 'var(--text-secondary)' }}
-                >
-                  <div>{slot.localTimeLabel}</div>
-                  {slot.repeatedOccurrenceBadgeUk && (
-                    <div
-                      className="text-[10px] font-sans font-medium"
-                      style={{ color: 'var(--color-work-text)' }}
-                      data-testid={`${testIdPrefix}-dst-repeat-badge-${slot.slotIndex}`}
-                    >
-                      {slot.repeatedOccurrenceBadgeUk}
-                    </div>
-                  )}
-                  {slot.skippedBeforeThisSlotUk && (
-                    <div
-                      className="text-[10px] font-sans font-medium"
-                      style={{ color: 'var(--color-brand-text)' }}
-                      data-testid={`${testIdPrefix}-dst-skipped-badge-${slot.slotIndex}`}
-                    >
-                      {slot.skippedBeforeThisSlotUk}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-
-            {/* 24:00 Bottom Rail Label */}
-            <div
-              className="absolute bottom-0.5 left-0 w-16 sm:w-20 px-2 text-[11px] font-mono tabular-nums pointer-events-none"
-              style={{ color: 'var(--text-secondary)' }}
-            >
-              24:00
-            </div>
-
-            {/* 2. Events & Reservations Lane Layer */}
-            <div className="absolute top-0 bottom-0 left-16 sm:left-20 right-2">
-              {/* Unoccupied Gap Interactive Slots inside the Timeline */}
-              {effectiveProjection.availability.unoccupiedGaps
-                .filter((gap) => gap.durationMinutes >= 30)
-                .map((gap, idx) => {
-                  const dayBoundsStartMs = Date.parse(
-                    effectiveProjection.availability.windowStartInstant
-                  );
-                  const gapOffsetStartMin = Math.max(
-                    0,
-                    Math.round((gap.startMs - dayBoundsStartMs) / 60_000)
-                  );
-                  const topPct =
-                    (gapOffsetStartMin /
-                      effectiveProjection.dayDurationMinutes) *
-                    100;
-                  const heightPct =
-                    (gap.durationMinutes /
-                      effectiveProjection.dayDurationMinutes) *
-                    100;
-
-                  return (
-                    <div
-                      key={`timeline-gap-${gap.startInstant}-${idx}`}
-                      className="absolute inset-x-1 flex items-center justify-end pr-2 pointer-events-none"
-                      style={{
-                        top: `${topPct}%`,
-                        height: `${heightPct}%`,
-                      }}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => onOpenGapPicker(gap)}
-                        aria-label={testIdPrefix.startsWith('today') || testIdPrefix === 'calendar' ? `${gap.startLocalTime}–${gap.endLocalTime} · ${UK_STRINGS.timeline.planInGapButton}` : UK_STRINGS.timeline.planInGapAria(`${gap.startLocalTime}–${gap.endLocalTime}`)}
-                        data-testid={`${testIdPrefix}-timeline-gap-action-${idx}`}
-                        className="pointer-events-auto min-h-[44px] px-2.5 py-1 rounded-xl text-[11px] font-medium flex items-center gap-1 cursor-pointer transition-opacity opacity-80 hover:opacity-100"
-                        style={{
-                          backgroundColor: 'var(--bg-surface)',
-                          color: 'var(--text-secondary)',
-                          border: '1px dashed var(--border-subtle)',
-                        }}
-                      >
-                        <Plus className="w-3.5 h-3.5" aria-hidden="true" />
-                        <span>
-                          {gap.startLocalTime}–{gap.endLocalTime} ·{' '}
-                          {UK_STRINGS.timeline.planInGapButton}
-                        </span>
-                      </button>
-                    </div>
-                  );
-                })}
-
-              {/* Positioned Timeline Items in Distinguishable Overlap Lanes */}
-              {positionedItems.map((pos) => {
-                const { item } = pos;
-                const isReservation = item.sourceKind === 'reservation';
-                const isShift = item.sourceKind === 'work_shift';
-                const sourceEvent = !isReservation
-                  ? events.find((ev) => ev.id === item.sourceId)
-                  : null;
-                const sourceTask =
-                  isReservation && item.taskId
-                    ? tasks.find((t) => t.id === item.taskId)
-                    : null;
-
-                const palette = paletteColorToken(item.color);
-                const laneWidthPct = 100 / pos.totalLanes;
-                const laneLeftPct = pos.laneIndex * laneWidthPct;
-
-                const isDimmed =
-                  pos.visualState === 'past' ||
-                  pos.visualState === 'completed' ||
-                  pos.visualState === 'released' ||
-                  pos.visualState === 'canceled';
-
-                return (
-                  <div
-                    key={item.itemKey}
-                    data-testid={`${testIdPrefix}-timed-item-${item.title}`}
-                    data-lane-index={pos.laneIndex}
-                    data-total-lanes={pos.totalLanes}
-                    data-visual-state={pos.visualState}
-                    data-stored-duration-minutes={
-                      item.segment.elapsedDurationMinutes
-                    }
-                    style={{
-                      top: `${pos.topPercent}%`,
-                      height: `${pos.heightPercent}%`,
-                      left: `calc(${laneLeftPct}% + 2px)`,
-                      width: `calc(${laneWidthPct}% - 4px)`,
-                    }}
-                    className="absolute z-10"
-                  >
-                    {/* Proportional visual block + guaranteed >=44px interactive touch target wrapper that does NOT alter stored duration */}
-                    <div
-                      onClick={() => handleTimelineItemPrimaryClick(item)}
-                      className="w-full h-full min-h-[44px] rounded-xl p-2 flex flex-col justify-between gap-1 overflow-hidden shadow-xs transition-opacity"
-                      style={{
-                        backgroundColor: 'var(--bg-surface)',
-                        border: pos.hasConflict
-                          ? '1.5px solid #b7791f'
-                          : `1px solid ${palette.accentVar}`,
-                        opacity:
-                          pos.visualState === 'released'
-                            ? 0.62
-                            : isDimmed
-                            ? 0.84
-                            : 1,
-                        cursor: !isReservation ? 'pointer' : 'default',
-                      }}
-                    >
-                      <div className="flex items-start justify-between gap-1.5 min-w-0">
-                        <div className="min-w-0 flex-1 space-y-0.5">
-                          <div className="flex flex-wrap items-center gap-1 text-[12px] leading-tight">
-                            <span className="font-mono tabular-nums font-semibold">
-                              {item.segment.displayStartLocalTime} –{' '}
-                              {item.segment.displayEndLocalTime}
-                            </span>
-                            <span
-                              className={`text-[13px] font-semibold truncate ${
-                                pos.visualState === 'completed' ||
-                                pos.visualState === 'canceled'
-                                  ? 'line-through'
-                                  : ''
-                              }`}
-                            >
-                              {item.title}
-                            </span>
-                            {isShift && (
-                              <span
-                                className="text-[11px] font-medium"
-                                style={{ color: 'var(--color-work-text)' }}
-                              >
-                                · Робоча зміна
-                              </span>
-                            )}
-                            {isReservation && (
-                              <span
-                                className="text-[11px] font-medium"
-                                style={{ color: 'var(--color-reservation)' }}
-                              >
-                                · Сесія справи
-                              </span>
-                            )}
-                          </div>
-
-                          <div
-                            className="text-[11px] flex flex-wrap items-center gap-1.5 leading-tight"
-                            style={{ color: 'var(--text-secondary)' }}
-                          >
-                            <span>
-                              Частка на добу:{' '}
-                              {formatDuration(item.segment.elapsedDurationMinutes)}
-                            </span>
-                            <span>· {pos.statusBadgeUk}</span>
-                            {pos.hasConflict && (
-                              <span
-                                className="font-semibold"
-                                style={{ color: 'var(--color-brand-text)' }}
-                                data-testid={`${testIdPrefix}-conflict-badge-${item.title}`}
-                              >
-                                · {UK_STRINGS.timeline.conflictBadge}
-                              </span>
-                            )}
-                            {item.segment.continuesBeforeDayStart && (
-                              <span
-                                data-testid={`continuation-prev-${item.sourceId}`}
-                              >
-                                •{' '}
-                                {
-                                  UK_STRINGS.scheduling
-                                    .continuationFromPrevDayBadge
-                                }
-                              </span>
-                            )}
-                            {item.segment.continuesAfterDayEnd && (
-                              <span
-                                data-testid={`continuation-next-${item.sourceId}`}
-                              >
-                                • {UK_STRINGS.scheduling.continuesNextDayBadge}
-                              </span>
-                            )}
-                          </div>
-
-                          {item.releaseNoteUk && (
-                            <div
-                              className="text-[11px] leading-snug"
-                              style={{ color: 'var(--text-secondary)' }}
-                              data-testid={`${testIdPrefix}-release-note-${item.title}`}
-                            >
-                              {item.releaseNoteUk}
-                            </div>
-                          )}
-
-                          {item.originZoneNoteUk && (
-                            <div
-                              className="text-[11px] leading-snug"
-                              style={{ color: 'var(--text-secondary)' }}
-                              data-testid={`origin-zone-context-${item.sourceId}`}
-                            >
-                              {item.originZoneNoteUk}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Action Controls */}
-                        <div
-                          className="flex items-center gap-1 shrink-0"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {isReservation &&
-                            sourceTask &&
-                            item.state === 'active' && (
-                              <Button
-                                variant="secondary"
-                                size="sm"
-                                aria-label={
-                                  sourceTask.state === 'completed'
-                                    ? `${UK_STRINGS.plansView.reopenTaskButton}: ${sourceTask.title}`
-                                    : `${UK_STRINGS.plansView.completeTaskButton}: ${sourceTask.title}`
-                                }
-                                onClick={() =>
-                                  void onToggleTaskState(sourceTask.id)
-                                }
-                                data-testid={`${testIdPrefix}-complete-reservation-task-${sourceTask.title}`}
-                              >
-                                {sourceTask.state === 'completed'
-                                  ? UK_STRINGS.plansView.reopenTaskButton
-                                  : UK_STRINGS.plansView.completeTaskButton}
-                              </Button>
-                            )}
-                          {isReservation && onInspectHabitSession && reservations.find(r => r.id === item.sourceId)?.habitOccurrence && <Button size="sm" variant="subtle" onClick={() => onInspectHabitSession(reservations.find(r => r.id === item.sourceId)!)}>Звичка: запис і сеанси</Button>}
-                          {isReservation && sourceTask && onInspectTask && <Button size="sm" variant="subtle" aria-label={`Планування справи: ${sourceTask.title}`} onClick={() => onInspectTask(sourceTask, item.sourceId)}>Дата й сеанси</Button>}
-                          {!isReservation &&
-                            sourceEvent &&
-                            sourceEvent.state === 'active' && (
-                              <>
-                                <Button
-                                  variant="subtle"
-                                  size="sm"
-                                  aria-label={`Редагувати подію: ${sourceEvent.title}`}
-                                  data-testid={`${testIdPrefix}-edit-event-${sourceEvent.title}`}
-                                  onClick={() => onInspectEvent(sourceEvent)}
-                                >
-                                  {UK_STRINGS.timeline.inspectRecordButton}
-                                </Button>
-                                <Button
-                                  variant="subtle"
-                                  size="icon"
-                                  aria-label={`Скасувати подію: ${sourceEvent.title}`}
-                                  data-testid={`${testIdPrefix}-cancel-event-${sourceEvent.title}`}
-                                  onClick={() =>
-                                    void onCancelEvent(
-                                      sourceEvent.id,
-                                      sourceEvent.revision
-                                    )
-                                  }
-                                >
-                                  <Trash2
-                                    className="w-4 h-4"
-                                    aria-hidden="true"
-                                  />
-                                </Button>
-                              </>
-                            )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-
-              {/* 3. Current-Time Line (6.3 Appears ONLY in the date containing now) */}
-              {currentTimeIndicator.isVisibleOnDate && (
-                <div
-                  className="absolute inset-x-0 z-20 flex items-center pointer-events-none"
-                  style={{ top: `${currentTimeIndicator.topPercent}%` }}
-                  data-testid={`${testIdPrefix}-current-time-indicator`}
-                  aria-label={`${UK_STRINGS.timeline.currentTimeLabel}: ${currentTimeIndicator.currentLocalTimeLabel}`}
-                >
-                  <span
-                    className="px-1.5 py-0.5 rounded text-[10px] font-mono tabular-nums font-bold -ml-14 sm:-ml-16 shadow-xs"
-                    style={{
-                      backgroundColor: 'var(--color-brand)',
-                      color: '#FFFFFF',
-                    }}
-                  >
-                    {currentTimeIndicator.currentLocalTimeLabel}
-                  </span>
-                  <div
-                    className="flex-1 h-[2px]"
-                    style={{ backgroundColor: 'var(--color-brand)' }}
-                  />
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </Card>
-
-      {/* Availability & Unoccupied Windows Summary Card with Gap Picker Actions (C10 / 5.6 / 6.4) */}
-      {!compactMode && !testIdPrefix.startsWith('today') && (
-        <details className="calendar-time-details"><summary>Деталі часу та вільні проміжки</summary>
-        <Card
-          title={UK_STRINGS.scheduling.availabilityCardTitle}
-          data-testid={`${testIdPrefix}-availability-card`}
-        >
-          <div className="space-y-3">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[13px]">
-              <div
-                className="p-2.5 rounded-xl"
-                style={{ backgroundColor: 'var(--bg-elevated)' }}
-                data-testid={`${testIdPrefix}-occupied-minutes`}
-              >
-                <div
-                  className="text-[11px]"
-                  style={{ color: 'var(--text-secondary)' }}
-                >
-                  {UK_STRINGS.scheduling.occupiedTotalLabel}
-                </div>
-                <div className="font-semibold mt-0.5 tabular-nums">
-                  {formatDuration(effectiveProjection.availability.totalOccupiedMinutes)}
-                </div>
-              </div>
-
-              <div
-                className="p-2.5 rounded-xl"
-                style={{ backgroundColor: 'var(--bg-elevated)' }}
-                data-testid={`${testIdPrefix}-unoccupied-minutes`}
-              >
-                <div
-                  className="text-[11px]"
-                  style={{ color: 'var(--text-secondary)' }}
-                >
-                  {UK_STRINGS.scheduling.unoccupiedTotalLabel}
-                </div>
-                <div className="font-semibold mt-0.5 tabular-nums">
-                  {formatDuration(effectiveProjection.availability.totalUnoccupiedMinutes)}
-                </div>
-              </div>
-
-              <div
-                className="p-2.5 rounded-xl"
-                style={{ backgroundColor: 'var(--bg-elevated)' }}
-              >
-                <div
-                  className="text-[11px]"
-                  style={{ color: 'var(--text-secondary)' }}
-                >
-                  {UK_STRINGS.scheduling.categoryWorkLabel} /{' '}
-                  {UK_STRINGS.scheduling.categoryReservationsLabel}
-                </div>
-                <div className="font-semibold mt-0.5 tabular-nums">
-                  {effectiveProjection.availability.categoryTotalsMinutes.work}{' '}
-                  хв /{' '}
-                  {
-                    effectiveProjection.availability.categoryTotalsMinutes
-                      .reservations
-                  }{' '}
-                  хв
-                </div>
-              </div>
-
-              <div
-                className="p-2.5 rounded-xl"
-                style={{ backgroundColor: 'var(--bg-elevated)' }}
-              >
-                <div
-                  className="text-[11px]"
-                  style={{ color: 'var(--text-secondary)' }}
-                >
-                  {UK_STRINGS.scheduling.categoryPersonalLabel} /{' '}
-                  {UK_STRINGS.scheduling.categoryRestLabel}
-                </div>
-                <div className="font-semibold mt-0.5 tabular-nums">
-                  {
-                    effectiveProjection.availability.categoryTotalsMinutes
-                      .personalBlocking
-                  }{' '}
-                  хв /{' '}
-                  {
-                    effectiveProjection.availability.categoryTotalsMinutes
-                      .restSleepTravel
-                  }{' '}
-                  хв
-                </div>
-              </div>
-            </div>
-
-            {effectiveProjection.availability.unoccupiedGaps.length > 0 && (
-              <div className="space-y-1.5">
-                <div
-                  className="text-[12px] font-medium"
-                  style={{ color: 'var(--text-secondary)' }}
-                >
-                  {UK_STRINGS.scheduling.unoccupiedGapsHeading} (натисніть, щоб
-                  запланувати існуючу справу):
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {effectiveProjection.availability.unoccupiedGaps.map(
-                    (gap, idx) => (
-                      <button
-                        key={`${gap.startInstant}-${idx}`}
-                        type="button"
-                        onClick={() => onOpenGapPicker(gap)}
-                        data-testid={`${testIdPrefix}-gap-pill-${idx}`}
-                        aria-label={UK_STRINGS.timeline.planInGapAria(
-                          `${gap.startLocalTime}–${gap.endLocalTime} (${formatDuration(gap.durationMinutes)})`
-                        )}
-                        className="min-h-[44px] px-3 py-1.5 rounded-xl text-[12px] font-medium flex items-center gap-1.5 cursor-pointer transition-colors"
-                        style={{
-                          backgroundColor: 'var(--bg-elevated)',
-                          color: 'var(--text-primary)',
-                          border: '1px solid var(--border-subtle)',
-                        }}
-                      >
-                        <span className="font-mono tabular-nums">
-                          {gap.startLocalTime} – {gap.endLocalTime} (
-                          {formatDuration(gap.durationMinutes)})
-                        </span>
-                        <span
-                          className="text-[11px] font-semibold"
-                          style={{ color: 'var(--color-reservation)' }}
-                        >
-                          · {UK_STRINGS.timeline.planInGapButton}
-                        </span>
-                      </button>
-                    )
-                  )}
-                </div>
-              </div>
+        <h3>{item.title}</h3>
+        {!reminder && task?.description && <p>{task.description}</p>}
+        {!reminder && (
+          <div className="ui-item-meta">
+            {formatTimeRange(
+              item.segment.displayStartLocalTime,
+              item.segment.displayEndLocalTime,
+            )}{" "}
+            · {task ? dir.name : item.title}{" "}
+            {task?.effort && (
+              <>
+                · <Effort effort={task.effort} />
+              </>
             )}
           </div>
-        </Card>
-        </details>
+        )}
+        {reminder && (
+          <span className="ui-item-meta">
+            {formatTime(item.segment.displayStartLocalTime)}
+          </span>
+        )}
+      </button>
+      {!reminder && plan.focusTaskIds.includes(task?.id ?? "") && (
+        <span className="today-star" aria-label="Фокус дня">
+          ★
+        </span>
       )}
+      {task?.deadline?.kind === "date_only" && (
+        <span className="today-deadline">
+          до {formatDeadline(task.deadline.localDate)}
+        </span>
+      )}
+      <div className="timeline-item-actions">
+        <ActionMenu
+          label={`Дії: ${item.title}`}
+          items={[
+            { label: "Редагувати", onSelect: inspect },
+            ...(task
+              ? [
+                  {
+                    label:
+                      task.state === "completed"
+                        ? "Відкрити знову"
+                        : "Завершити",
+                    onSelect: () =>
+                      void shared.current.onToggleTaskState(task.id),
+                  },
+                ]
+              : []),
+            ...(ev
+              ? [
+                  {
+                    label: "Скасувати подію",
+                    onSelect: () =>
+                      void shared.current.onCancelEvent(ev.id, ev.revision),
+                  },
+                ]
+              : []),
+            ...(reservations.find((r) => r.id === item.sourceId)
+              ?.habitOccurrence
+              ? [
+                  {
+                    label: "Запис звички",
+                    onSelect: () =>
+                      shared.current.onInspectHabitSession?.(
+                        reservations.find((r) => r.id === item.sourceId)!,
+                      ),
+                  },
+                ]
+              : []),
+          ]}
+        />
+      </div>
+    </ItemCard>
+  );
+});
 
-      {/* Accessible Overlap Cluster Modal Sheet (6.1 Provide readable accessible details for dense clusters) */}
-      <ModalSheet
-        isOpen={Boolean(activeClusterModal)}
-        title={UK_STRINGS.timeline.clusterModalTitle}
-        subtitle={
-          activeClusterModal
-            ? `${activeClusterModal.displayStartLocalTime}–${activeClusterModal.displayEndLocalTime} · ${UK_STRINGS.timeline.clusterModalSubtitle}`
-            : undefined
-        }
-        onClose={() => setActiveClusterModal(null)}
+const TimelineDay = memo(
+  function TimelineDay({
+    projection,
+    shared,
+    today,
+    initialNow,
+    expanded,
+    visibleStart,
+    visibleEnd,
+    presentationKey,
+  }: {
+    presentationKey: string;
+    projection: ProjectedDaySchedule;
+    shared: React.RefObject<SharedDayTimelineProps>;
+    today: string;
+    initialNow: number;
+    expanded: boolean;
+    visibleStart: number;
+    visibleEnd: number;
+  }) {
+    const props = shared.current;
+    const { events } = props;
+    const plan = props.plans ? props.plans[projection.localDate]??EMPTY_DAILY_PLAN : props.plan??EMPTY_DAILY_PLAN;
+    const height = minutePixels(projection.dayDurationMinutes);
+    const bounds = useMemo(
+      () =>
+        getLocalDateBoundariesInZone(
+          projection.localDate,
+          projection.displayZone,
+        ),
+      [projection.localDate, projection.displayZone],
+    );
+    const dayLabel = useMemo(
+      () => sentenceCase(formatShortDate(projection.localDate)),
+      [projection.localDate],
+    );
+    const hours = useMemo(
+      () =>
+        buildDayTimelineHourRail(projection.localDate, projection.displayZone),
+      [projection.localDate, projection.displayZone],
+    );
+    const overnight = projection.timelineItems.find(
+      (i) => i.sourceKind === "work_shift" && i.segment.continuesBeforeDayStart,
+    );
+    const sleep = projection.timelineItems.find(
+      (i) => events.find((e) => e.id === i.sourceId)?.type === "sleep",
+    );
+    const positions = useMemo(
+      () =>
+        layoutTimelineOverlapLanes({
+          items: projection.timelineItems,
+          dayDurationMinutes: projection.dayDurationMinutes,
+          nowMs: initialNow,
+        }).positionedItems,
+      [projection, initialNow],
+    );
+    const gap = plan.minimalDay
+      ? undefined
+      : futureGaps(projection.availability.unoccupiedGaps, initialNow).at(-1);
+    const rail = useMemo(
+      () =>
+        hours
+          .filter((h) => h.topPercent < 100)
+          .map((h) => (
+            <div
+              className="today-hour"
+              key={h.slotIndex}
+              data-past={
+                bounds.startMs +
+                  (h.topPercent / 100) * (bounds.endMs - bounds.startMs) <
+                initialNow
+              }
+              style={{ top: `${h.topPercent}%`, height: 56 }}
+            >
+              <span
+                aria-label={
+                  h.repeatedOccurrenceBadgeUk
+                    ? `${formatTime(h.localTimeLabel)} · ${h.repeatedOccurrenceBadgeUk}`
+                    : undefined
+                }
+                data-hour-y={(h.topPercent / 100) * height}
+                style={{
+                  visibility:
+                    projection.localDate === today &&
+                    Math.abs(
+                      (h.topPercent / 100) * height -
+                        minutePixels((initialNow - bounds.startMs) / 60000),
+                    ) < 14
+                      ? "hidden"
+                      : undefined,
+                }}
+              >
+                {formatTime(h.localTimeLabel)}
+              </span>
+              <i />
+            </div>
+          )),
+      [hours, height, bounds, initialNow, today, projection.localDate],
+    );
+    return (
+      <section
+        className="timeline-day"
+        data-date={projection.localDate}
+        style={{ height }}
+        aria-label={dayLabel}
       >
-        {activeClusterModal && (
-          <div
-            className="space-y-2.5"
-            data-testid={`${testIdPrefix}-cluster-modal-content`}
-          >
-            {activeClusterModal.items.map((pos) => {
-              const { item } = pos;
-              const isReservation = item.sourceKind === 'reservation';
-              const sourceEvent = !isReservation
-                ? events.find((ev) => ev.id === item.sourceId)
-                : null;
-              const sourceTask =
-                isReservation && item.taskId
-                  ? tasks.find((t) => t.id === item.taskId)
-                  : null;
-
-              return (
-                <div
-                  key={item.itemKey}
-                  className="p-3 rounded-xl flex items-start justify-between gap-2"
-                  style={{
-                    backgroundColor: 'var(--bg-elevated)',
-                    border: '1px solid var(--border-subtle)',
-                  }}
-                >
-                  <div className="space-y-1">
-                    <div className="text-[14px] font-semibold">
-                      Смуга {pos.laneIndex + 1}/{pos.totalLanes}:{' '}
-                      {item.segment.displayStartLocalTime}–
-                      {item.segment.displayEndLocalTime} · {item.title}
-                    </div>
-                    <div
-                      className="text-[12px]"
-                      style={{ color: 'var(--text-secondary)' }}
-                    >
-                      {pos.statusBadgeUk} ·{' '}
-                      {formatDuration(item.segment.elapsedDurationMinutes)}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    {isReservation && onInspectHabitSession && reservations.find(r => r.id === item.sourceId)?.habitOccurrence && <Button onClick={() => { setActiveClusterModal(null); onInspectHabitSession(reservations.find(r => r.id === item.sourceId)!); }}>Звичка: запис і сеанси</Button>}
-                    {isReservation && sourceTask && (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => {
-                          void onToggleTaskState(sourceTask.id);
-                          setActiveClusterModal(null);
-                        }}
-                      >
-                        {sourceTask.state === 'completed'
-                          ? UK_STRINGS.plansView.reopenTaskButton
-                          : UK_STRINGS.plansView.completeTaskButton}
-                      </Button>
-                    )}
-                    {!isReservation && sourceEvent && (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => {
-                          setActiveClusterModal(null);
-                          onInspectEvent(sourceEvent);
-                        }}
-                      >
-                        {UK_STRINGS.timeline.inspectRecordButton}
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+        <div className="timeline-day-boundary">
+          <span>{dayLabel}</span>
+        </div>
+        {projection.allDayItems.length > 0 && (
+          <div className="timeline-all-day">
+            {projection.allDayItems.map((i) => (
+              <button
+                key={i.eventId}
+                onClick={() => {
+                  const e = events.find((e) => e.id === i.eventId);
+                  if (e) shared.current.onInspectEvent(e);
+                }}
+              >
+                {i.title} · Увесь день
+              </button>
+            ))}
           </div>
         )}
-      </ModalSheet>
-    </div>
+
+        {rail}
+        {gap && (
+          <button
+            className="today-gap"
+            style={{
+              top: minutePixels((gap.startMs - bounds.startMs) / 60000),
+            }}
+            onClick={() =>
+              shared.current.onOpenGapPicker({
+                ...gap,
+                startInstant: new Date(gap.startMs).toISOString(),
+                startLocalTime: formatInstantInZone(
+                  new Date(gap.startMs).toISOString(),
+                  projection.displayZone,
+                ).localTime,
+              })
+            }
+          >
+            +{" "}
+            {formatTimeRange(
+              formatInstantInZone(
+                new Date(gap.startMs).toISOString(),
+                projection.displayZone,
+              ).localTime,
+              gap.endLocalTime,
+            )}{" "}
+            · Запланувати справу
+          </button>
+        )}
+        {positions
+          .filter(
+            (p) =>
+              (p.topPercent / 100) * height <= visibleEnd &&
+              ((p.topPercent + p.heightPercent) / 100) * height >= visibleStart,
+          )
+          .filter(
+            (p) =>
+              !overnight ||
+              projection.localDate !== today ||
+              expanded ||
+              (p.item.itemKey !== overnight.itemKey &&
+                p.item.itemKey !== sleep?.itemKey),
+          )
+          .map((p) => (
+            <TimelineItem
+              key={p.item.itemKey}
+              p={p}
+              height={height}
+              shared={shared}
+              presentationKey={presentationKey}
+              plan={plan}
+            />
+          ))}
+        {projection.localDate === today && (
+          <NowLine
+            date={today}
+            zone={projection.displayZone}
+            initialNow={initialNow}
+          />
+        )}
+      </section>
+    );
+  },
+  (a, b) =>
+    a.presentationKey === b.presentationKey &&
+    a.projection === b.projection &&
+    a.today === b.today &&
+    a.expanded === b.expanded &&
+    a.visibleStart === b.visibleStart &&
+    a.visibleEnd === b.visibleEnd,
+);
+
+/** One scroll surface; offsets use elapsed zoned time, including 23/25-hour days.
+ * Offscreen days remain geometry-only spacers. Prepending compensates before paint. */
+export function SharedDayTimeline(props: SharedDayTimelineProps) {
+  const { projection, events, tasks, reservations } = props;
+  const zone = projection.displayZone;
+  const initialNow = useRef(props.nowMs).current;
+  const today = formatInstantInZone(
+    new Date(initialNow).toISOString(),
+    zone,
+  ).localDate;
+  const origin = useRef(projection.localDate).current;
+  const ref = useRef<HTMLDivElement>(null),
+    shared = useRef(props);
+  shared.current = props;
+  const [range, setRange] = useState({ first: -1, last: 1, view: 0 });
+  const [scrollBucket, setScrollBucket] = useState(0);
+  const geometry = useMemo(() => new Map<number, number>(), [origin, zone]);
+  const offsetAt = (i: number) => {
+    if (!geometry.has(i)) geometry.set(i, dayOffset(origin, i, zone));
+    return geometry.get(i)!;
+  };
+  const [away, setAway] = useState<"up" | "down" | null>(null);
+  const [released, setReleased] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const jump = useRef<string | null>(projection.localDate),
+    anchor = useRef<{ date: string; top: number } | null>(null);
+  const dateAt = (offset: number) => addDaysToLocalDate(origin, offset);
+  const dateIndex = (date: string) =>
+    Math.round(
+      (Date.parse(date + "T12:00Z") - Date.parse(origin + "T12:00Z")) /
+        86400000,
+    );
+  const cache = useMemo(
+    () => new Map<number, ProjectedDaySchedule>(),
+    [
+      origin,
+      zone,
+      events,
+      tasks,
+      reservations,
+      released,
+      props.plan,
+      projection,
+      props.projectionWithReleased,
+    props.plans,
+    ],
+  );
+  const [, setProjectionVersion] = useState(0);
+  const pending = useMemo(
+    () => new Map<number, ProjectedDaySchedule>(),
+    [cache],
+  );
+  const requested = useMemo(() => new Set<number>(), [cache]);
+  const workerRef = useRef<Worker | null>(null);
+  useEffect(() => {
+    const worker = new Worker(
+      new URL("./projection.worker.ts", import.meta.url),
+      { type: "module" },
+    );
+    workerRef.current = worker;
+    worker.onmessage = ({
+      data,
+    }: {
+      data: { index: number; projection: ProjectedDaySchedule };
+    }) => {
+      cache.set(data.index, data.projection);
+      setProjectionVersion((v) => v + 1);
+    };
+    return () => {
+      worker.terminate();
+      workerRef.current = null;
+    };
+  }, [cache]);
+  useEffect(() => {
+    for (
+      let i = Math.max(range.first, range.view - 3);
+      i <= Math.min(range.last, range.view + 3);
+      i++
+    ) {
+      if (cache.has(i) || requested.has(i)) continue;
+      requested.add(i);
+      workerRef.current?.postMessage({
+        index: i,
+        date: addDaysToLocalDate(origin, i),
+        zone,
+        events,
+        tasks,
+        reservations,
+        released,
+      });
+    }
+  }, [cache, range.first, range.last, range.view]);
+  const projections = new Map<number, ProjectedDaySchedule>();
+  for (
+    let i = Math.max(range.first, range.view - 3);
+    i <= Math.min(range.last, range.view + 3);
+    i++
+  ) {
+    const date = addDaysToLocalDate(origin, i);
+    if (date === projection.localDate)
+      cache.set(
+        i,
+        released ? (props.projectionWithReleased ?? projection) : projection,
+      );
+    if (!cache.has(i) && !pending.has(i))
+      pending.set(
+        i,
+        projectScheduleForDate({
+          localDate: date,
+          displayZone: zone,
+          events: [],
+          tasks: [],
+          reservations: [],
+          dayOffAnnotations: [],
+        }),
+      );
+    projections.set(i, cache.get(i) ?? pending.get(i)!);
+  }
+  for (const key of cache.keys())
+    if (Math.abs(key - range.view) > 3) {
+      cache.delete(key);
+      requested.delete(key);
+      pending.delete(key);
+    }
+  const scrollToDate = (date: string, allowSmooth = false) => {
+    const el = ref.current;
+    if (!el) return;
+    const b = getLocalDateBoundariesInZone(date, zone);
+    const target =
+      date === today
+        ? shared.current.nowMs - 3600000
+        : Date.parse(
+            resolveLocalDateTimeToInstant(date, "07:00", zone).instant!,
+          );
+    const top =
+      offsetAt(dateIndex(date)) -
+      offsetAt(range.first) +
+      Math.max(0, minutePixels((target - b.startMs) / 60000));
+    el.scrollTo({
+      top,
+      behavior:
+        allowSmooth && !matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? "smooth"
+          : "instant",
+    });
+  };
+  useLayoutEffect(() => {
+    if (anchor.current && ref.current) {
+      const node = ref.current.querySelector<HTMLElement>(
+        `[data-date="${anchor.current.date}"]`,
+      );
+      if (node)
+        ref.current.scrollTop +=
+          node.getBoundingClientRect().top - anchor.current.top;
+      anchor.current = null;
+    }
+    if (jump.current) {
+      const date = jump.current;
+      jump.current = null;
+      scrollToDate(date);
+    }
+  }, [range]);
+  useEffect(() => {
+    const idx = dateIndex(projection.localDate);
+    jump.current = projection.localDate;
+    setRange((r) => ({
+      ...r,
+      first: Math.min(r.first, idx - 1),
+      last: Math.max(r.last, idx + 1),
+      view: idx,
+    }));
+  }, [projection.localDate]);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const viewport = el.getBoundingClientRect();
+      setScrollBucket(Math.floor((el.scrollTop + offsetAt(range.first)) / 168));
+      const nodes = Array.from(
+        el.querySelectorAll<HTMLElement>(".timeline-day"),
+      );
+      const current =
+        nodes.find(
+          (n) => n.getBoundingClientRect().bottom > viewport.top + 44,
+        ) ?? nodes.at(-1);
+      if (!current) return;
+      const date = current.dataset.date!,
+        idx = dateIndex(date);
+      shared.current.onDayInView?.(date);
+      const line = el.querySelector<HTMLElement>(".today-now-line");
+      const rect = line?.getBoundingClientRect();
+      setAway(
+        !rect || rect.top > viewport.bottom
+          ? "down"
+          : rect.top < viewport.top + 44
+            ? "up"
+            : null,
+      );
+      const prepend = el.scrollTop < el.clientHeight,
+        append =
+          el.scrollHeight - el.scrollTop - el.clientHeight < el.clientHeight;
+      if (prepend) {
+        anchor.current = { date, top: current.getBoundingClientRect().top };
+      }
+      setRange((r) =>
+        r.view === idx && !prepend && !append
+          ? r
+          : {
+              first: r.first - (prepend ? 1 : 0),
+              last: r.last + (append ? 1 : 0),
+              view: idx,
+            },
+      );
+    };
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(update);
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      cancelAnimationFrame(frame);
+    };
+  }, [range.first, range.last, zone]);
+  const indices = Array.from(
+    {
+      length:
+        Math.min(range.last, range.view + 3) -
+        Math.max(range.first, range.view - 3) +
+        1,
+    },
+    (_, i) => Math.max(range.first, range.view - 3) + i,
+  );
+  const todayProjection = projections.get(dateIndex(today));
+  const overnight = todayProjection?.timelineItems.find(
+    (i) => i.sourceKind === "work_shift" && i.segment.continuesBeforeDayStart,
+  );
+  const sleep = todayProjection?.timelineItems.find(
+    (i) => events.find((e) => e.id === i.sourceId)?.type === "sleep",
+  );
+  return (
+    <section className="today-day-canvas" data-ui="content-start">
+      {props.projectionWithReleased?.timelineItems.some(
+        (i) => i.state === "released",
+      ) && (
+        <Pill selected={released} onClick={() => setReleased(!released)}>
+          Показати зняті сеанси
+        </Pill>
+      )}
+      {overnight && dateAt(range.view) === today && (
+        <div className="today-continuity">
+          <button
+            type="button"
+            aria-expanded={expanded}
+            onClick={() => setExpanded(!expanded)}
+          >
+            <Moon size={18} aria-hidden="true" />
+            <span>
+              <strong>
+                {Date.parse(
+                  events.find((e) => e.id === overnight.sourceId)?.schedule
+                    .kind === "timed"
+                    ? (
+                        events.find((e) => e.id === overnight.sourceId)!
+                          .schedule as { interval: { endInstant: string } }
+                      ).interval.endInstant
+                    : "",
+                ) > initialNow
+                  ? "Нічна зміна · до "
+                  : "Нічна зміна завершилась о "}
+                {formatTime(overnight.segment.displayEndLocalTime)}
+              </strong>
+              <small>
+                {(() => {
+                  const e = events.find((e) => e.id === overnight.sourceId);
+                  return e?.schedule.kind === "timed"
+                    ? `З ${formatInstant(e.schedule.interval.startInstant, zone, { day: "numeric", month: "long" })}, ${formatTime(e.schedule.interval.originStartLocalTime)}`
+                    : "";
+                })()}
+                {sleep
+                  ? ` · сон до ${formatTime(sleep.segment.displayEndLocalTime)}`
+                  : ""}
+              </small>
+            </span>
+            <ChevronDown size={18} aria-hidden="true" />
+          </button>
+        </div>
+      )}
+      <div
+        ref={ref}
+        className="continuous-time-scroll"
+        tabIndex={0}
+        role="region"
+        aria-label="Безперервний розклад"
+      >
+        <div style={{ height: offsetAt(indices[0]) - offsetAt(range.first) }} />
+        {indices.map((i) => (
+          <TimelineDay
+            key={i}
+            projection={projections.get(i)!}
+            shared={shared}
+            today={today}
+            initialNow={initialNow}
+            expanded={expanded}
+            presentationKey={JSON.stringify(props.plans ? props.plans[dateAt(i)]??EMPTY_DAILY_PLAN : props.plan??EMPTY_DAILY_PLAN)}
+            visibleStart={Math.max(0, scrollBucket * 168 - offsetAt(i) - 240)}
+            visibleEnd={Math.min(
+              offsetAt(i + 1) - offsetAt(i),
+              scrollBucket * 168 - offsetAt(i) + 900,
+            )}
+          />
+        ))}
+        <div
+          style={{
+            height: offsetAt(range.last + 1) - offsetAt(indices.at(-1)! + 1),
+          }}
+        />
+      </div>
+      {away && (
+        <button
+          className="ui-pill today-now-jump"
+          onClick={() => {
+            const idx = dateIndex(today);
+            jump.current = today;
+            setRange((r) => ({
+              ...r,
+              first: Math.min(r.first, idx - 1),
+              last: Math.max(r.last, idx + 1),
+              view: idx,
+            }));
+          }}
+        >
+          {away === "up" ? (
+            <ArrowUp size={16} aria-hidden="true" />
+          ) : (
+            <ArrowDown size={16} aria-hidden="true" />
+          )}
+          Зараз
+        </button>
+      )}
+    </section>
   );
 }

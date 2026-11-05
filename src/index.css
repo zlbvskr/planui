@@ -547,3 +547,46 @@ input[type="date"], input[type="time"] { max-width: 100%; min-width: 0; }
 .ui-contract-section > .ui-surface { background: var(--bg-elevated); }
 [data-ui="page-header"][data-compact="true"] .ui-round,
 [data-ui="sheet"] .ui-round { background: transparent; border-color: transparent; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
+
+/* Stage 1: one continuous canvas shared by Today and Calendar. */
+.continuous-time-scroll { height: max(340px,calc(100dvh - 334px)); overflow-y: auto; overflow-anchor: none; scrollbar-width: none; position: relative; overscroll-behavior-y: contain; }
+.timeline-day { position: relative; isolation: isolate; }
+.timeline-day-boundary { position: sticky; top: 0; z-index: 24; height: 0; border-top: 1px solid var(--border-subtle); pointer-events: none; }
+.timeline-day-boundary span { display: inline-block; margin-left: 52px; padding: 3px 10px; border-radius: 999px; background: var(--bg-canvas); color: var(--text-secondary); font-size: 12px; }
+.timeline-day .today-hour { content-visibility: auto; contain-intrinsic-size: auto 56px; align-items: start; }
+.timeline-day .today-hour i { margin-top: 0; }
+.timeline-day .today-hour[data-past="true"] { opacity: .55; }
+.timeline-day .today-time-item { content-visibility: auto; contain-intrinsic-size: auto 84px; }
+.timeline-day .today-item-open { padding-right: 28px; }
+.timeline-day .today-item-open h3 { font-weight: 600; }
+.timeline-day .today-now-line { top: 0; height: 1px; color: #ff827a; }
+.timeline-day .today-now-line i { height: 1px; }
+.timeline-day .today-continuity { position: absolute; z-index: 23; top: 30px; left: 52px; right: 0; border-radius: 14px; }
+.today-continuity > button { min-height: 64px; padding: 8px; gap: 6px; }
+.today-continuity strong { font-size: 12px; }
+.today-continuity small { font-size: 11px; }
+.timeline-all-day { position: absolute; top: 30px; left: 52px; z-index: 22; }
+.timeline-all-day button { min-height: 44px; padding: 8px; background: var(--bg-surface); border-radius: 12px; }
+.timeline-item-actions { position: absolute; right: 0; bottom: 0; }
+.timeline-item-actions .ui-round { background: transparent; border: 0; box-shadow: none; backdrop-filter: none; }
+.today-now-jump { position: fixed; right: 24px; bottom: calc(108px + env(safe-area-inset-bottom)); z-index: 28; display: flex; gap: 6px; align-items: center; }
+.today-task-sections { display: grid; gap: 16px; }
+.today-task-row { display: flex; align-items: center; min-height: 64px; border-bottom: 1px solid var(--border-subtle); padding: 4px; }
+.today-task-row:last-child { border-bottom: 0; }
+.task-check,.task-clock { width: 44px; height: 44px; flex-shrink: 0; display: grid; place-items: center; color: var(--text-secondary); }
+.task-check > span { width: 23px; height: 23px; border: 1px solid var(--border-strong); border-radius: 50%; display: grid; place-items: center; }
+.task-copy { flex: 1; min-width: 0; text-align: left; min-height: 48px; }
+.task-copy > span,.task-copy small { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.task-copy > span { font-weight: 600; font-size: 16px; }
+.task-copy small { color: var(--text-secondary); font-size: 11px; }
+.task-completed { color: var(--text-secondary); }
+.task-completed .task-copy > span { text-decoration: line-through; }
+.today-task-row .ui-action-menu > .ui-round { background: transparent; border: 0; box-shadow: none; backdrop-filter: none; }
+.timeline-day .today-hour { transform: translateY(-7px); }
+.timeline-day .today-hour > span { transform: none; }
+.timeline-day .today-hour i { margin-top: 7px; }
+.today-day-canvas > .today-continuity { margin: 0 0 8px; border-radius: 14px; }
+.today-day-canvas:has(> .today-continuity) .continuous-time-scroll { height: max(280px,calc(100dvh - 410px)); }
+.today-round-menu { border-radius: 50%; width: 44px; height: 44px; }
+.today-task-sections > .ui-section { margin-block: 0; }
+[data-testid="today-lifecycle-undo-banner"] { position: fixed; bottom: calc(108px + env(safe-area-inset-bottom)); left: 16px; right: 16px; z-index: 40; }

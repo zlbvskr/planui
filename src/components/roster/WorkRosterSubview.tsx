@@ -592,7 +592,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
       });
       await repositories.saveCalendarEvent(event);
       await onDataChanged(
-        `Зміну «${tpl.name}» (${tpl.code}) додано на ${selectedDate}.`
+        `Зміну «${tpl.name}» додано на ${formatUkrainianDateHeading(selectedDate)}.`
       );
     } catch (err) {
       setBatchError(
@@ -788,6 +788,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
 
   return (
     <div className="space-y-4" data-testid="work-roster-subview">
+      <details className="roster-tools"><summary>{monthSummary.intersectingShiftCount > 0 ? `${monthSummary.intersectingShiftCount} змін · ` : ''}Інструменти графіка</summary>
       {/* 8.6 Month Work Summary Card */}
       <Card
         data-testid="roster-month-summary"
@@ -805,7 +806,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
               className="text-lg font-bold capitalize sm:text-xl"
               style={{ color: 'var(--text-primary)' }}
             >
-              {monthGrid.monthHeadingUk} • {displayZone}
+              {monthGrid.monthHeadingUk}
             </h2>
           </div>
 
@@ -875,7 +876,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
               className="block text-[10px]"
               style={{ color: 'var(--text-secondary)' }}
             >
-              (нічні переходи не дублюють лічильник)
+              Зміни враховано один раз
             </span>
           </div>
 
@@ -946,7 +947,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
               className="block text-[10px]"
               style={{ color: 'var(--text-secondary)' }}
             >
-              Незалежні копії при застосуванні
+              Зміни зберігаються окремо від шаблону
             </span>
           </div>
         </div>
@@ -1030,11 +1031,11 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
               options={[
                 {
                   value: 'browse',
-                  label: 'Перегляд графіка',
+                  label: 'Перегляд',
                 },
                 {
                   value: 'multi_date_edit',
-                  label: 'Пакетний вибір дат',
+                  label: 'Обрати дати',
                 },
               ]}
             />
@@ -1300,6 +1301,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
         )}
       </Card>
 
+      </details>
       {/* Main Two-Column Layout: Month Roster Grid + Templates & Selected Date Inspector */}
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,1fr)] xl:items-start">
         {/* Month Grid with Browse or Multi-Date Selection */}
@@ -1310,14 +1312,14 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
               style={{ color: 'var(--text-secondary)' }}
             >
               {interactionMode === 'browse'
-                ? 'Сітка графіка (режим перегляду)'
+                ? 'Зміни та вихідні'
                 : 'Сітка графіка (натискайте на дати для пакетного вибору)'}
             </span>
             <span
               className="text-[11px]"
               style={{ color: 'var(--text-secondary)' }}
             >
-              ◆ зміна • ○ вихідний • Порожній день залишається нейтральним
+              ◆ зміна · ○ вихідний
             </span>
           </div>
 
@@ -1337,7 +1339,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
           </div>
 
           <div
-            role="grid"
+            role="group"
             aria-label="Сітка графіка роботи за місяць"
             data-testid="roster-month-grid"
             className="grid grid-cols-7 gap-1 sm:gap-1.5"
@@ -1356,7 +1358,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                   key={cell.localDate}
                   type="button"
                   onClick={() => handleCellClick(cell)}
-                  aria-label={cell.accessibleSummaryUk}
+                  aria-label={`${cell.dayNumber} ${cell.visibleBadges.map(badge => badge.nonColorSymbol + badge.compactLabel.replace(/:00/g, '')).join(' ')} ${cell.overflowCount ? '+' + cell.overflowCount : ''}. ${cell.accessibleSummaryUk}`}
                   aria-pressed={
                     interactionMode === 'multi_date_edit'
                       ? isBatchSelected
@@ -1367,7 +1369,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                   data-is-neutral={
                     cell.isNeutralUnknownDate ? 'true' : 'false'
                   }
-                  className="group relative flex min-h-[74px] sm:min-h-[86px] w-full min-w-0 flex-col justify-between rounded-xl p-1 sm:p-1.5 text-left transition-colors focus:outline-none"
+                  className="group relative flex min-h-[52px] sm:min-h-[72px] w-full min-w-0 flex-col justify-between rounded-xl p-1 sm:p-1.5 text-left transition-colors focus:outline-none"
                   style={{
                     backgroundColor: isBatchSelected
                       ? 'var(--color-work-tint)'
@@ -1376,7 +1378,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                       : isToday
                       ? 'var(--bg-elevated)'
                       : inMonth
-                      ? 'var(--bg-canvas)'
+                      ? 'transparent'
                       : 'transparent',
                     border: isBatchSelected
                       ? '2px solid var(--color-work)'
@@ -1385,10 +1387,10 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                       : isToday
                       ? '1.5px solid var(--color-brand)'
                       : inMonth
-                      ? '1px solid var(--border-subtle)'
-                      : '1px dashed var(--border-subtle)',
+                      ? '1px solid transparent'
+                      : '1px solid transparent',
                     opacity:
-                      inMonth || isBatchSelected || isBrowseSelected ? 1 : 0.72,
+                      1,
                   }}
                 >
                   <div className="flex w-full items-center justify-between gap-0.5">
@@ -1452,7 +1454,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                           key={badge.id}
                           aria-hidden="true"
                           className="block w-full overflow-hidden whitespace-nowrap rounded px-0.5 sm:px-1 py-0.5 text-[10px] font-semibold leading-tight tracking-tight"
-                          style={badgeStyle}
+                          style={{ color: badgeStyle.color }}
                         >
                           <span className="sm:hidden">
                             {badge.nonColorSymbol}
@@ -1467,7 +1469,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                   </div>
 
                   {/* Thin local-clock work strip */}
-                  <div className="mt-auto w-full pt-0.5" aria-hidden="true">
+                  <div className="mt-auto w-full pt-0.5" aria-hidden="true" hidden={cell.workStripSegments.length === 0}>
                     <div
                       className="relative h-1.5 w-full overflow-hidden rounded-full"
                       style={{
@@ -1517,7 +1519,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                   className="text-base font-bold capitalize"
                   style={{ color: 'var(--text-primary)' }}
                 >
-                  {formatUkrainianDateHeading(selectedDate)} ({selectedDate})
+                  {formatUkrainianDateHeading(selectedDate)}
                 </h3>
               </div>
 
@@ -1926,7 +1928,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
       <ModalSheet
         isOpen={isPeriodModalOpen}
         title="Генерація графіка на скінченний період"
-        subtitle={`Часовий пояс: ${displayZone}. Створює незалежні записи без нескінченних серій.`}
+        subtitle="Додайте зміни лише на вибрані дати."
         isDirty={false}
         onClose={() => {
           setIsPeriodModalOpen(false);

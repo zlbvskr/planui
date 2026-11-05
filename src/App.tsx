@@ -552,18 +552,6 @@ export function App() {
           {/* DESTINATION 2: КАЛЕНДАР (Calendar — Stage 7 Month/Week/Day + Stage 8 Work Schedule) */}
           {activeDestination === 'calendar' && snapshot && (
             <div className="space-y-4" data-testid="destination-view-calendar">
-              <header className="space-y-1">
-                <h1 className="text-[32px] font-bold tracking-tight leading-tight m-0">
-                  {UK_STRINGS.destinations.calendar.title}
-                </h1>
-                <p
-                  className="text-[15px] m-0"
-                  style={{ color: 'var(--text-secondary)' }}
-                >
-                  {UK_STRINGS.destinations.calendar.subtitle}
-                </p>
-              </header>
-
               <CalendarWorkspaceView
                 roadmapSource={{ folders, goals, projects, stages, tasks }}
                 settings={snapshot.settings}

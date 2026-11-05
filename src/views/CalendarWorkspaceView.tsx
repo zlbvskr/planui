@@ -1,3 +1,4 @@
+import { TopBar, Pill, Segmented, EmptyState } from '../components/ui/design';
 import {
   Calendar as CalendarIcon,
   CheckCircle2,
@@ -333,7 +334,7 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
     const untimedTasks = selectedDayFiltered.filteredUntimedTasks;
     const dayOffInfos = selectedDayFullProjection.dayOffAnnotations;
 
-    return (
+    const content = (
       <Card
         data-testid="calendar-selected-date-details"
         className="space-y-4"
@@ -349,7 +350,7 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
               </p>
               <div className="mt-0.5 flex flex-wrap items-center gap-2">
                 <h3
-                  className="text-base font-bold capitalize sm:text-lg"
+                  className="text-base font-bold sm:text-lg"
                   style={{ color: 'var(--text-primary)' }}
                 >
                   {formatUkrainianDateHeading(selectedDate)}
@@ -370,7 +371,7 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
                 className="mt-0.5 text-xs"
                 style={{ color: 'var(--text-secondary)' }}
               >
-                Дата: {selectedDate} • Пояс: {displayZone}
+                {/* The human date is already shown above. */}
               </p>
             </div>
 
@@ -513,6 +514,7 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
             </div>
           )}
 
+          <details className="calendar-time-details"><summary>Деталі часу</summary>
           {/* Union-based occupancy & category summary */}
           <div
             className="grid grid-cols-2 gap-2 rounded-xl p-2.5 text-xs sm:grid-cols-4"
@@ -577,6 +579,7 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
               </span>
             </div>
           </div>
+          </details>
         </div>
 
         {/* All-day events */}
@@ -664,7 +667,7 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
               }}
             >
               {selectedCell.isNeutralUnknownDate
-                ? UK_STRINGS.destinations.calendar.neutralDateNotice
+                ? 'Поки без подій'
                 : 'На цю дату немає записів із точним часом за обраним фільтром.'}
             </p>
           ) : (
@@ -894,6 +897,7 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
           </div>
         )}
 
+        <details className="calendar-time-details"><summary>Запланувати у вільному проміжку</summary>
         {/* Unoccupied gaps for quick task scheduling */}
         {availability.unoccupiedGaps.length > 0 && (
           <div className="space-y-2 pt-1">
@@ -909,9 +913,7 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
                   key={`${gap.startInstant}-${gap.endInstant}`}
                   type="button"
                   onClick={() => onOpenGapPicker(gap)}
-                  aria-label={UK_STRINGS.timeline.planInGapAria(
-                    `${gap.startLocalTime}–${gap.endLocalTime}`
-                  )}
+                  aria-label={`${gap.startLocalTime}–${gap.endLocalTime} (${formatMinutesCompactUk(gap.durationMinutes)})`}
                   className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl border border-dashed px-3 py-1.5 text-xs font-medium transition-colors"
                   style={{
                     backgroundColor: 'var(--bg-canvas)',
@@ -933,157 +935,32 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
             </div>
           </div>
         )}
+        </details>
       </Card>
     );
+    if (!positionedItems.length && !allDayItems.length && !untimedTasks.length && !dayOffInfos.length) {
+      return <div className="calendar-empty-day"><EmptyState text="Поки без подій" action="Створити" onAction={() => onOpenGlobalCreation('event')} /><details className="calendar-time-details"><summary>{formatUkrainianDateHeading(selectedDate)} · дії дня</summary>{content}</details></div>;
+    }
+    return content;
   };
 
   return (
-    <div className="space-y-4">
-      {/* Top Calendar Mode & Secondary Filter Bar */}
-      <div className="planui-floating-header space-y-3" data-testid="calendar-floating-header">
-        <Button onClick={()=>{setStampOpen(true);onModalStateChange?.(true);}}>Штамп змін</Button>
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="min-w-[260px] flex-1 sm:max-w-lg">
-            <SegmentedControl<CalendarViewMode>
-              ariaLabel="Режим календаря"
-              value={effectiveMode}
-              onChange={(nextMode) => onChangeMode(nextMode)}
-              options={[
-                {
-                  value: 'month',
-                  label: UK_STRINGS.destinations.calendar.modeMonth,
-                },
-                {
-                  value: 'week',
-                  label: UK_STRINGS.destinations.calendar.modeWeek,
-                },
-                {
-                  value: 'day',
-                  label: UK_STRINGS.destinations.calendar.modeDay,
-                },
-                {
-                  value: 'work_schedule',
-                  label: UK_STRINGS.destinations.calendar.workScheduleSubtab,
-                },
-              ]}
-            />
-          </div>
-
-          {/* Period Navigation & One-Action Actual Today Return */}
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Button
-              type="button"
-              variant="secondary"
-              size="icon"
-              aria-label={prevPeriodAria}
-              data-testid="calendar-prev-period-button"
-              onClick={() => handleStepPeriod(-1)}
-            >
-              <ChevronLeft className="h-5 w-5" aria-hidden="true" />
-            </Button>
-
-            <span
-              data-testid="calendar-period-heading"
-              className="min-w-[140px] px-2 text-center text-sm font-bold sm:text-base"
-              style={{ color: 'var(--text-primary)' }}
-            >
-              {periodHeadingUk}
-            </span>
-
-            <Button
-              type="button"
-              variant="secondary"
-              size="icon"
-              aria-label={nextPeriodAria}
-              data-testid="calendar-next-period-button"
-              onClick={() => handleStepPeriod(1)}
-            >
-              <ChevronRight className="h-5 w-5" aria-hidden="true" />
-            </Button>
-
-            {selectedDate !== actualTodayDate && (
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => onSelectDate(actualTodayDate)}
-                data-testid="calendar-return-to-today-button"
-              >
-                {UK_STRINGS.app.returnToToday}
-              </Button>
-            )}
-          </div>
+    <div className="calendar-workspace space-y-4">
+      <TopBar><div data-testid="calendar-floating-header">
+        <div className="ui-topbar-title"><h1>Календар</h1><Pill onClick={() => {setStampOpen(true);onModalStateChange?.(true);}}>Штамп змін</Pill></div>
+        <Segmented<CalendarViewMode> label="Режим календаря" value={effectiveMode} onChange={onChangeMode} options={[{value:'month',label:'Місяць'},{value:'week',label:'Тиждень'},{value:'day',label:'День'},{value:'work_schedule',label:'Графік'}]} />
+        <div className="calendar-period-nav">
+          <Button variant="subtle" size="icon" aria-label={prevPeriodAria} data-testid="calendar-prev-period-button" onClick={() => handleStepPeriod(-1)}><ChevronLeft className="w-5 h-5" aria-hidden="true" /></Button>
+          <span data-testid="calendar-period-heading">{periodHeadingUk}</span>
+          <Button variant="subtle" size="icon" aria-label={nextPeriodAria} data-testid="calendar-next-period-button" onClick={() => handleStepPeriod(1)}><ChevronRight className="w-5 h-5" aria-hidden="true" /></Button>
+          <Pill data-testid="calendar-return-to-today-button" onClick={() => onSelectDate(actualTodayDate)}>Сьогодні</Pill>
         </div>
-
-        {/* Secondary filter pills (7.1) */}
-        <div
-          className="flex flex-wrap items-center justify-between gap-2 border-t pt-2.5"
-          style={{ borderColor: 'var(--border-subtle)' }}
-        >
-          <div
-            role="group"
-            aria-label={UK_STRINGS.destinations.calendar.secondaryFilterLabel}
-            className="flex flex-wrap items-center gap-1.5"
-          >
-            {(
-              [
-                {
-                  id: 'all',
-                  label: UK_STRINGS.destinations.calendar.filterAll,
-                },
-                {
-                  id: 'work',
-                  label: UK_STRINGS.destinations.calendar.filterWork,
-                },
-                {
-                  id: 'events_and_tasks',
-                  label: UK_STRINGS.destinations.calendar.filterEventsAndTasks,
-                },
-              ] as const
-            ).map((f) => {
-              const active = secondaryFilter === f.id;
-              return (
-                <button
-                  key={f.id}
-                  type="button"
-                  aria-pressed={active}
-                  onClick={() => onChangeSecondaryFilter(f.id)}
-                  data-testid={`calendar-filter-${f.id}`}
-                  className="min-h-[38px] rounded-xl px-3 py-1.5 text-xs font-semibold transition-colors"
-                  style={
-                    active
-                      ? {
-                          backgroundColor: 'var(--color-brand)',
-                          color: '#FFFFFF',
-                        }
-                      : {
-                          backgroundColor: 'var(--bg-elevated)',
-                          color: 'var(--text-secondary)',
-                        }
-                  }
-                >
-                  {f.label}
-                </button>
-              );
-            })}
-          </div>
-
-          <span
-            className="text-xs"
-            style={{ color: 'var(--text-secondary)' }}
-            data-testid="calendar-selected-date-display"
-          >
-            {UK_STRINGS.app.selectedDateLabel}:{' '}
-            <strong style={{ color: 'var(--text-primary)' }}>
-              {selectedDate}
-            </strong>
-          </span>
+        <div className="calendar-filter-row" role="group" aria-label="Фільтри календаря">
+          {([{id:'all',label:'Усе'},{id:'work',label:'Робота'},{id:'events_and_tasks',label:'Події та справи'}] as const).map(f => <Pill key={f.id} selected={secondaryFilter===f.id} data-testid={`calendar-filter-${f.id}`} onClick={() => onChangeSecondaryFilter(f.id)}>{f.label}</Pill>)}
+          <RoadmapCalendarLayer controlsOnly selectedDate={selectedDate} source={roadmapSource} settings={settings} repositories={repositories} startDate={effectiveMode === 'month' ? monthGrid.cells[0].localDate : effectiveMode === 'week' ? weekOverview.days[0].localDate : selectedDate} endDateExclusive={addDaysToLocalDate(effectiveMode === 'month' ? monthGrid.cells[monthGrid.cells.length - 1].localDate : effectiveMode === 'week' ? weekOverview.days[6].localDate : selectedDate, 1)} onChanged={() => onDataChanged()} />
         </div>
-        <div className="flex flex-wrap gap-2" aria-label="Терміни обраного дня">{tasks.filter(task => task.state === 'open' && deadlineDate(task, displayZone) === selectedDate).map(task => <span key={task.id} className="planui-deadline-badge">◆ {task.title}</span>)}</div>
-      </div>
-
-      {/* =================================================================== */}
-      {effectiveMode !== 'work_schedule' && <RoadmapCalendarLayer selectedDate={selectedDate} source={roadmapSource} settings={settings} repositories={repositories} startDate={effectiveMode === 'month' ? monthGrid.cells[0].localDate : effectiveMode === 'week' ? weekOverview.days[0].localDate : selectedDate} endDateExclusive={addDaysToLocalDate(effectiveMode === 'month' ? monthGrid.cells[monthGrid.cells.length - 1].localDate : effectiveMode === 'week' ? weekOverview.days[6].localDate : selectedDate, 1)} onChanged={() => onDataChanged()} />}
+      </div></TopBar>
+      {tasks.some(task => task.state === 'open' && deadlineDate(task, displayZone) === selectedDate) && <div className="flex flex-wrap gap-2" role="group" aria-label="Терміни обраного дня">{tasks.filter(task => task.state === 'open' && deadlineDate(task, displayZone) === selectedDate).map(task => <span key={task.id} className="planui-deadline-badge">◆ {task.title}</span>)}</div>}
       <ModalSheet isOpen={stampOpen} title="Шаблони та штамп змін" onClose={()=>{setStampOpen(false);onModalStateChange?.(false);}}><WorkRosterSubview selectedDate={selectedDate} actualTodayDate={actualTodayDate} displayZone={displayZone} monthGrid={monthGrid} events={events} reservations={reservations} tasks={tasks} dayOffAnnotations={dayOffAnnotations} shiftTemplates={shiftTemplates} repositories={repositories} onSelectDate={onSelectDate} onInspectEvent={event=>{setStampOpen(false);onInspectEvent(event);}} onCancelEvent={onCancelEvent} onOpenGlobalCreation={kind=>{setStampOpen(false);onOpenGlobalCreation(kind);}} onDataChanged={onDataChanged} /></ModalSheet>
       {/* 8.1–8.6 WORK SCHEDULE SUBVIEW INSIDE CALENDAR                       */}
       {/* =================================================================== */}
@@ -1132,7 +1009,7 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
 
             {/* 42-cell stable 7x6 grid */}
             <div
-              role="grid"
+              role="group"
               aria-label={UK_STRINGS.destinations.calendar.monthGridAria}
               data-testid="calendar-month-grid"
               className="grid grid-cols-7 gap-1 sm:gap-1.5"
@@ -1147,7 +1024,7 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
                     key={cell.localDate}
                     type="button"
                     onClick={() => handleCellSelect(cell)}
-                    aria-label={cell.accessibleSummaryUk + (roadmapCount(cell.localDate) ? '; Дорожня карта: ' + roadmapCount(cell.localDate) + ' позначок' : '')}
+                    aria-label={`${cell.dayNumber} ${cell.visibleBadges.map(badge => badge.nonColorSymbol + badge.compactLabel.replace(/:00/g, '')).join(' ')} ${cell.overflowCount ? '+' + cell.overflowCount : ''}. ${cell.accessibleSummaryUk}` + (roadmapCount(cell.localDate) ? '; Дорожня карта: ' + roadmapCount(cell.localDate) + ' позначок' : '')}
                     aria-pressed={isSelected}
                     aria-current={isToday ? 'date' : undefined}
                     data-testid={`month-cell-${cell.localDate}`}
@@ -1155,23 +1032,21 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
                     data-is-today={isToday ? 'true' : 'false'}
                     data-is-selected={isSelected ? 'true' : 'false'}
                     data-omits-personal-titles="true"
-                    className="group relative flex min-h-[76px] sm:min-h-[88px] w-full min-w-0 flex-col justify-between rounded-xl p-1 sm:p-1.5 text-left transition-colors focus:outline-none"
+                    className="group relative flex min-h-[52px] sm:min-h-[72px] w-full min-w-0 flex-col justify-between rounded-xl p-1 sm:p-1.5 text-left transition-colors focus:outline-none"
                     style={{
                       backgroundColor: isSelected
                         ? 'var(--color-brand-tint)'
                         : isToday
                         ? 'var(--bg-elevated)'
-                        : inMonth
-                        ? 'var(--bg-canvas)'
                         : 'transparent',
                       border: isSelected
                         ? '2px solid var(--color-brand)'
                         : isToday
                         ? '1.5px solid var(--color-brand)'
                         : inMonth
-                        ? '1px solid var(--border-subtle)'
-                        : '1px dashed var(--border-subtle)',
-                      opacity: inMonth || isSelected ? 1 : 0.72,
+                        ? '1px solid transparent'
+                        : '1px solid transparent',
+                      opacity: 1,
                     }}
                   >
                     {roadmapCount(cell.localDate) > 0 && <span className="text-xs font-semibold" aria-hidden="true">◇ {roadmapCount(cell.localDate)}</span>}
@@ -1183,7 +1058,7 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
                           isSelected
                             ? {
                                 backgroundColor: 'var(--color-brand)',
-                                color: '#FFFFFF',
+                                color: 'var(--bg-canvas)',
                               }
                             : isToday
                             ? {
@@ -1245,7 +1120,7 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
                             key={badge.id}
                             aria-hidden="true"
                             className="block w-full overflow-hidden whitespace-nowrap rounded px-0.5 sm:px-1 py-0.5 text-[10px] sm:text-[11px] font-semibold leading-tight tracking-tight"
-                            style={badgeStyle}
+                            style={{ color: badgeStyle.color }}
                           >
                             <span className="sm:hidden">
                               {badge.nonColorSymbol}
@@ -1263,6 +1138,7 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
                     <div
                       aria-hidden="true"
                       data-testid={`month-cell-work-strip-${cell.localDate}`}
+                      hidden={cell.workStripSegments.length === 0}
                       className="relative mt-auto h-1.5 w-full overflow-hidden rounded-full"
                       style={{ backgroundColor: 'var(--bg-elevated)' }}
                     >
@@ -1289,6 +1165,7 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
               })}
             </div>
 
+            <details className="calendar-time-details"><summary>Позначки календаря</summary>
             {/* Compact Legend */}
             <div
               className="flex flex-wrap items-center justify-between gap-2 border-t pt-2 text-[11px]"
@@ -1325,6 +1202,7 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
               </div>
               <span>{UK_STRINGS.destinations.calendar.workStripLegend}</span>
             </div>
+            </details>
           </Card>
 
           {/* Selected Date Details Panel */}
@@ -1338,6 +1216,8 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
       {effectiveMode === 'week' && (
         <div className="space-y-4">
           {/* Week Summary & Wide-Screen Layout Toggle */}
+          <div className="calendar-week-strip" role="group" aria-label="Дні тижня">{weekOverview.days.map(day => <button type="button" key={day.localDate} aria-pressed={day.isSelected} aria-current={day.isToday ? 'date' : undefined} aria-label={day.fullDateHeadingUk} onClick={() => onSelectDate(day.localDate)}><span>{day.weekdayShortUk}</span><strong>{Number(day.localDate.slice(-2))}</strong></button>)}</div>
+          <details className="calendar-time-details"><summary>Підсумок тижня та вигляд</summary>
           <Card className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-4 text-xs">
               <div>
@@ -1412,6 +1292,7 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
               </button>
             </div>
           </Card>
+          </details>
 
           {/* Wide-screen 7-column proportional timeline (only on lg+ when selected; NEVER on phone viewports) */}
           {wideWeekViewStyle === 'columns' && (
@@ -1540,7 +1421,7 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
               data-testid="calendar-week-overview-list"
               className="space-y-2.5"
             >
-              {weekOverview.days.map((day) => {
+              {weekOverview.days.filter(day => day.filteredAllDayItems.length || day.filteredTimelineItems.length || day.filteredUntimedTasks.length || day.dayProjection.dayOffAnnotations.length || roadmapCount(day.localDate)).map((day) => {
                 const isSelected = day.isSelected;
                 const isToday = day.isToday;
 
@@ -1615,21 +1496,7 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
                               </span>
                             )}
                           </div>
-                          <span
-                            className="text-xs"
-                            style={{ color: 'var(--text-secondary)' }}
-                          >
-                            {UK_STRINGS.destinations.calendar.dayOccupiedPrefix}:{' '}
-                            <strong style={{ color: 'var(--text-primary)' }}>
-                              {formatMinutesCompactUk(day.unionOccupiedMinutes)}
-                            </strong>{' '}
-                            •{' '}
-                            {
-                              UK_STRINGS.destinations.calendar
-                                .dayUnoccupiedPrefix
-                            }
-                            : {formatMinutesCompactUk(day.unionUnoccupiedMinutes)}
-                          </span>
+
                         </div>
                       </button>
 
@@ -1795,7 +1662,7 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
                             style={{ color: 'var(--text-secondary)' }}
                           >
                             {day.isNeutralUnknownDate
-                              ? 'Немає записів (нейтральна дата)'
+                              ? 'Поки без подій'
                               : 'Немає записів за обраним фільтром'}
                           </p>
                         )}
@@ -1816,6 +1683,22 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
       {/* =================================================================== */}
       {effectiveMode === 'day' && (
         <div className="space-y-4">
+          <SharedDayTimeline
+            testIdPrefix="calendar"
+            projection={selectedDayFilteredProjection}
+            projectionWithReleased={selectedDayWithReleasedFilteredProjection}
+            nowMs={nowMs}
+            events={events}
+            tasks={tasks}
+            reservations={reservations}
+            onToggleTaskState={onToggleTaskState}
+            onCancelEvent={onCancelEvent}
+            onInspectHabitSession={onInspectHabitSession}
+            onInspectEvent={onInspectEvent}
+            onOpenGapPicker={onOpenGapPicker}
+            onEmptyCreateAction={() => onOpenGlobalCreation('event')}
+            emptyActionLabel={UK_STRINGS.creation.actions.event.label}
+          />
           {selectedDayFiltered.filteredUntimedTasks.length > 0 && (
             <Card className="space-y-2">
               <h3
@@ -1859,24 +1742,10 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
             </Card>
           )}
 
-          <SharedDayTimeline
-            testIdPrefix="calendar"
-            projection={selectedDayFilteredProjection}
-            projectionWithReleased={selectedDayWithReleasedFilteredProjection}
-            nowMs={nowMs}
-            events={events}
-            tasks={tasks}
-            reservations={reservations}
-            onToggleTaskState={onToggleTaskState}
-            onCancelEvent={onCancelEvent}
-            onInspectHabitSession={onInspectHabitSession}
-            onInspectEvent={onInspectEvent}
-            onOpenGapPicker={onOpenGapPicker}
-            onEmptyCreateAction={() => onOpenGlobalCreation('event')}
-            emptyActionLabel={UK_STRINGS.creation.actions.event.label}
-          />
+
         </div>
       )}
+      {effectiveMode !== 'work_schedule' && <RoadmapCalendarLayer selectedDate={selectedDate} source={roadmapSource} settings={settings} repositories={repositories} startDate={effectiveMode === 'month' ? monthGrid.cells[0].localDate : effectiveMode === 'week' ? weekOverview.days[0].localDate : selectedDate} endDateExclusive={addDaysToLocalDate(effectiveMode === 'month' ? monthGrid.cells[monthGrid.cells.length - 1].localDate : effectiveMode === 'week' ? weekOverview.days[6].localDate : selectedDate, 1)} onChanged={() => onDataChanged()} />}
     </div>
   );
 };

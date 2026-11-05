@@ -80,6 +80,7 @@ export function App() {
   const [habitFilter, setHabitFilter] = useState<'active' | 'paused' | 'archived'>('active');
   const [habitOccurrence, setHabitOccurrence] = useState<{habitId: string; date: string} | null>(null);
   const [quickAdd, setQuickAdd] = useState(false);
+  const [habitHistory,setHabitHistory]=useState(false);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   useEffect(() => { if (habitOccurrence && snapshot && !snapshot.habits.some(h => h.id === habitOccurrence.habitId)) setHabitOccurrence(null); }, [habitOccurrence, snapshot]);
   const [isLocalModalOpen, setIsLocalModalOpen] = useState(false);
@@ -485,7 +486,7 @@ export function App() {
 
           {/* DESTINATION 1: СЬОГОДНІ (Today — Stage 6 Workspace & Timeline) */}
           {activeDestination === 'today' && snapshot && (
-            <TodayWorkspaceView folders={folders}
+            <TodayWorkspaceView habitHistory={habitHistory} folders={folders}
               mode={todayCtx.mode ?? 'day'}
               hasInteraction={todayCtx.hasInteraction}
               savedScrollTop={todayCtx.scrollTop}
@@ -507,7 +508,7 @@ export function App() {
               tasks={tasks}
               projects={projects}
               dayOffAnnotations={dayOffAnnotations}
-              habitsContent={<HabitsWorkspaceView nightShiftAlternative={events.some(e=>e.type==='work_shift'&&e.schedule.kind==='timed'&&e.schedule.interval.originEndLocalDate===actualTodayDate&&e.schedule.interval.originStartLocalDate!==actualTodayDate)} selectedDate={todayCtx.selectedDate} actualTodayDate={actualTodayDate} filter={habitFilter} onChangeFilter={setHabitFilter} habits={habits} habitEntries={habitEntries} projects={projects} folders={folders} lifeAreaQuestions={lifeAreaQuestions} dayOffDates={dayOffAnnotations.map(d => d.localDate)} repositories={repositories} onSelectDate={date => setContexts(prev => updateDestinationContext(prev, 'today', {selectedDate: date, hasInteraction: true}))} onOpenGlobalCreation={openGlobalCreation} onDataChanged={async msg => { await reloadLocalData(); if(msg) setToastMessage(msg); }} onModalStateChange={setIsLocalModalOpen} onPlanHabit={(habitId,date) => setHabitOccurrence({habitId,date})} />}
+              habitsContent={<HabitsWorkspaceView events={events} zone={activeZone} onHistoryChange={setHabitHistory} nightShiftAlternative={events.some(e=>e.type==='work_shift'&&e.schedule.kind==='timed'&&e.schedule.interval.originEndLocalDate===actualTodayDate&&e.schedule.interval.originStartLocalDate!==actualTodayDate)} selectedDate={todayCtx.selectedDate} actualTodayDate={actualTodayDate} filter={habitFilter} onChangeFilter={setHabitFilter} habits={habits} habitEntries={habitEntries} projects={projects} folders={folders} lifeAreaQuestions={lifeAreaQuestions} dayOffDates={dayOffAnnotations.map(d => d.localDate)} repositories={repositories} onSelectDate={date => setContexts(prev => updateDestinationContext(prev, 'today', {selectedDate: date, hasInteraction: true}))} onOpenGlobalCreation={openGlobalCreation} onDataChanged={async msg => { await reloadLocalData(); if(msg) setToastMessage(msg); }} onModalStateChange={setIsLocalModalOpen} onPlanHabit={(habitId,date) => setHabitOccurrence({habitId,date})} />}
               onInspectHabitSession={session => { if(session.habitOccurrence) setHabitOccurrence({habitId: session.habitOccurrence.habitId,date: session.habitOccurrence.localDate}); }}
               habits={habits}
               habitEntries={habitEntries}

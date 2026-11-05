@@ -617,3 +617,31 @@ input[type="date"], input[type="time"] { max-width: 100%; min-width: 0; }
 
 [data-testid="destination-view-today"]>.ui-week {margin-bottom:-2px;}
 .quick-add-form>div:has(>input) input {outline:0;border:0!important;background:transparent!important;font-size:24px;}
+/* Stage 2: compact content, isolated field sheets and keyboard-safe creation. */
+[hidden] {display:none!important;}
+.stage2-quick {display:flex;flex-direction:column;gap:16px;}
+.stage2-quick .quick-title {border:0;background:transparent;outline:0;box-shadow:none;font-size:24px;line-height:1.3;font-weight:600;padding:0 0 8px;width:100%;min-height:56px;}
+.stage2-quick .quick-title:focus-visible {outline:2px solid var(--border-strong);outline-offset:4px;border-radius:8px;}
+.stage2-quick footer {display:flex;align-items:center;justify-content:space-between;gap:12px;}
+.quick-submit {width:72px;height:72px;border:0;border-radius:50%;background:var(--color-brand);color:var(--on-accent,#fff);font-size:22px;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+.quick-submit span {font-size:11px;}
+.weekly-review {height:min(610px,70dvh);max-height:none;display:flex;flex-direction:column;gap:16px;overflow:hidden;}
+.weekly-step {flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;}
+.weekly-controls {display:flex;justify-content:space-between;align-items:center;gap:12px;}
+.weekly-review .ui-row {padding:10px 12px;}
+.review-amber {color:var(--text-primary);background:var(--bg-elevated);border-left:3px solid #aa782d;border-radius:8px;}
+.habit-row .ui-icon-tile {color:var(--habit-hue);background:color-mix(in srgb,var(--habit-hue) 18%,var(--bg-surface));}
+.today-heading[hidden],.today-mode-bar[hidden] {display:none;}
+[data-testid="destination-view-today"] {--stage2-spacing:12px;}
+[data-testid="destination-view-today"]>.today-heading {padding-top:16px;}
+.quick-submit {color:#111214;}
+:root:not(.dark) .stage2-quick .ui-pill[aria-pressed=true] {color:var(--text-primary);}
+.weekly-controls .ui-primary {background:#993346;color:#fff;}
+.stage2-quick .quick-options>.ui-disclosure {border-radius:999px;background:var(--bg-elevated);flex-shrink:0;}
+.stage2-quick .quick-options>.ui-disclosure .ui-row {padding:0 12px;min-height:44px;gap:6px;}
+.stage2-quick .quick-options>.ui-disclosure .ui-row-trailing {gap:4px;}
+.habit-row .ui-row {position:relative;padding-bottom:28px;}
+.habit-row .ui-row-text small {position:absolute;left:52px;right:12px;bottom:6px;}
+.habit-row .ui-row-trailing .inline-flex {font-size:12px;padding-inline:8px;}
+html:not(.dark) .quick-submit {color:#fff;}
+.habit-day .ui-row-text>span {white-space:normal;font-size:14px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;}

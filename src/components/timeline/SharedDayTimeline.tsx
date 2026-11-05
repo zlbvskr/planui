@@ -1,3 +1,5 @@
+import {projectTodayTasks} from '../../domain/today';
+import {minimumDayTasks} from '../today/minimumDayPresentation';
 import React, {
   memo,
   useEffect,
@@ -305,7 +307,7 @@ const TimelineDay = memo(
     const positions = useMemo(
       () =>
         layoutTimelineOverlapLanes({
-          items: plan.minimalDay ? projection.timelineItems.filter(item=>{if(!item.taskId)return true;const task=props.tasks.find(t=>t.id===item.taskId);const optional=props.tasks.find(t=>t.state==='open'&&t.effort==='small'&&plan.focusTaskIds.includes(t.id)&&!t.deadline);return Boolean(task?.deadline||task?.id===optional?.id);}) : projection.timelineItems,
+          items: plan.minimalDay ? projection.timelineItems.filter(item=>item.taskId?minimumDayTasks(projectTodayTasks(props.tasks,props.reservations,projection.localDate,projection.displayZone,plan).relevant,plan).some(t=>t.id===item.taskId):item.sourceKind!=='reservation'&&(item.isBlocking||['sleep','rest'].includes(events.find(e=>e.id===item.sourceId)?.type??''))) : projection.timelineItems,
           dayDurationMinutes: projection.dayDurationMinutes,
           nowMs: initialNow,
         }).positionedItems,
@@ -366,7 +368,7 @@ const TimelineDay = memo(
         </div>
         {projection.allDayItems.length > 0 && (
           <div className="timeline-all-day">
-            {projection.allDayItems.map((i) => (
+            {projection.allDayItems.filter(i=>!plan.minimalDay||i.isBlocking).map((i) => (
               <button
                 key={i.eventId}
                 onClick={() => {

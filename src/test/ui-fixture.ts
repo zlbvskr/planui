@@ -34,6 +34,7 @@ export function createUiFixture(variant:UiFixtureVariant='filled',theme:ThemePre
   settings.todayNextDayCollapsed=true;
   const snapshot:PlanuiDomainSnapshot={folders:[],goals:[],projects:[],stages:[],tasks:[],reservations:[],events:[],shiftTemplates:[],dayOffAnnotations:[],habits:[],habitEntries:[],personalRecords:[],lifeAreaQuestions:[],lifeAreaAssessments:[],inspirationItems:[],mediaMeta:[],wishlistCategories:[],wishes:[],settings};
   const mediaBlobs:MediaBlobRecord[]=[];
+  snapshot.lifeAreaQuestions=createStarterAreas(UI_CLOCK);
   if(variant==='empty')return {snapshot,mediaBlobs,directionHues:DIRECTION_HUES,habitDurationMinutes:{}};
   snapshot.folders=Object.entries({english:'Англійська',creative:'Творчість',university:'Університет',work:'Поточна робота',transition:'Перехід на іншу роботу',relationships:'Стосунки'}).map(([id,name],order)=>({...base,id,name,order,parentId:null}));
   snapshot.goals=[{...goal('career','Перехід на іншу роботу'),roadmapPeriod:{precision:'range',startDate:'2026-11-01',endDateExclusive:'2027-05-01'},checkpoints:[{id:'milestone-12',title:'Визначено бажану роль',localDate:'2026-11-12',order:0},{id:'milestone-portfolio',title:'Портфоліо готове',localDate:'2027-02-01',order:1}]}];

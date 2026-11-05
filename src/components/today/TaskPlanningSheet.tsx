@@ -1,3 +1,4 @@
+import { formatInstant, formatDuration } from '../../lib/format';
 import React, { useState } from 'react';
 import { CalendarEvent, Task, TaskReservation } from '../../domain/types';
 import { PlanningChangePreview, previewPlanningChange, sessionFromDuration } from '../../domain/today';
@@ -26,7 +27,7 @@ export function TaskPlanningSheet({ reviewAction, task, date, zone, tasks, event
   let interval: ReturnType<typeof sessionFromDuration> | null = null;
   try { interval = sessionFromDuration(startDate, startTime, Number(duration), zone); } catch { /* The form reports invalid input on save. */ }
   const conflict = interval ? detectScheduleConflicts({ candidateStartInstant: interval.startInstant, candidateEndInstant: interval.endInstant, displayZone: zone, tasks, events, reservations, excludeReservationId: editing?.id }) : null;
-  function label(instant: string): string { const wall = formatInstantInZone(instant, zone); return `${formatUkrainianDateHeading(wall.localDate)}, ${wall.localTime}:${String(wall.second).padStart(2, '0')}`; }
+  function label(instant: string): string { return formatInstant(instant, zone, {weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit',second:'2-digit'}); }
   async function act(work: () => Promise<unknown>) {
     setBusy(true); setError('');
     try { await work(); await onSaved(); onClose(); }
@@ -88,7 +89,7 @@ export function TaskPlanningSheet({ reviewAction, task, date, zone, tasks, event
         <InputField label="Дата початку" type="date" required value={startDate} onChange={e => { setStartDate(e.target.value); setOverlap(false); setDirty(true); }} />
         <InputField label="Час початку" type="time" required value={startTime} onChange={e => { setStartTime(e.target.value); setOverlap(false); setDirty(true); }} />
         <InputField label="Запланована тривалість, хвилин" type="number" min="1" step="1" required value={duration} onChange={e => { setDuration(e.target.value); setOverlap(false); setDirty(true); }} />
-        {interval && <p>Сеанс: {label(interval.startInstant)} – {label(interval.endInstant)} ({duration} хв). Часовий пояс: {zone}.</p>}
+        {interval && <p>Сеанс: {label(interval.startInstant)} – {label(interval.endInstant)} ({formatDuration(Number(duration))}). Часовий пояс: {zone}.</p>}
         {conflict?.hasConflicts && <div role="status"><p>{conflict.warningMessageUk}</p><ul>{conflict.conflicts.map((c, i) => <li key={i}>{c.title}: {c.displayRangeUk}</li>)}</ul><label className="min-h-[44px] flex gap-2 items-center"><input type="checkbox" checked={overlap} onChange={e => setOverlap(e.target.checked)} />Свідомо дозволяю це накладання</label></div>}
         <Button type="submit" variant="primary" disabled={busy}>Зберегти сеанс</Button>
       </form>}

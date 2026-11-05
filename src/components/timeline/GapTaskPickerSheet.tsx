@@ -1,3 +1,4 @@
+import { formatDuration } from '../../lib/format';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   CalendarEvent,
@@ -252,7 +253,7 @@ export function GapTaskPickerSheet({
     <ModalSheet
       isOpen={isOpen}
       title={UK_STRINGS.gapPicker.modalTitle}
-      subtitle={`${UK_STRINGS.gapPicker.gapSummaryPrefix}: ${gap.localDate}, ${gap.startLocalTime}–${gap.endLocalTime} (${gap.durationMinutes} хв)`}
+      subtitle={`${UK_STRINGS.gapPicker.gapSummaryPrefix}: ${gap.localDate}, ${gap.startLocalTime}–${gap.endLocalTime} (${formatDuration(gap.durationMinutes)})`}
       onClose={onClose}
       isDirty={Boolean(durationInputStr.trim())}
     >
@@ -355,7 +356,7 @@ export function GapTaskPickerSheet({
                           <>
                             <span aria-hidden="true">·</span>
                             <span>
-                              Оцінка: {task.estimatedDurationMinutes} хв
+                              Оцінка: {formatDuration(task.estimatedDurationMinutes)}
                             </span>
                           </>
                         )}

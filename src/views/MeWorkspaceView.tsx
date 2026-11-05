@@ -1,3 +1,4 @@
+import { formatInstant } from '../lib/format';
 import {
   ArrowLeft,
   ArrowUp,
@@ -1900,7 +1901,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
                                 {wish.linkUrl&&<a href={wish.linkUrl} target="_blank" rel="noopener noreferrer" className="underline break-all">Відкрити посилання</a>}
                                 {wish.projectId&&<p>Проєкт: {projects.find(p=>p.id===wish.projectId)?.title}</p>}
                                 {wish.mediaId&&<WishLocalImage meta={mediaMetaById.get(wish.mediaId)} bytes={mediaBlobs.get(wish.mediaId)} title={wish.title}/>}
-                                {wish.purchasedAt&&<p>Позначено купівлю: {new Intl.DateTimeFormat('uk-UA',{dateStyle:'long',timeStyle:'short',timeZone:activeZone}).format(new Date(wish.purchasedAt))}</p>}
+                                {wish.purchasedAt&&<p>Позначено купівлю: {formatInstant(wish.purchasedAt,activeZone,{dateStyle:'long',timeStyle:'short'})}</p>}
                                 {wish.note && (
                                   <p
                                     className="text-[14px] m-0 leading-relaxed whitespace-pre-wrap"
@@ -1916,7 +1917,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
                                       className="text-[12px]"
                                       style={{ color: 'var(--color-day-off)' }}
                                     >
-                                      Здійснено раніше: {new Intl.DateTimeFormat('uk-UA',{dateStyle:'long',timeZone:activeZone}).format(new Date(wish.fulfilledAt))}{' '}
+                                      Здійснено раніше: {formatInstant(wish.fulfilledAt,activeZone)}{' '}
                                       (орієнтовна ціна збережена як довідкова)
                                     </div>
                                   )}

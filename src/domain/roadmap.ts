@@ -1,3 +1,4 @@
+import { formatDate, formatMonthYear, formatDateRange } from '../lib/format';
 import { Goal, Project, ProjectStage, RoadmapMetadata, RoadmapPeriod, RoadmapOwner, RoadmapLayer, PlanningEntityState, Folder, Task } from './types';
 import { addDaysToLocalDate, addMonthsToLocalDate, assertValidLocalDate } from './temporal';
 import { PlanuiError } from '../i18n/errorsUk';
@@ -32,19 +33,12 @@ export function validateRoadmapMetadata(record: RoadmapMetadata): void {
   }
 }
 
-export function dateLabelUk(date: string): string {
-  const { year, month, day } = { year: date.slice(0, 4), month: date.slice(5, 7), day: date.slice(8, 10) };
-  return `${day}.${month}.${year}`;
-}
-
+export function dateLabelUk(date: string): string { return formatDate(date, {day:'numeric',month:'long',year:'numeric'}); }
 export function periodLabelUk(period?: RoadmapPeriod | null): string {
   if (!period) return 'Без періоду';
   if (period.precision === 'quarter') return `${period.quarter} квартал ${period.year} року`;
-  if (period.precision === 'month') {
-    const names = ['Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень', 'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень'];
-    return `${names[Number(period.month.slice(5)) - 1]} ${period.month.slice(0, 4)}`;
-  }
-  return `${dateLabelUk(period.startDate)} – ${dateLabelUk(addDaysToLocalDate(period.endDateExclusive, -1))}`;
+  if (period.precision === 'month') return formatMonthYear(period.month+'-01');
+  return formatDateRange(period.startDate,addDaysToLocalDate(period.endDateExclusive,-1),true);
 }
 
 export interface RoadmapSource { goals: readonly Goal[]; projects: readonly Project[]; stages: readonly ProjectStage[]; folders?: readonly Folder[]; tasks?: readonly Task[] }

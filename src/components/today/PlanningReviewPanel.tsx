@@ -1,3 +1,4 @@
+import { formatDuration } from '../../lib/format';
 import { projectPlanningReview } from '../../domain/lifeAreas';
 import React, { useState } from 'react';
 import { PlanuiDomainSnapshot, Project } from '../../domain/types';
@@ -17,7 +18,7 @@ export function PlanningReviewPanel({ snapshot, zone, today, initiallyOpen, onOp
         <h3 className="font-semibold">Майбутні зміни й зобов’язання</h3>
         <ul className="space-y-2">{projection.events.map(event => <li key={event.id}>{event.title} · {event.schedule.kind === 'timed' ? `${formatUkrainianDateHeading(formatInstantInZone(event.schedule.interval.startInstant, zone).localDate)}, ${formatInstantInZone(event.schedule.interval.startInstant, zone).localTime} – ${formatUkrainianDateHeading(formatInstantInZone(event.schedule.interval.endInstant, zone).localDate)}, ${formatInstantInZone(event.schedule.interval.endInstant, zone).localTime}` : `Увесь день: ${formatUkrainianDateHeading(event.schedule.startLocalDate)} – ${formatUkrainianDateHeading(addDaysToLocalDate(event.schedule.endLocalDateExclusive, -1))}`} · {event.type === 'work_shift' ? 'Робоча зміна' : event.type === 'rest' || event.type === 'sleep' ? 'Відновлення' : 'Подія'}{!event.isBlocking ? ' · Не блокує час' : ''}<Button size="sm" onClick={() => onInspectEvent(event.id)}>Переглянути подію</Button></li>)}{projection.reservations.map(reservation => <li key={reservation.id}>{snapshot.tasks.find(t => t.id === reservation.taskId)?.title ?? (reservation.habitOccurrence ? 'Сеанс звички' : 'Запланована дія')}: {formatUkrainianDateHeading(formatInstantInZone(reservation.interval.startInstant, zone).localDate)}, {formatInstantInZone(reservation.interval.startInstant, zone).localTime}{reservation.taskId && <Button size="sm" onClick={() => onPlanTask(reservation.taskId!, reservation.id)}>Переглянути вибраний резерв</Button>}</li>)}{projection.datedTasks.map(task => <li key={task.id}>{task.title} · Дата або термін<Button size="sm" onClick={() => onPlanTask(task.id)}>Переглянути планування</Button></li>)}</ul>
         <h3 className="font-semibold">Простір для відновлення</h3>
-        <p>Незайнято у вказаному періоді: {Math.round(projection.availability.totalUnoccupiedMinutes)} хв. Вільний час не означає, що його потрібно заповнити або що ви маєте енергію працювати.</p>
+        <p>Незайнято у вказаному періоді: {formatDuration(projection.availability.totalUnoccupiedMinutes)}. Вільний час не означає, що його потрібно заповнити або що ви маєте енергію працювати.</p>
         <p>Чи достатньо місця для відпочинку? Події відновлення додаються лише вручну у календарі.</p>
       </>}
       <h3 className="font-semibold">Поточні цілі</h3>

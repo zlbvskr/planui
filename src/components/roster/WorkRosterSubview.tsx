@@ -797,7 +797,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
             <p
-              className="text-[11px] font-semibold uppercase tracking-wider"
+              className="text-[11px] font-semibold  tracking-wider"
               style={{ color: 'var(--text-secondary)' }}
             >
               Підсумок робочого графіка за місяць
@@ -1510,7 +1510,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
                 <p
-                  className="text-[11px] font-semibold uppercase tracking-wider"
+                  className="text-[11px] font-semibold  tracking-wider"
                   style={{ color: 'var(--text-secondary)' }}
                 >
                   Обрана дата в графіку

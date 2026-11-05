@@ -1,3 +1,4 @@
+import { formatDuration } from '../lib/format';
 /**
  * C03 Language Contract — Natural Ukrainian UI & Accessibility Strings (`uk-UA`).
  */
@@ -427,9 +428,9 @@ export const UK_STRINGS = {
     showReleasedHistoryToggle: 'Показати вивільнену історію планів',
     currentTimeLabel: 'Поточний час',
     dstSpringForwardBanner: (durationMinutes: number) =>
-      `Перехід на літній час: тривалість цієї календарної доби становить ${durationMinutes} хв (23 год). Пропущену годину позначено на шкалі.`,
+      `Перехід на літній час: тривалість цієї календарної доби становить ${formatDuration(durationMinutes)} (23 год). Пропущену годину позначено на шкалі.`,
     dstFallBackBanner: (durationMinutes: number) =>
-      `Перехід на зимовий час: тривалість цієї календарної доби становить ${durationMinutes} хв (25 год). Повторену годину позначено двічі за фактичним плином часу.`,
+      `Перехід на зимовий час: тривалість цієї календарної доби становить ${formatDuration(durationMinutes)} (25 год). Повторену годину позначено двічі за фактичним плином часу.`,
     dstSkippedHourBadge: 'Пропущено 1 год (перехід на літній час)',
     dstRepeatedFirstBadge: '1-ше входження',
     dstRepeatedSecondBadge: '2-ге входження (зимовий час)',
@@ -464,15 +465,15 @@ export const UK_STRINGS = {
       'Немає відкритих справ за цим фільтром. Створіть нову справу через «+» або змініть фільтр.',
     selectedTaskLabel: 'Обрана справа',
     estimatePresentNote: (minutes: number) =>
-      `Орієнтовна тривалість справи: ${minutes} хв`,
+      `Орієнтовна тривалість справи: ${formatDuration(minutes)}`,
     estimateMissingPrompt:
       'Для цієї справи ще не задано орієнтовну тривалість. Вкажіть тривалість сесії нижче (оцінка самої справи не зміниться).',
     partialSessionNotice: (estimateMin: number, gapMin: number) =>
-      `Орієнтовна тривалість справи (${estimateMin} хв) перевищує обране незайняте вікно (${gapMin} хв). Ви можете запланувати часткову сесію в межах вікна без автоматичного зсуву інших подій.`,
+      `Орієнтовна тривалість справи (${formatDuration(estimateMin)}) перевищує обране незайняте вікно (${formatDuration(gapMin)}). Ви можете запланувати часткову сесію в межах вікна без автоматичного зсуву інших подій.`,
     usePartialSessionButton: (gapMin: number) =>
-      `Часткова сесія у межах вікна (${gapMin} хв)`,
+      `Часткова сесія у межах вікна (${formatDuration(gapMin)})`,
     useFullEstimateButton: (estimateMin: number) =>
-      `Повна тривалість оцінки (${estimateMin} хв — з попередженням про перетин)`,
+      `Повна тривалість оцінки (${formatDuration(estimateMin)} — з попередженням про перетин)`,
     sessionStartTimeLabel: 'Час початку сесії',
     sessionDurationMinutesLabel: 'Тривалість сесії (хв)',
     sessionPreviewRangeLabel: 'Підсумковий інтервал резерву',

@@ -1,3 +1,4 @@
+import { formatDate, formatInstant } from '../lib/format';
 import { StateHistoryChart } from '../components/today/StateHistoryChart';
 import type { CalendarEvent } from '../domain/types';
 import { OptionalSlider } from '../components/ui/OptionalSlider';
@@ -36,7 +37,7 @@ export function StateCheckInsView({ records, events = [], today, zone, enabled, 
     <Button disabled={!selected.length} onClick={() => downloadPersonalRecords(records, selected)}>Експортувати вибрані записи (JSON)</Button>
     <Button disabled={!selected.length} onClick={() => downloadPersonalRecordsCsv(records, selected)}>Експортувати вибрані записи (CSV)</Button>
     <Button disabled={!selected.length} onClick={() => { if (!printPersonalRecords(records, selected)) setError('Дозвольте відкриття вікна друку для експорту PDF.'); }}>Друк / PDF вибраних записів</Button>
-    {[...records].filter(r => archive ? Boolean(r.text) : isCheckIn(r)).sort((a,b) => b.localDate.localeCompare(a.localDate) || b.recordedAt.localeCompare(a.recordedAt)).map(r => <Card key={r.id} title={`${new Intl.DateTimeFormat('uk-UA', {timeZone: 'UTC', dateStyle: 'long'}).format(new Date(r.localDate))} · ${new Intl.DateTimeFormat('uk-UA', {timeZone: r.zoneId, timeStyle: 'short'}).format(new Date(r.recordedAt))}`}>
+    {[...records].filter(r => archive ? Boolean(r.text) : isCheckIn(r)).sort((a,b) => b.localDate.localeCompare(a.localDate) || b.recordedAt.localeCompare(a.recordedAt)).map(r => <Card key={r.id} title={`${formatDate(r.localDate,{dateStyle:'long'})} · ${formatInstant(r.recordedAt,r.zoneId,{timeStyle:'short'})}`}>
       <label><input type="checkbox" checked={selected.includes(r.id)} onChange={e => setSelected(e.target.checked ? [...selected,r.id] : selected.filter(id => id !== r.id))} /> Обрати для експорту</label>
       {r.text && <><p className="whitespace-pre-wrap">{r.text}</p><Button onClick={async () => { try { await navigator.clipboard.writeText(r.text!); } catch { setError('Копіювання недоступне. Виділіть текст вручну.'); } }}>Копіювати текст</Button></>}
       <p>{[['Настрій',r.mood],['Енергія',r.energy],['Напруга',r.stress],['Сон, хв',r.sleepMinutes],['Якість сну',r.sleepQuality]].filter(([,v]) => v != null).map(([k,v]) => `${k}: ${v}`).join(' · ')}</p>

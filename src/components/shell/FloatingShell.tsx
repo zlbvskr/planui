@@ -179,7 +179,8 @@ export const FloatingShell: React.FC<FloatingShellProps> = ({
                   key={item.id}
                   type="button"
                   onClick={() => onSelectDestination(item.id)}
-                  aria-current={isActive ? 'page' : undefined}
+                  aria-label={item.labelUk}
+                    aria-current={isActive ? 'page' : undefined}
                   data-testid={`desktop-nav-item-${item.id}`}
                   data-active={isActive ? 'true' : 'false'}
                   className="w-full min-h-[46px] px-3.5 py-2.5 rounded-xl flex items-center gap-3 text-[15px] font-medium planui-transition-micro cursor-pointer text-left"
@@ -230,20 +231,20 @@ export const FloatingShell: React.FC<FloatingShellProps> = ({
         <div
           className="lg:hidden fixed z-40 pointer-events-none"
           style={{
-            left: '14px',
-            right: '14px',
+            left: '20px',
+            right: '20px',
             bottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)',
           }}
           data-testid="mobile-floating-zone"
         >
-          <div className="max-w-[520px] mx-auto flex flex-row-reverse items-center gap-2">
+          <div className="max-w-[520px] mx-auto flex flex-row-reverse items-center gap-3">
             {/* Separate Global Creation Button above the capsule on the right (48–52px target, 14px gap) */}
             <button
               type="button"
               onClick={onOpenGlobalCreate}
               aria-label={UK_STRINGS.app.globalCreateButtonAria}
               data-testid="mobile-global-create-button"
-              className="planui-floating-capsule pointer-events-auto w-[56px] h-[56px] min-w-[56px] min-h-[56px] rounded-full flex items-center justify-center planui-transition-micro cursor-pointer active:scale-95 "
+              className="planui-floating-capsule pointer-events-auto w-[64px] h-[64px] min-w-[64px] min-h-[64px] rounded-full flex items-center justify-center planui-transition-micro cursor-pointer active:scale-95 "
               style={{
                 viewTransitionName: 'planui-create',
                 backgroundColor: 'var(--glass-bg)',
@@ -262,7 +263,7 @@ export const FloatingShell: React.FC<FloatingShellProps> = ({
               data-collapsed={collapsed}
               onFocusCapture={() => setCollapsed(false)}
               style={{ position: 'relative' }}
-              className="pointer-events-auto w-full min-h-[64px] px-1.5 py-1.5 rounded-[28px] planui-floating-capsule planui-edge-refraction grid grid-cols-4 items-stretch gap-1"
+              className="pointer-events-auto w-full min-h-[64px] px-1.5 py-1.5 rounded-full planui-floating-capsule grid grid-cols-4 items-stretch gap-1"
             >
               <span aria-hidden="true" className="planui-selection" style={{ transform: `translateX(${PRIMARY_NAV_ITEMS.findIndex(item => item.id === activeDestination) * 100}%)` }} />
               {PRIMARY_NAV_ITEMS.map((item) => {
@@ -273,6 +274,7 @@ export const FloatingShell: React.FC<FloatingShellProps> = ({
                     key={item.id}
                     type="button"
                     onClick={() => onSelectDestination(item.id)}
+                    aria-label={item.labelUk}
                     aria-current={isActive ? 'page' : undefined}
                     data-testid={`mobile-nav-item-${item.id}`}
                     data-active={isActive ? 'true' : 'false'}

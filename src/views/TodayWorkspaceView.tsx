@@ -1,3 +1,4 @@
+import { TopBar, Pill, Segmented } from '../components/ui/design';
 import { selectTaskReviewState } from '../domain/projections';
 import { TodayMode, DailyPlan } from '../domain/types';
 import { EMPTY_DAILY_PLAN, shouldRevealNow, projectTodayTasks, deadlineDate } from '../domain/today';
@@ -118,8 +119,9 @@ export function TodayWorkspaceView({
 }: TodayWorkspaceViewProps) {
   const effectiveMode = mode === 'habits' && !habitsEnabled ? 'day' : mode;
   const rootRef = useRef<HTMLDivElement>(null);
+  const [focusOpen, setFocusOpen] = useState(false);
   const [planningTask, setPlanningTask] = useState<{ task: Task; reservationId?: string; reviewAction?: string } | null>(null);
-  useEffect(() => { onModalStateChange?.(Boolean(planningTask)); return () => onModalStateChange?.(false); }, [Boolean(planningTask)]);
+  useEffect(() => { onModalStateChange?.(Boolean(planningTask) || focusOpen); return () => onModalStateChange?.(false); }, [Boolean(planningTask), focusOpen]);
   const revealCurrentTime = () => rootRef.current?.querySelector('[data-testid="today-current-time-indicator"]')?.scrollIntoView({ block: 'center', behavior: 'instant' as ScrollBehavior });
   useEffect(() => {
     if (!shouldRevealNow({ selectedDate, mode: effectiveMode, hasInteraction, scrollTop: savedScrollTop }, actualTodayDate)) return;
@@ -205,78 +207,28 @@ export function TodayWorkspaceView({
 
   return (
     <div ref={rootRef} className="space-y-4" data-testid="destination-view-today" onPointerDownCapture={onInteraction} onWheelCapture={onInteraction} onKeyDownCapture={onInteraction}>
-      {/* 1. Selected Date / Weekday, Navigation, and One-Action Return to Actual Today (6.2) */}
-      <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2.5">
-            <h1 className="text-[32px] font-bold tracking-tight leading-tight m-0">
-              {UK_STRINGS.destinations.today.title}
-            </h1>
-            {selectedDate === actualTodayDate && (
-              <span
-                className="text-[13px] font-semibold"
-                style={{ color: 'var(--color-brand-text)' }}
-                data-testid="today-actual-today-indicator"
-              >
-                · {UK_STRINGS.app.todayBadge}
-              </span>
-            )}
-          </div>
-          <p
-            className="text-[15px] m-0"
-            style={{ color: 'var(--text-secondary)' }}
-            data-testid="today-selected-date-heading"
-          >
-            {formatUkrainianDateHeading(selectedDate)} ({selectedDate})
-          </p>
+      <TopBar>
+        <div className="ui-topbar-title"><h1>Сьогодні</h1><Pill data-testid="today-return-to-actual-today-button" onClick={() => { onSelectDate(actualTodayDate); if (selectedDate === actualTodayDate) revealCurrentTime(); }}>Зараз</Pill></div>
+        <div className="today-date-row">
+          <Button variant="subtle" size="icon" aria-label={UK_STRINGS.app.previousDayAria} data-testid="today-prev-day-button" onClick={() => onSelectDate(addDaysToLocalDate(selectedDate, -1))}><ChevronLeft aria-hidden="true" className="w-5 h-5" /></Button>
+          <span data-testid="today-selected-date-heading">{new Intl.DateTimeFormat('uk-UA', { weekday: 'short', day: 'numeric', month: 'long', timeZone: 'UTC' }).format(new Date(selectedDate + 'T12:00:00Z'))}</span>
+          <Button variant="subtle" size="icon" aria-label={UK_STRINGS.app.nextDayAria} data-testid="today-next-day-button" onClick={() => onSelectDate(addDaysToLocalDate(selectedDate, 1))}><ChevronRight aria-hidden="true" className="w-5 h-5" /></Button>
         </div>
-
-        <div className="flex items-center gap-1.5">
-          <Button
-            variant="secondary"
-            size="icon"
-            aria-label={UK_STRINGS.app.previousDayAria}
-            data-testid="today-prev-day-button"
-            onClick={() => onSelectDate(addDaysToLocalDate(selectedDate, -1))}
-          >
-            <ChevronLeft className="w-5 h-5" aria-hidden="true" />
-          </Button>
-          {selectedDate !== actualTodayDate && (
-            <Button
-              variant="secondary"
-              size="sm"
-              data-testid="today-return-to-actual-today-button"
-              onClick={() => onSelectDate(actualTodayDate)}
-            >
-              {UK_STRINGS.app.returnToToday}
-            </Button>
-          )}
-          <Button
-            variant="secondary"
-            size="icon"
-            aria-label={UK_STRINGS.app.nextDayAria}
-            data-testid="today-next-day-button"
-            onClick={() => onSelectDate(addDaysToLocalDate(selectedDate, 1))}
-          >
-            <ChevronRight className="w-5 h-5" aria-hidden="true" />
-          </Button>
+        <Segmented<TodayMode> label="Режими Сьогодні" value={effectiveMode} onChange={onChangeMode} options={[{ value: 'day', label: 'День' }, { value: 'tasks', label: 'Завдання' }, ...(habitsEnabled ? [{ value: 'habits' as const, label: 'Звички' }] : [])]} />
+        <div className="ui-topbar-actions">
+          <Pill selected={dailyPlan.minimalDay} onClick={async () => { try { await repositories.saveDailyPlan(selectedDate, { ...dailyPlan, minimalDay: !dailyPlan.minimalDay }, dailyPlan); await onDataChanged(); } catch { window.alert('Не вдалося змінити вигляд дня. Оновіть дані й повторіть.'); } }}>Мінімальний день</Pill>
+          <Pill onClick={() => setFocusOpen(true)}>Фокус дня</Pill>
         </div>
-      </header>
-
-      <nav aria-label="Режими Сьогодні" className="planui-floating-header flex flex-wrap gap-2">
-        {([{ value: 'day', label: 'День' }, { value: 'tasks', label: 'Завдання' }, ...(habitsEnabled ? [{ value: 'habits', label: 'Звички' }] : [])] as { value: TodayMode; label: string }[]).map(option => <Button key={option.value} aria-pressed={effectiveMode === option.value} variant={effectiveMode === option.value ? 'primary' : 'secondary'} onClick={() => onChangeMode(option.value)}>{option.label}</Button>)}
-        <Button aria-pressed={dailyPlan.minimalDay} onClick={async () => { try { await repositories.saveDailyPlan(selectedDate, { ...dailyPlan, minimalDay: !dailyPlan.minimalDay }, dailyPlan); await onDataChanged(); } catch { window.alert('Не вдалося змінити вигляд дня. Оновіть дані й повторіть.'); } }}>Мінімальний день</Button>
-        {selectedDate === actualTodayDate && effectiveMode === 'day' && <Button onClick={revealCurrentTime}>До поточного часу</Button>}
-      </nav>
+      </TopBar>
       {selectedDate === actualTodayDate && tasks.some(task => selectTaskReviewState(task, actualTodayDate, reservations, activeZone) === 'needs_triage') && <details className="rounded-3xl p-4" style={{ background: 'var(--surface-card-elevated)', border: '1px solid var(--border-subtle)' }}>
         <summary className="cursor-pointer">Переглянути попередні плани</summary>
         <p>Ці справи залишилися на попередніх датах. Оберіть наступний крок, коли будете готові.</p>
         <ul>{tasks.filter(task => selectTaskReviewState(task, actualTodayDate, reservations, activeZone) === 'needs_triage').map(task => <li key={task.id} data-review-state="needs_triage"><p>{task.title}</p><div className="flex flex-wrap gap-2">{['Перенести','Зменшити обсяг','Розділити','Поставити на паузу','Відмовитися'].map(reviewAction=><Button key={reviewAction} onClick={()=>setPlanningTask({task,reviewAction})}>{reviewAction}</Button>)}</div></li>)}</ul>
       </details>}
-      <DailyFocusPanel key={selectedDate + ':' + JSON.stringify(dailyPlan)} date={selectedDate} zone={activeZone} plan={dailyPlan} tasks={tasks} reservations={reservations} repositories={repositories} onChanged={() => onDataChanged()} />
+      <DailyFocusPanel key={selectedDate + ':' + JSON.stringify(dailyPlan)} date={selectedDate} zone={activeZone} plan={dailyPlan} tasks={tasks} reservations={reservations} repositories={repositories} isOpen={focusOpen} onClose={() => setFocusOpen(false)} onChanged={() => onDataChanged()} />
       {dailyPlan.minimalDay && effectiveMode !== 'day' && <Card className="space-y-2" data-testid="today-minimal-commitments">
         <h2 className="font-semibold">Зобов’язання та зайнятий час залишаються видимими</h2>
-        <p>Зайнято: {Math.round(todayProjection.availability.totalOccupiedMinutes)} хв. Це планування, а не облік виконаної роботи.</p>
+
         <ul>{todayProjection.timelineItems.filter(item => item.isBlocking).map(item => <li key={item.itemKey}>{item.segment.displayStartLocalTime} – {item.segment.displayEndLocalTime}: {item.title}</li>)}{todayProjection.allDayItems.filter(item => item.isBlocking).map(item => <li key={item.eventId}>Увесь день: {item.title}</li>)}{projectTodayTasks(tasks, reservations, selectedDate, activeZone, dailyPlan).relevant.filter(task => task.deadline).map(task => <li key={task.id}>Термін: {task.title}, {formatUkrainianDateHeading(deadlineDate(task, activeZone)!)}</li>)}</ul>
       </Card>}
       {planningTask && <TaskPlanningSheet key={planningTask.task.id + ':' + (planningTask.reservationId ?? '')} reviewAction={planningTask.reviewAction} task={planningTask.task} initialReservationId={planningTask.reservationId} date={selectedDate} zone={activeZone} tasks={tasks} events={events} reservations={reservations} repositories={repositories} onClose={() => setPlanningTask(null)} onSaved={() => onDataChanged()} />}
@@ -342,39 +294,6 @@ export function TodayWorkspaceView({
         </div>
       )}
 
-      {effectiveMode === 'day' && <>
-      {/* 2. Compact Nearest Commitment (6.2) */}
-      <Card
-        title={UK_STRINGS.destinations.today.nearestCommitmentLabel}
-        data-testid="today-nearest-commitment-card"
-      >
-        {!nearestCommitment ? (
-          <p
-            className="text-[14px] m-0"
-            style={{ color: 'var(--text-secondary)' }}
-          >
-            {UK_STRINGS.destinations.today.noCommitmentsToday}
-          </p>
-        ) : (
-          <div className="flex flex-wrap items-center justify-between gap-2 text-[14px]">
-            <div>
-              <span className="font-mono tabular-nums font-semibold">
-                {nearestCommitment.item.segment.displayStartLocalTime} –{' '}
-                {nearestCommitment.item.segment.displayEndLocalTime}:
-              </span>{' '}
-              <strong>{nearestCommitment.item.title}</strong>
-            </div>
-            <span
-              className="text-[12px] font-medium"
-              style={{ color: 'var(--text-secondary)' }}
-            >
-              {nearestCommitment.badgeUk}
-            </span>
-          </div>
-        )}
-      </Card>
-
-      </>}
       {effectiveMode === 'habits' && habitsEnabled && habitsContent}
       {effectiveMode === 'tasks' && <TodayTasksPanel events={events} actualTodayDate={actualTodayDate} nowMs={nowMs} date={selectedDate} zone={activeZone} plan={dailyPlan} tasks={tasks} reservations={reservations} repositories={repositories} onChanged={() => onDataChanged()} onToggle={onToggleTaskState} onPlan={task => setPlanningTask({ task })} />}
       {effectiveMode === 'day' && <>
@@ -396,6 +315,8 @@ export function TodayWorkspaceView({
         onEmptyCreateAction={() => onOpenGlobalCreation('task')}
         emptyActionLabel={UK_STRINGS.creation.actions.task.label}
       />
+
+      {nearestCommitment && <div className="today-next-commitment"><span className="ui-section-label">Далі</span><p>{nearestCommitment.item.segment.displayStartLocalTime} · {nearestCommitment.item.title}</p></div>}
 
       {/* 6. Clear Divider & Collapsible Next Calendar Date in the Same Scroll Flow (6.2 / C12) */}
       <div
@@ -433,7 +354,7 @@ export function TodayWorkspaceView({
                 className="text-[14px] m-0"
                 style={{ color: 'var(--text-secondary)' }}
               >
-                {collapsedNextDaySummary.summaryTextUk}
+                {collapsedNextDaySummary.overnightCarryoverItems.length ? 'Перехідні події' : nextDayProjection.timelineItems.length ? 'Є заплановані події' : 'Поки без планів'}
               </p>
               {collapsedNextDaySummary.overnightCarryoverItems.length > 0 && (
                 <ul className="space-y-1.5 m-0 p-0 list-none">

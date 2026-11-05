@@ -47,6 +47,8 @@ export const FloatingShell: React.FC<FloatingShellProps> = ({
   }, []);
   const [isInputFocusedOnMobile, setIsInputFocusedOnMobile] = useState(false);
 
+  useEffect(() => { if (!isModalOpen) setIsInputFocusedOnMobile(false); }, [isModalOpen]);
+
   // C17: During keyboard entry, do not let both floating controls jump unpredictably above the keyboard.
   useEffect(() => {
     const handleFocusIn = (e: FocusEvent) => {

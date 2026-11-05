@@ -562,6 +562,7 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (Array.from(document.querySelectorAll('[role=dialog]')).at(-1)!==dialogRef.current) return;
       if (e.key === 'Escape') {
         e.preventDefault();
         if (showDirtyConfirm) {

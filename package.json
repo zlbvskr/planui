@@ -14,7 +14,9 @@
     "test:pages": "node scripts/test-pages.mjs",
     "test:regression": "node scripts/test-cleanup-regression.mjs",
     "test:ui-hygiene": "node --import tsx tests/ui-hygiene.spec.ts",
-    "test:ui-primitives": "node --import tsx tests/ui-primitives.spec.ts"
+    "test:ui-primitives": "node --import tsx tests/ui-primitives.spec.ts",
+    "test:stage1": "UI_FUNCTIONAL_ONLY=1 node --import tsx tests/stage1.spec.ts",
+    "test:stage1-perf": "node tests/run-stage1-perf.mjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

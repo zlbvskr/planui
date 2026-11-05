@@ -12,3 +12,5 @@ Presentation-only metadata (direction hues and habit duration estimates) lives b
 `npm run test:ui-primitives` exercises overlay values, switch/slider state, menu keyboard focus, DurationField save and Sheet/InfoSheet dismissal in WebKit. `npm test` includes formatter, fixture and primitive server-rendered contract tests. Production build validation also checks that fixture text is absent from the compiled graph.
 
 The browser evaluator defines the identity `__name` helper used by tsx serialization; this is harness-only. Hygiene rule self-tests cover forbidden text/controls, overflow, nesting, target size and long text, and ignore a visually clipped skip link.
+
+Stage 1 adds `npm run test:stage1` (WebKit scroll/continuity/tasks interactions) and `npm run test:stage1-perf` (a disposable production fixture, Chromium CPU ×4, 300 records). The latter builds only to `/tmp/planui-stage1-perf-dist`; the normal build continues to exclude the fixture. `UI_ARTIFACT_DIR` controls screenshots and measured JSON. Set `UI_CPU_PROFILE=1` only for diagnostic profiling, since the profiler adds overhead to measured tasks.

@@ -378,3 +378,33 @@ html:not(.dark) [data-testid="destination-view-today"] [data-testid$="current-ti
 .calendar-workspace [data-testid="calendar-week-overview-list"]:empty { display: none; }
 .calendar-workspace [data-testid="calendar-month-grid"] button > div:first-of-type > span:first-child,
 .calendar-workspace [data-testid="roster-month-grid"] button > div:first-of-type > span:first-child { font-size: 13px; }
+
+/* Liquid Glass A: shared canvas, controls and flat content materials. */
+:root { --floating-scroll-clearance: calc(112px + env(safe-area-inset-bottom,0px)); --color-brand: #c64252; --color-brand-text: #b42d40; }
+.dark { --bg-canvas: #000; --bg-surface: #111214; --color-brand: #fa686c; --color-brand-text: #ff8f96; }
+.planui-canvas { background-attachment: fixed; background-image: radial-gradient(ellipse at 95% 0%, #6366b51c, transparent 45%), radial-gradient(ellipse at 0% 70%, #a12d4b12, transparent 45%); }
+.dark .planui-canvas { background-image: radial-gradient(ellipse at 95% 0%, #5554b533, transparent 45%), radial-gradient(ellipse at 0% 70%, #98233c24, transparent 45%); }
+.planui-canvas[data-ambient="night"] { background-image: radial-gradient(ellipse at 90% 0%, #283c722e, transparent 65%); }
+.planui-canvas[data-ambient="creative"] { background-image: radial-gradient(ellipse at 90% 0%, #b77b251c, transparent 65%); }
+.ui-round { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 44px; height: 44px; border-radius: 50%; cursor: pointer; }
+.ui-glass-bar { border-radius: 20px; padding: 8px; }
+.ui-segmented { border-radius: 999px; background: var(--glass-bg-fallback); border: 1px solid var(--glass-border); box-shadow: inset 0 1px 1px #ffffff40; }
+@supports (backdrop-filter: blur(1px)) { .ui-segmented { background: var(--glass-bg); backdrop-filter: blur(20px) saturate(180%); -webkit-backdrop-filter: blur(20px) saturate(180%); } }
+.ui-segmented button { border-radius: 999px; }
+.ui-segmented button[aria-pressed="true"] { background: #ffffffa8; }
+.dark .ui-segmented button[aria-pressed="true"] { background: #ffffff33; }
+.ui-item-card { background: color-mix(in srgb,var(--item-hue) 14%,var(--bg-canvas)); border: 1px solid color-mix(in srgb,var(--item-hue) 40%,transparent); border-radius: 20px; padding: 12px; color: var(--text-primary); }
+.ui-item-card h3 { font-size: 20px; line-height: 1.2; font-weight: 600; }
+.ui-item-meta { color: var(--item-hue); font-size: 13px; font-variant-numeric: tabular-nums; }
+.ui-week { display: grid; grid-template-columns: repeat(7,minmax(0,1fr)); gap: 2px; padding-block: 8px; touch-action: pan-y; }
+.ui-week button { display: flex; align-items: center; flex-direction: column; gap: 4px; cursor: pointer; }
+.ui-week button > span { font-size: 12px; color: var(--text-secondary); }
+.ui-week strong { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; font-size: 20px; font-weight: 500; }
+.ui-week [aria-current="date"] strong { box-shadow: inset 0 0 0 1px var(--text-secondary); }
+.ui-week [aria-pressed="true"] strong { background: var(--text-primary); color: var(--bg-canvas); }
+.ui-week small { height: 12px; font-size: 14px; line-height: 12px; color: var(--color-work-text); }
+.dark [data-testid="mobile-floating-capsule"] button[data-active="true"] { color: #fff !important; }
+[data-testid="mobile-floating-capsule"] button[data-active="true"] { color: var(--text-primary); }
+[data-testid="mobile-floating-capsule"] { height: 64px; min-height: 64px; }
+@media (prefers-reduced-transparency: reduce) { .ui-segmented { background: var(--glass-bg-fallback); backdrop-filter: none; -webkit-backdrop-filter: none; } }
+:root[data-reduced-transparency="true"] .ui-segmented { background: var(--glass-bg-fallback); backdrop-filter: none; -webkit-backdrop-filter: none; }

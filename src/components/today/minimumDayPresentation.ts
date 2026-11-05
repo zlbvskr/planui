@@ -10,11 +10,10 @@ export function minimumDayTasks(
       t.state === "open" &&
       t.effort === "small" &&
       plan.focusTaskIds.includes(t.id) &&
-      !t.deadline &&
-      t.priority !== "high",
+      !t.deadline,
   );
   return tasks.filter(
     (t) =>
-      Boolean(t.deadline) || t.priority === "high" || t.id === optional?.id,
+      Boolean(t.deadline) || t.id === optional?.id,
   );
 }

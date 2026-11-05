@@ -7,6 +7,11 @@ export const ROUTES = [
   {id:'today-day-midnight',path:'/#/today',mode:'День',position:'midnight'},
   {id:'today-tasks',path:'/#/today',mode:'Завдання'},
   {id:'today-habits',path:'/#/today',mode:'Звички'},
+  {id:'quick-task',path:'/#/today',mode:'Завдання',overlay:'task'},
+  {id:'quick-event',path:'/#/today',mode:'Завдання',overlay:'event'},
+  {id:'quick-habit',path:'/#/today',mode:'Звички',overlay:'habit'},
+  {id:'triage',path:'/#/today',mode:'Завдання',overlay:'triage'},
+  {id:'weekly',path:'/#/today',mode:'Завдання',overlay:'weekly'},
 ] as const;
 type Finding={rule:string;target:string;detail:string};
 
@@ -60,6 +65,12 @@ export async function runUiHygiene() {
         await page.evaluate(()=>{scrollTo(0,0);document.getAnimations().forEach(a=>{try{a.finish();}catch{}});});
         if('position' in route && route.position==='midnight') {
           await page.evaluate(()=>{const el=document.querySelector<HTMLElement>('.continuous-time-scroll')!;const day=el.querySelector<HTMLElement>('[data-date="2026-11-06"]')!;el.scrollTop+=day.getBoundingClientRect().top-el.getBoundingClientRect().top+day.offsetHeight-140;});
+          await page.waitForTimeout(100);
+        }
+        if('overlay' in route) {
+          if(route.overlay==='triage') { await page.getByRole('button',{name:'Інші дії дня',exact:true}).click(); await page.getByRole('menuitem',{name:'Переглянути попередні плани',exact:true}).click(); }
+          else if(route.overlay==='weekly') { await page.goto(runtime.url+'/#/life_areas'); await page.getByRole('button',{name:'Щотижневий огляд · 4 кроки',exact:true}).click(); }
+          else { await page.getByRole('button',{name:'Створити новий запис у поточному розділі',exact:true}).last().click(); if(route.overlay!=='task')await page.getByRole('radio',{name:route.overlay==='event'?'Подія':'Звичка',exact:true}).click(); }
           await page.waitForTimeout(100);
         }
         const findings=await page.evaluate(inspectUiHygiene);

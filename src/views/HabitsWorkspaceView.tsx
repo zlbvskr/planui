@@ -1,3 +1,5 @@
+import { Section, Row, ActionMenu, InfoSheet, Sheet, SubHeader, DateField, SelectField } from '../ui';
+import { formatDate } from '../lib/format';
 import React, { useMemo, useState } from 'react';
 import {
   Archive,
@@ -60,11 +62,11 @@ import {
   InputField,
   ModalSheet,
   SegmentedControl,
-  SelectField,
   TextAreaField,
 } from '../components/ui/primitives';
 
 export interface HabitsWorkspaceViewProps {
+  nightShiftAlternative?: boolean;
   selectedDate: LocalDateString;
   actualTodayDate: LocalDateString;
   filter: HabitsFilterMode;
@@ -105,6 +107,7 @@ function getCellSymbolAndLabelUk(status: HabitDateCellStatus): {
 
 export function HabitsWorkspaceView({
   selectedDate,
+  nightShiftAlternative = false,
   actualTodayDate,
   filter,
   habits,
@@ -118,6 +121,9 @@ export function HabitsWorkspaceView({
   onDataChanged,
   onModalStateChange,
 }: HabitsWorkspaceViewProps) {
+  const [history, setHistory] = useState(false);
+  const [pausedOpen, setPausedOpen] = useState(false);
+  const [dateOpen, setDateOpen] = useState(false);
   const [expandedMonthHabitIds, setExpandedMonthHabitIds] = useState<
     Record<string, boolean>
   >({});
@@ -297,9 +303,7 @@ export function HabitsWorkspaceView({
       );
 
       closeEditModal();
-      await onDataChanged(
-        `Звичку «${editName.trim()}» оновлено (правило діє з ${editEffectiveDate}, попередню історію збережено).`
-      );
+      await onDataChanged(`Звичку «${editName.trim()}» оновлено.`);
     } catch (err) {
       setEditError(
         err instanceof Error ? err.message : 'Не вдалося оновити звичку.'
@@ -370,886 +374,28 @@ export function HabitsWorkspaceView({
 
   return (
     <div className="space-y-4" data-testid="destination-view-habits">
-      <p>«Після пробудження» — контекст, а не час. Вихідний потребує явної позначки; зміна, що закінчується вранці, зберігає свою зайнятість. Немає накопиченого боргу за невідмічені дні.</p>
-      {/* 1. Header & Date Navigation with Easy Previous-Date Night-Shift Recording (9.2) */}
-      <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="space-y-1">
-          <h1 className="text-[32px] font-bold tracking-tight leading-tight m-0">
-            {UK_STRINGS.destinations.habits.title}
-          </h1>
-          <p
-            className="text-[15px] m-0"
-            style={{ color: 'var(--text-secondary)' }}
-          >
-            {UK_STRINGS.destinations.habits.subtitle}
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-1.5">
-          <Button
-            type="button"
-            variant="secondary"
-            size="icon"
-            aria-label={UK_STRINGS.app.previousDayAria}
-            data-testid="habits-prev-day-button"
-            onClick={() => onSelectDate(addDaysToLocalDate(selectedDate, -1))}
-          >
-            <ChevronLeft className="w-5 h-5" aria-hidden="true" />
-          </Button>
-
-          <Button
-            type="button"
-            variant={selectedDate === previousLocalDate ? 'primary' : 'secondary'}
-            size="sm"
-            data-testid="habits-night-shift-yesterday-btn"
-            onClick={() => onSelectDate(previousLocalDate)}
-          >
-            За вчора після нічної зміни ({previousLocalDate})
-          </Button>
-
-          {selectedDate !== actualTodayDate && (
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              data-testid="habits-return-today-button"
-              onClick={() => onSelectDate(actualTodayDate)}
-            >
-              {UK_STRINGS.app.returnToToday} ({actualTodayDate})
-            </Button>
-          )}
-
-          <Button
-            type="button"
-            variant="secondary"
-            size="icon"
-            aria-label={UK_STRINGS.app.nextDayAria}
-            data-testid="habits-next-day-button"
-            onClick={() => onSelectDate(addDaysToLocalDate(selectedDate, 1))}
-          >
-            <ChevronRight className="w-5 h-5" aria-hidden="true" />
-          </Button>
-        </div>
-      </header>
-
-      {/* Date Context Bar */}
-      <div
-        className="p-3.5 rounded-2xl flex flex-wrap items-center justify-between gap-3"
-        style={{
-          backgroundColor: 'var(--bg-surface)',
-          border: '1px solid var(--border-subtle)',
-        }}
-        data-testid="habits-date-context-bar"
-      >
-        <div className="space-y-0.5">
-          <div className="text-[14px] font-semibold flex items-center gap-2">
-            <CalendarIcon className="w-4 h-4" aria-hidden="true" />
-            <span data-testid="habits-selected-date-heading">
-              Дата відмітки: {formatUkrainianDateHeading(selectedDate)} (
-              {selectedDate})
-            </span>
-          </div>
-          <div
-            className="text-[12px]"
-            style={{ color: 'var(--text-secondary)' }}
-          >
-            Відмітки зберігаються за явною локальною датою й не зміщуються під
-            час зміни часового поясу.
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <label
-            htmlFor="habits-explicit-date-picker"
-            className="text-[13px] font-medium"
-            style={{ color: 'var(--text-secondary)' }}
-          >
-            Інша дата:
-          </label>
-          <input
-            id="habits-explicit-date-picker"
-            type="date"
-            lang="uk"
-            value={selectedDate}
-            onChange={(e) => {
-              if (e.target.value) {
-                onSelectDate(e.target.value);
-              }
-            }}
-            data-testid="habits-date-input"
-            className="min-h-[42px] px-3 py-1.5 rounded-xl text-[15px]"
-            style={{
-              backgroundColor: 'var(--bg-elevated)',
-              color: 'var(--text-primary)',
-              border: '1px solid var(--border-subtle)',
-            }}
-          />
-        </div>
-      </div>
-
-      {/* Lifecycle Filter (Active / Paused / Archived) */}
-      <SegmentedControl<HabitsFilterMode>
-        ariaLabel={UK_STRINGS.destinations.habits.title}
-        value={filter}
-        onChange={onChangeFilter}
-        options={[
-          {
-            value: 'active',
-            label: `${UK_STRINGS.destinations.habits.filterActive} (${countsByState.active})`,
-          },
-          {
-            value: 'paused',
-            label: `${UK_STRINGS.destinations.habits.filterPaused} (${countsByState.paused})`,
-          },
-          {
-            value: 'archived',
-            label: `${UK_STRINGS.destinations.habits.filterArchived} (${countsByState.archived})`,
-          },
-        ]}
-      />
-
-      {/* Empty State or Habit List */}
-      {filteredHabits.length === 0 ? (
-        <EmptyStateCard
-          icon={<Repeat className="w-5 h-5" />}
-          title={
-            filter === 'active'
-              ? UK_STRINGS.destinations.habits.emptyTitle
-              : filter === 'paused'
-              ? 'Немає звичок на паузі'
-              : 'Архів звичок порожній'
-          }
-          description={
-            filter === 'active'
-              ? UK_STRINGS.destinations.habits.emptyDescription
-              : 'Пауза та архівація зберігають усю попередню історію відміток без спотворення статистики.'
-          }
-          actionLabel={filter === 'active' ? 'Нова звичка' : undefined}
-          onAction={
-            filter === 'active'
-              ? () => onOpenGlobalCreation('habit')
-              : undefined
-          }
-        />
-      ) : (
-        <div className="space-y-4" data-testid="habits-list-container">
-          {[...filteredHabits].sort((a,b)=>(a.contextCueUk ?? a.ruleRevisions.at(-1)?.rule.kind ?? '').localeCompare(b.contextCueUk ?? b.ruleRevisions.at(-1)?.rule.kind ?? '')).map((habit) => {
-            const entriesForHabit = entriesByHabitId.get(habit.id) ?? [];
-            const dayEval = evaluateHabitOnDate({
-              habit,
-              entriesForHabit,
-              localDate: selectedDate, daysOff: dayOffDates,
-            });
-            const weekProgress = computeHabitWeekProgress(
-              habit,
-              entriesForHabit,
-              selectedDate, dayOffDates
-            );
-            const streakSummary = computeHabitStreakSummary(
-              habit,
-              entriesForHabit,
-              selectedDate, dayOffDates
-            );
-            const isMonthExpanded = Boolean(expandedMonthHabitIds[habit.id]);
-            const monthProgress = isMonthExpanded
-              ? computeHabitMonthProgress(
-                  habit,
-                  entriesForHabit,
-                  activeYearMonthObj.year,
-                  activeYearMonthObj.month, dayOffDates
-                )
-              : null;
-
-            const rev = dayEval.effectiveRevision;
-            const isNumeric = rev.target.kind === 'numeric';
-            const targetVal =
-              rev.target.kind === 'numeric' ? rev.target.targetValue : 1;
-            const unitUk =
-              rev.target.kind === 'numeric' ? rev.target.unitUk : '';
-            const currentNumeric = dayEval.numericValue ?? 0;
-
-            const linkedProject = habit.projectId
-              ? projects.find((p) => p.id === habit.projectId) ?? null
-              : null;
-            const linkedLifeArea = habit.lifeAreaId
-              ? lifeAreaQuestions.find((la) => la.id === habit.lifeAreaId) ??
-                null
-              : null;
-
-            const statusInfo = getCellSymbolAndLabelUk(dayEval.cellStatus);
-            const sortedRevs = sortHabitRuleRevisions(habit.ruleRevisions);
-            const streakBadgeText = `Серія: ${streakSummary.currentCount} ${streakSummary.unitLabelUk}`;
-
-            return (
-              <Card
-                key={habit.id}
-                data-testid={`habit-card-${habit.id}`}
-                title={habit.name}
-                className="border-l-4"
-                subtitle={formatHabitRuleSummaryUk(rev.rule, rev.target)}
-                headerRight={
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span
-                      className="px-2.5 py-1 rounded-lg text-[12px] font-semibold"
-                      style={{
-                        backgroundColor: 'var(--bg-elevated)',
-                        color: 'var(--text-primary)',
-                        border: '1px solid var(--border-subtle)',
-                      }}
-                      data-testid={`habit-streak-badge-${habit.id}`}
-                      title={streakSummary.explanationUk}
-                    >
-                      <details><summary>Серія (за бажанням)</summary>{streakBadgeText}</details>
-                    </span>
-                  </div>
-                }
-              >
-                <div className="space-y-4">
-                  <p className="text-sm font-medium">{habit.contextCueUk || (rev.rule.kind === 'days_off' ? 'У вихідні від змін' : rev.rule.kind === 'weekly_frequency' ? `${rev.rule.timesPerWeek} разів на тиждень` : 'Щоденний контекст')}</p>
-                  {habit.folderId && <p>Напрям: {folders.find(f => f.id === habit.folderId)?.name}</p>}
-                  {habit.contextCueUk && <p>Контекст: {habit.contextCueUk}</p>}
-                  {habit.reminderIntentionUk && <p>Мій намір нагадати собі: {habit.reminderIntentionUk}</p>}
-                  {habit.minimumVersionUk && <p>Мінімальна версія: {habit.minimumVersionUk}</p>}
-                  {dayEval.entry?.minimumCompletedUk && <p>Мінімальну версію виконано: {dayEval.entry.minimumCompletedUk}. Звичайна ціль окрема.</p>}
-                  <div className="flex flex-wrap gap-2">
-                    {habit.state === 'active' && habit.minimumVersionUk && <Button onClick={async () => { await repositories.recordHabitEntryForDateTransactionally({habitId: habit.id, localDate: selectedDate, input: {kind: 'minimum'}}); await onDataChanged(); }}>Зроблено мінімум</Button>}
-                    <Button onClick={() => onPlanHabit?.(habit.id, selectedDate)}>Дата й сеанси звички</Button>
-                  </div>
-                  {sortedRevs.filter(r => r.effectiveFromLocalDate > selectedDate).map(r => <p key={r.id}>З {formatUkrainianDateHeading(r.effectiveFromLocalDate)}: {formatHabitRuleSummaryUk(r.rule,r.target)}</p>)}
-                  {/* Optional Description & Context Badges */}
-                  {(habit.description || linkedProject || linkedLifeArea) && (
-                    <div className="space-y-1.5">
-                      {habit.description && (
-                        <p
-                          className="text-[14px] m-0"
-                          style={{ color: 'var(--text-secondary)' }}
-                        >
-                          {habit.description}
-                        </p>
-                      )}
-                      <div className="flex flex-wrap items-center gap-1.5 text-[12px]">
-                        {linkedProject && (
-                          <span
-                            className="px-2 py-0.5 rounded-md font-medium"
-                            style={{
-                              backgroundColor: 'var(--bg-elevated)',
-                              color: 'var(--text-secondary)',
-                            }}
-                          >
-                            Проєкт: {linkedProject.title}
-                          </span>
-                        )}
-                        {linkedLifeArea && (
-                          <span
-                            className="px-2 py-0.5 rounded-md font-medium"
-                            style={{
-                              backgroundColor: 'var(--bg-elevated)',
-                              color: 'var(--text-secondary)',
-                            }}
-                          >
-                            Сфера: {linkedLifeArea.questionTextUk}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Selected Date Recording Box (9.2) */}
-                  <div
-                    className="p-3.5 rounded-2xl space-y-3"
-                    style={{
-                      backgroundColor: 'var(--bg-elevated)',
-                      border: '1px solid var(--border-subtle)',
-                    }}
-                    data-testid={`habit-entry-box-${habit.id}`}
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="text-[14px] font-semibold">
-                        Статус на {selectedDate}:{' '}
-                        <span
-                          style={{
-                            color:
-                              dayEval.cellStatus === 'completed'
-                                ? 'var(--color-dayoff-text)'
-                                : 'var(--text-primary)',
-                          }}
-                          data-testid={`habit-date-status-${habit.id}`}
-                        >
-                          {statusInfo.symbol} {statusInfo.shortLabelUk}
-                          {isNumeric &&
-                          (dayEval.cellStatus === 'completed' ||
-                            dayEval.cellStatus === 'partial')
-                            ? ` (${currentNumeric} / ${targetVal} ${unitUk})`
-                            : ''}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2.5">
-                      {isNumeric ? (
-                        <div className="space-y-2">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              size="sm"
-                              data-testid={`habit-num-step-btn-${habit.id}`}
-                              onClick={async () => {
-                                const step = Math.max(
-                                  1,
-                                  Math.round(targetVal / 4)
-                                );
-                                const nextVal = currentNumeric + step;
-                                await repositories.recordHabitEntryForDateTransactionally(
-                                  {
-                                    habitId: habit.id,
-                                    localDate: selectedDate,
-                                    input: {
-                                      kind: 'set_numeric',
-                                      numericValue: nextVal,
-                                    },
-                                    nowIso: new Date().toISOString(),
-                                  }
-                                );
-                                await onDataChanged(
-                                  `Записано ${nextVal} ${unitUk} для «${habit.name}» на ${selectedDate}.`
-                                );
-                              }}
-                            >
-                              +{Math.max(1, Math.round(targetVal / 4))}{' '}
-                              {unitUk}
-                            </Button>
-
-                            <Button
-                              type="button"
-                              variant="primary"
-                              size="sm"
-                              data-testid={`habit-complete-btn-${habit.id}`}
-                              onClick={async () => {
-                                await repositories.recordHabitEntryForDateTransactionally(
-                                  {
-                                    habitId: habit.id,
-                                    localDate: selectedDate,
-                                    input: { kind: 'complete' },
-                                    nowIso: new Date().toISOString(),
-                                  }
-                                );
-                                await onDataChanged(
-                                  `Норму «${habit.name}» (${targetVal} ${unitUk}) виконано на ${selectedDate}.`
-                                );
-                              }}
-                            >
-                              <CheckCircle2
-                                className="w-4 h-4 mr-1"
-                                aria-hidden="true"
-                              />
-                              Виконати норму ({targetVal} {unitUk})
-                            </Button>
-
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              size="sm"
-                              data-testid={`habit-skip-btn-${habit.id}`}
-                              onClick={async () => {
-                                await repositories.recordHabitEntryForDateTransactionally(
-                                  {
-                                    habitId: habit.id,
-                                    localDate: selectedDate,
-                                    input: { kind: 'skip' },
-                                    nowIso: new Date().toISOString(),
-                                  }
-                                );
-                                await onDataChanged(
-                                  `Дату ${selectedDate} позначено як свідомо пропущену для «${habit.name}» (не вважається виконанням).`
-                                );
-                              }}
-                            >
-                              <SkipForward
-                                className="w-4 h-4 mr-1"
-                                aria-hidden="true"
-                              />
-                              Пропустити
-                            </Button>
-
-                            {dayEval.entry && (
-                              <Button
-                                type="button"
-                                variant="subtle"
-                                size="sm"
-                                data-testid={`habit-clear-btn-${habit.id}`}
-                                onClick={async () => {
-                                  await repositories.recordHabitEntryForDateTransactionally(
-                                    {
-                                      habitId: habit.id,
-                                      localDate: selectedDate,
-                                      input: { kind: 'clear' },
-                                      nowIso: new Date().toISOString(),
-                                    }
-                                  );
-                                  setNumericDraftByHabit((prev) => ({
-                                    ...prev,
-                                    [habit.id]: '',
-                                  }));
-                                  await onDataChanged(
-                                    `Відмітку для «${habit.name}» за ${selectedDate} знято.`
-                                  );
-                                }}
-                              >
-                                Зняти відмітку
-                              </Button>
-                            )}
-                          </div>
-
-                          {/* Exact numeric value entry */}
-                          <div className="flex flex-wrap items-center gap-2 pt-1">
-                            <input
-                              type="number"
-                              min={0}
-                              step="any"
-                              aria-label={`Точне числове значення для ${habit.name} (${unitUk})`}
-                              placeholder={`Введіть значення (${unitUk})`}
-                              value={
-                                numericDraftByHabit[habit.id] ??
-                                (dayEval.numericValue !== null
-                                  ? String(dayEval.numericValue)
-                                  : '')
-                              }
-                              onChange={(e) =>
-                                setNumericDraftByHabit((prev) => ({
-                                  ...prev,
-                                  [habit.id]: e.target.value,
-                                }))
-                              }
-                              data-testid={`habit-numeric-input-${habit.id}`}
-                              className="w-44 min-h-[42px] px-3 py-1.5 rounded-xl text-[15px]"
-                              style={{
-                                backgroundColor: 'var(--bg-surface)',
-                                color: 'var(--text-primary)',
-                                border: '1px solid var(--border-subtle)',
-                              }}
-                            />
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              size="sm"
-                              data-testid={`habit-numeric-save-btn-${habit.id}`}
-                              onClick={async () => {
-                                const raw =
-                                  numericDraftByHabit[habit.id]?.trim() ?? '';
-                                const parsed = Number(raw);
-                                if (raw === '' || Number.isNaN(parsed)) return;
-                                await repositories.recordHabitEntryForDateTransactionally(
-                                  {
-                                    habitId: habit.id,
-                                    localDate: selectedDate,
-                                    input: {
-                                      kind: 'set_numeric',
-                                      numericValue: parsed,
-                                    },
-                                    nowIso: new Date().toISOString(),
-                                  }
-                                );
-                                await onDataChanged(
-                                  `Оновлено числове значення «${habit.name}» за ${selectedDate}: ${parsed} ${unitUk}.`
-                                );
-                              }}
-                            >
-                              Записати значення
-                            </Button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Button
-                            type="button"
-                            variant={
-                              dayEval.cellStatus === 'completed'
-                                ? 'secondary'
-                                : 'primary'
-                            }
-                            size="sm"
-                            data-testid={`habit-complete-btn-${habit.id}`}
-                            onClick={async () => {
-                              await repositories.recordHabitEntryForDateTransactionally(
-                                {
-                                  habitId: habit.id,
-                                  localDate: selectedDate,
-                                  input: { kind: 'complete' },
-                                  nowIso: new Date().toISOString(),
-                                }
-                              );
-                              await onDataChanged(
-                                `Звичку «${habit.name}» позначено виконаною за ${selectedDate}.`
-                              );
-                            }}
-                          >
-                            <CheckCircle2
-                              className="w-4 h-4 mr-1"
-                              aria-hidden="true"
-                            />
-                            Виконано
-                          </Button>
-
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            size="sm"
-                            data-testid={`habit-skip-btn-${habit.id}`}
-                            onClick={async () => {
-                              await repositories.recordHabitEntryForDateTransactionally(
-                                {
-                                  habitId: habit.id,
-                                  localDate: selectedDate,
-                                  input: { kind: 'skip' },
-                                  nowIso: new Date().toISOString(),
-                                }
-                              );
-                              await onDataChanged(
-                                `Звичку «${habit.name}» позначено як свідомо пропущену за ${selectedDate} (пропуск не є виконанням).`
-                              );
-                            }}
-                          >
-                            <SkipForward
-                              className="w-4 h-4 mr-1"
-                              aria-hidden="true"
-                            />
-                            Пропустити
-                          </Button>
-
-                          {dayEval.entry && (
-                            <Button
-                              type="button"
-                              variant="subtle"
-                              size="sm"
-                              data-testid={`habit-clear-btn-${habit.id}`}
-                              onClick={async () => {
-                                await repositories.recordHabitEntryForDateTransactionally(
-                                  {
-                                    habitId: habit.id,
-                                    localDate: selectedDate,
-                                    input: { kind: 'clear' },
-                                    nowIso: new Date().toISOString(),
-                                  }
-                                );
-                                await onDataChanged(
-                                  `Відмітку для «${habit.name}» за ${selectedDate} знято.`
-                                );
-                              }}
-                            >
-                              Зняти відмітку
-                            </Button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Restrained 7-Day Monday-Sunday Weekly Strip (9.3 / C14) */}
-                  <div className="space-y-2">
-                    <div className="flex flex-wrap items-center justify-between gap-2 text-[12px]">
-                      <span
-                        style={{ color: 'var(--text-secondary)' }}
-                        data-testid={`habit-week-summary-${habit.id}`}
-                      >
-                        Тиждень {weekProgress.weekStartMonday} –{' '}
-                        {weekProgress.weekEndSunday}: виконано{' '}
-                        <strong style={{ color: 'var(--text-primary)' }}>
-                          {weekProgress.completedCount} /{' '}
-                          {weekProgress.scheduledTargetCount}
-                        </strong>
-                        {weekProgress.partialCount > 0
-                          ? ` · частково: ${weekProgress.partialCount}`
-                          : ''}
-                        {weekProgress.skippedCount > 0
-                          ? ` · пропущено: ${weekProgress.skippedCount}`
-                          : ''}
-                      </span>
-                      <span style={{ color: 'var(--text-secondary)' }}>
-                        {streakSummary.explanationUk}
-                      </span>
-                    </div>
-
-                    <div
-                      className="grid grid-cols-7 gap-1.5"
-                      role="group"
-                      aria-label={`Тижнева історія для ${habit.name}`}
-                    >
-                      {weekProgress.days.map((day, idx) => {
-                        const wdShort = ISO_WEEKDAYS_UK[idx]?.shortUk ?? '';
-                        const isSelected = day.localDate === selectedDate;
-                        const cellInfo = getCellSymbolAndLabelUk(
-                          day.cellStatus
-                        );
-                        return (
-                          <button
-                            key={day.localDate}
-                            type="button"
-                            onClick={() => onSelectDate(day.localDate)}
-                            aria-label={`${wdShort} ${day.localDate}: ${cellInfo.shortLabelUk}`}
-                            aria-pressed={isSelected}
-                            data-testid={`habit-week-cell-${habit.id}-${day.localDate}`}
-                            className="min-h-[54px] p-1.5 rounded-xl flex flex-col items-center justify-center text-center cursor-pointer planui-transition-micro"
-                            style={{
-                              backgroundColor:
-                                day.cellStatus === 'completed'
-                                  ? 'var(--bg-pressed)'
-                                  : 'var(--bg-elevated)',
-                              border: isSelected
-                                ? '2px solid var(--color-brand)'
-                                : '1px solid var(--border-subtle)',
-                              color: 'var(--text-primary)',
-                            }}
-                          >
-                            <span
-                              className="text-[11px] font-medium"
-                              style={{ color: 'var(--text-secondary)' }}
-                            >
-                              {wdShort} {day.localDate.slice(8, 10)}
-                            </span>
-                            <span
-                              className="text-[14px] font-bold mt-0.5"
-                              style={{
-                                color:
-                                  day.cellStatus === 'completed'
-                                    ? 'var(--color-dayoff-text)'
-                                    : day.cellStatus === 'not_scheduled' ||
-                                      day.cellStatus === 'paused'
-                                    ? 'var(--text-secondary)'
-                                    : 'var(--text-primary)',
-                              }}
-                            >
-                              {cellInfo.symbol}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Expandable Monthly Overview & Rule Revision History (9.3) */}
-                  <div
-                    className="pt-2 border-t space-y-2.5"
-                    style={{ borderColor: 'var(--border-subtle)' }}
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <Button
-                        type="button"
-                        variant="subtle"
-                        size="sm"
-                        aria-expanded={isMonthExpanded}
-                        data-testid={`habit-month-toggle-${habit.id}`}
-                        onClick={() =>
-                          setExpandedMonthHabitIds((prev) => ({
-                            ...prev,
-                            [habit.id]: !prev[habit.id],
-                          }))
-                        }
-                      >
-                        {isMonthExpanded ? (
-                          <>
-                            <span>
-                              Сховати місячний огляд ({activeYearMonth}) та
-                              ревізії
-                            </span>
-                            <ChevronUp
-                              className="w-4 h-4 ml-1"
-                              aria-hidden="true"
-                            />
-                          </>
-                        ) : (
-                          <>
-                            <span>
-                              Історія за місяць ({activeYearMonth}) та ревізії
-                              правила ({sortedRevs.length})
-                            </span>
-                            <ChevronDown
-                              className="w-4 h-4 ml-1"
-                              aria-hidden="true"
-                            />
-                          </>
-                        )}
-                      </Button>
-
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          size="sm"
-                          data-testid={`habit-edit-btn-${habit.id}`}
-                          onClick={() => openEditModal(habit)}
-                        >
-                          <Edit3 className="w-4 h-4 mr-1" aria-hidden="true" />
-                          Змінити / нове правило
-                        </Button>
-
-                        {habit.state === 'active' && (
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            size="sm"
-                            data-testid={`habit-pause-btn-${habit.id}`}
-                            onClick={() =>
-                              void handleChangeState(habit, 'paused')
-                            }
-                          >
-                            <PauseCircle
-                              className="w-4 h-4 mr-1"
-                              aria-hidden="true"
-                            />
-                            На паузу
-                          </Button>
-                        )}
-
-                        {habit.state === 'paused' && (
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            size="sm"
-                            data-testid={`habit-resume-btn-${habit.id}`}
-                            onClick={() =>
-                              void handleChangeState(habit, 'active')
-                            }
-                          >
-                            <PlayCircle
-                              className="w-4 h-4 mr-1"
-                              aria-hidden="true"
-                            />
-                            Відновити
-                          </Button>
-                        )}
-
-                        {habit.state !== 'archived' ? (
-                          <Button
-                            type="button"
-                            variant="subtle"
-                            size="sm"
-                            data-testid={`habit-archive-btn-${habit.id}`}
-                            onClick={() =>
-                              void handleChangeState(habit, 'archived')
-                            }
-                          >
-                            <Archive
-                              className="w-4 h-4 mr-1"
-                              aria-hidden="true"
-                            />
-                            В архів
-                          </Button>
-                        ) : (
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            size="sm"
-                            data-testid={`habit-unarchive-btn-${habit.id}`}
-                            onClick={() =>
-                              void handleChangeState(habit, 'active')
-                            }
-                          >
-                            Розархівувати
-                          </Button>
-                        )}
-
-                        <Button
-                          type="button"
-                          variant="danger"
-                          size="sm"
-                          data-testid={`habit-delete-btn-${habit.id}`}
-                          onClick={() => {
-                            setDeletingHabit(habit);
-                            onModalStateChange?.(true);
-                          }}
-                        >
-                          <Trash2 className="w-4 h-4 mr-1" aria-hidden="true" />
-                          Видалити
-                        </Button>
-                      </div>
-                    </div>
-
-                    {isMonthExpanded && monthProgress && (
-                      <div
-                        className="p-3.5 rounded-2xl space-y-3"
-                        style={{ backgroundColor: 'var(--bg-elevated)' }}
-                        data-testid={`habit-month-panel-${habit.id}`}
-                      >
-                        <div className="text-[13px] font-medium">
-                          Підсумок за {activeYearMonth}: виконано днів —{' '}
-                          <strong>{monthProgress.completedCount}</strong>,
-                          частково —{' '}
-                          <strong>{monthProgress.partialCount}</strong>,
-                          свідомо пропущено —{' '}
-                          <strong>{monthProgress.skippedCount}</strong> (із{' '}
-                          {monthProgress.scheduledOpportunitiesCount}{' '}
-                          запланованих днів).
-                        </div>
-
-                        <div className="grid grid-cols-7 sm:grid-cols-10 gap-1">
-                          {monthProgress.days.map((d) => {
-                            const info = getCellSymbolAndLabelUk(d.cellStatus);
-                            return (
-                              <button
-                                key={d.localDate}
-                                type="button"
-                                onClick={() => onSelectDate(d.localDate)}
-                                aria-label={`${d.localDate}: ${info.shortLabelUk}`}
-                                className="min-h-[38px] px-1 py-1 rounded-lg text-[11px] flex flex-col items-center justify-center cursor-pointer"
-                                style={{
-                                  backgroundColor: 'var(--bg-surface)',
-                                  border:
-                                    d.localDate === selectedDate
-                                      ? '1.5px solid var(--color-brand)'
-                                      : '1px solid var(--border-subtle)',
-                                }}
-                              >
-                                <span>{d.localDate.slice(8, 10)}</span>
-                                <span className="font-bold">{info.symbol}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-
-                        {/* Effective-dated rule revisions list (9.3: Do not rewrite old history with new rules) */}
-                        <div className="space-y-1 pt-1">
-                          <div
-                            className="text-[12px] font-semibold"
-                            style={{ color: 'var(--text-secondary)' }}
-                          >
-                            Історія ревізій правила за датами початку дії:
-                          </div>
-                          <ul
-                            className="space-y-1 m-0 p-0 list-none text-[12px]"
-                            data-testid={`habit-revisions-list-${habit.id}`}
-                          >
-                            {sortedRevs.map((r) => (
-                              <li
-                                key={r.id}
-                                className="px-2.5 py-1.5 rounded-lg flex items-center justify-between gap-2"
-                                style={{ backgroundColor: 'var(--bg-surface)' }}
-                              >
-                                <span>
-                                  Діє з <strong>{r.effectiveFromLocalDate}</strong>
-                                </span>
-                                <span>
-                                  {formatHabitRuleSummaryUk(r.rule, r.target)}
-                                </span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </Card>
-            );
-          })}
-        </div>
-      )}
+      {history ? <><SubHeader title="Усі звички та історія" onBack={()=>setHistory(false)}/><DateField label="Дата історії" value={selectedDate} onChange={e=>onSelectDate(e.target.value)}/></> : null}
+      {nightShiftAlternative && <Section><Row title={`Звичковий день · ${formatDate(selectedDate,{day:'numeric',month:'long'})}${selectedDate===previousLocalDate?' · після нічної зміни':''}`} trailing={<Button onClick={()=>setDateOpen(true)}>Змінити</Button>}/></Section>}
+      <Sheet title="Звичковий день" isOpen={dateOpen} onClose={()=>setDateOpen(false)}><Section>{[{label:'Сьогодні',date:actualTodayDate},{label:'За вчора після нічної зміни',date:previousLocalDate}].map(o=><Row key={o.label} title={o.label} trailing={<Button onClick={()=>{onSelectDate(o.date);setDateOpen(false);}}>Обрати</Button>}/>)}<DateField label="Інша дата" value={selectedDate} onChange={e=>onSelectDate(e.target.value)}/></Section></Sheet>
+      {(() => {
+        const visible=habits.filter(h=>history || h.state==='active');
+        const context=(h:Habit)=>{const rule=getEffectiveHabitRuleRevisionForDate(h,selectedDate)?.rule;return h.contextCueUk?.includes('пробудження')?'Після пробудження':rule?.kind==='days_off'?'У вихідні від роботи':rule?.kind==='weekly_frequency'?`${rule.timesPerWeek} рази на тиждень`:'Щодня';};
+        const renderHabit=(habit:Habit)=>{
+          const entries=entriesByHabitId.get(habit.id)??[];
+          const state=evaluateHabitOnDate({habit,entriesForHabit:entries,localDate:selectedDate,daysOff:dayOffDates});
+          const done=state.cellStatus==='completed', minimum=Boolean(state.entry?.minimumCompletedUk);
+          const record=async(kind:'complete'|'minimum'|'clear'|'skip')=>{try{await repositories.recordHabitEntryForDateTransactionally({habitId:habit.id,localDate:selectedDate,input:{kind}});await onDataChanged();}catch{await onDataChanged('Не вдалося записати виконання.');}};
+          return <div key={habit.id} className="habit-row" data-testid={`habit-row-${habit.id}`}><Row leading={<Repeat size={20}/>} title={habit.name} secondary={habit.minimumVersionUk?`Мінімум: ${habit.minimumVersionUk}`:habit.contextCueUk??undefined} trailing={<><button className="habit-check" type="button" aria-label={`Стандарт: ${habit.name}`} aria-pressed={done} data-minimum={minimum&&!done} onClick={()=>void record('complete')}>{done||minimum?'✓':'○'}{minimum&&!done&&<small>мінімум</small>}</button>{habit.minimumVersionUk&&<Button variant="secondary" size="sm" onClick={()=>void record('minimum')}>Мінімум</Button>}<ActionMenu label={`Дії: ${habit.name}`} items={[{label:habit.state==='active'?'Пауза':'Відновити',onSelect:()=>void handleChangeState(habit,habit.state==='active'?'paused':'active')},{label:'Редагувати',onSelect:()=>openEditModal(habit)},{label:'Прибрати відмітку',onSelect:()=>void record('clear')},{label:'Пропустити',onSelect:()=>void record('skip')},{label:'Архів',onSelect:()=>void handleChangeState(habit,'archived')},...(history?[{label:'Видалити',onSelect:()=>setDeletingHabit(habit)},{label:'Запланувати в календарі',onSelect:()=>onPlanHabit?.(habit.id,selectedDate)}]:[])]}/></>}/><div className="habit-dots" aria-label="Останні сім днів">{Array.from({length:7},(_,i)=>{const date=addDaysToLocalDate(selectedDate,i-6);const entry=entries.find(e=>e.localDate===date);return <span role="img" key={date} aria-label={formatDate(date)} data-done={Boolean(entry&&(entry.status==='completed'||entry.minimumCompletedUk))}/>;})}</div>{history&&state.effectiveRevision.target.kind==='numeric'&&<div className="flex gap-2 p-3"><InputField label={`Кількість (${state.effectiveRevision.target.unitUk})`} type="number" min={0} value={numericDraftByHabit[habit.id]??String(state.entry?.numericValue??0)} onChange={e=>setNumericDraftByHabit({...numericDraftByHabit,[habit.id]:e.target.value})}/><Button onClick={async()=>{try{await repositories.recordHabitEntryForDateTransactionally({habitId:habit.id,localDate:selectedDate,input:{kind:'set_numeric',numericValue:Number(numericDraftByHabit[habit.id]??state.entry?.numericValue??0)}});await onDataChanged();}catch{await onDataChanged('Не вдалося зберегти кількість.');}}}>Записати</Button></div>}{history&&<details><summary>Історія</summary>{entries.map(entry=><Row key={entry.id} title={formatDate(entry.localDate)} secondary={entry.minimumCompletedUk?'Мінімум':entry.status==='completed'?'Виконано':'Без виконання'}/>)}</details>}</div>;
+        };
+        return <>{[...new Set(visible.map(context))].map(label=><Section key={label} title={label}>{visible.filter(h=>context(h)===label).map(renderHabit)}</Section>)}{!visible.length&&<div className="ui-surface p-3 flex items-center justify-between"><span>Звичок поки немає</span><Button onClick={()=>onOpenGlobalCreation('habit')}>Додати звичку</Button></div>}{!history&&habits.some(h=>h.state==='paused')&&<Section title="На паузі"><Row title="На паузі" trailing={<Button aria-expanded={pausedOpen} onClick={()=>setPausedOpen(!pausedOpen)}>⌄</Button>}/>{pausedOpen&&habits.filter(h=>h.state==='paused').map(renderHabit)}</Section>}</>;
+      })()}
+      {!history&&<Section><Row title="Усі звички та історія" trailing={<Button aria-label="Усі звички та історія" onClick={()=>setHistory(true)}>›</Button>}/></Section>}
+      <InfoSheet title="Звички"><p>Звички — необов’язкова підтримка. Після пробудження — контекст, а не час. Невідмічені дні не створюють боргу.</p></InfoSheet>
 
       {/* Modal 1: Edit Habit Metadata & Append Effective-Dated Rule Revision (9.3) */}
-      <ModalSheet
+      <Sheet
         isOpen={Boolean(editingHabit)}
-        title="Редагування звички та ревізія правила"
-        subtitle="Нове правило набуває чинності з обраної дати й не переписує попередню історію"
+        title="Редагувати звичку"
         onClose={closeEditModal}
       >
         {editingHabit && (
@@ -1259,7 +405,7 @@ export function HabitsWorkspaceView({
             data-testid="edit-habit-revision-form"
           >
             <InputField
-              label="Назва звички"
+              label="Що робити"
               value={editName}
               onChange={(e) => setEditName(e.target.value)}
               data-testid="edit-habit-name-input"
@@ -1297,13 +443,12 @@ export function HabitsWorkspaceView({
               />
             </div>
 
-            <InputField label="Мінімальна версія (текст, необов’язково)" value={editMinimum} onChange={e => setEditMinimum(e.target.value)} />
-            <InputField label="Контекст / підказка (необов’язково)" value={editCue} onChange={e => setEditCue(e.target.value)} />
+            <InputField label="Мінімальний варіант" value={editMinimum} onChange={e => setEditMinimum(e.target.value)} />
+            <InputField label="Зручний контекст" value={editCue} onChange={e => setEditCue(e.target.value)} />
             <InputField label="Мій намір нагадати собі (без будильника)" value={editReminder} onChange={e => setEditReminder(e.target.value)} />
             <SelectField label="Напрям (без проєкту)" value={editProjectId ? '' : editFolder} disabled={Boolean(editProjectId)} onChange={e => setEditFolder(e.target.value)} options={[{value: '', label: 'Без напряму'}, ...folders.map(f => ({value:f.id,label:f.name}))]} />
-            <InputField
-              label="Нова ревізія правила діє з дати"
-              type="date"
+            <DateField
+              label="Діє з дати"
               lang="uk"
               value={editEffectiveDate}
               onChange={(e) => setEditEffectiveDate(e.target.value)}
@@ -1315,6 +460,7 @@ export function HabitsWorkspaceView({
               <span className="text-[14px] font-medium block">
                 Правило повторення з цієї дати
               </span>
+              <Button variant="secondary" onClick={()=>{setEditRuleKind('daily');setEditCue('Після пробудження');}}>Після пробудження</Button>
               <SegmentedControl<
                 'daily' | 'days_off' | 'selected_weekdays' | 'weekly_frequency'
               >
@@ -1422,13 +568,7 @@ export function HabitsWorkspaceView({
             )}
 
             <div className="flex items-center justify-end gap-2 pt-2">
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={closeEditModal}
-              >
-                {UK_STRINGS.app.cancelButton}
-              </Button>
+
               <Button
                 type="submit"
                 variant="primary"
@@ -1439,10 +579,10 @@ export function HabitsWorkspaceView({
             </div>
           </form>
         )}
-      </ModalSheet>
+      </Sheet>
 
       {/* Modal 2: Delete Habit with History Impact Explanation (9.3) */}
-      <ModalSheet
+      <Sheet
         isOpen={Boolean(deletingHabit)}
         title="Видалення звички, історії та її сеансів"
         subtitle="Перевірте вплив на збережену історію перед остаточним видаленням"
@@ -1515,7 +655,7 @@ export function HabitsWorkspaceView({
             </div>
           </div>
         )}
-      </ModalSheet>
+      </Sheet>
     </div>
   );
 }

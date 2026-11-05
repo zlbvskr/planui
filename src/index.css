@@ -460,8 +460,8 @@ html:not(.dark) [data-testid="destination-view-today"] [data-testid$="current-ti
 .today-item-open h3 { font-size: 20px; }
 .today-reminder .today-item-open h3 { font-size: 14px; }
 .today-tools > details > summary { top: -2px; right: 4px; min-height: 44px; transform: translateY(-50%); }
-.today-habits .ui-row { flex-wrap: wrap; padding-inline: 0; }
-.today-habits .ui-row > div { min-width: 100%; }
+
+
 .today-focus-note { font-size: 14px; color: var(--text-secondary); }
 .today-scrolled .today-mode-bar { backdrop-filter: blur(20px) saturate(180%); -webkit-backdrop-filter: blur(20px) saturate(180%); background: var(--glass-bg); }
 @media (prefers-reduced-transparency: reduce) { .today-scrolled .today-mode-bar { backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--glass-bg-fallback); } }
@@ -590,3 +590,30 @@ input[type="date"], input[type="time"] { max-width: 100%; min-width: 0; }
 .today-round-menu { border-radius: 50%; width: 44px; height: 44px; }
 .today-task-sections > .ui-section { margin-block: 0; }
 [data-testid="today-lifecycle-undo-banner"] { position: fixed; bottom: calc(108px + env(safe-area-inset-bottom)); left: 16px; right: 16px; z-index: 40; }
+.habit-row + .habit-row { border-top: 1px solid var(--border-subtle); }
+.habit-row .ui-row { gap: 8px; }
+.habit-row .ui-row-trailing { gap: 4px; }
+.habit-check { min-width:44px; min-height:44px; border:1px solid var(--border-subtle); border-radius:50%; display:flex; align-items:center; justify-content:center; flex-direction:column; }
+.habit-check[aria-pressed=true] { background:var(--color-brand);color:white; }
+.habit-check[data-minimum=true] { background:var(--bg-pressed); }
+.habit-check small {font-size:9px;}
+.habit-dots {display:flex;gap:6px;padding:0 20px 12px 64px;}
+.habit-dots span,.review-dots>span {width:7px;height:7px;border-radius:50%;border:1px solid var(--border-strong);}
+.habit-dots [data-done=true],.review-dots [data-active=true] {background:var(--color-brand);border-color:var(--color-brand);}
+.review-dots {display:flex;align-items:center;gap:8px;}
+.today-heading-actions .ui-round[aria-pressed=true] {color:var(--color-brand);background:var(--bg-pressed);}
+.triage-keep {min-height:44px;text-decoration:underline;}
+.quick-add-form .quick-context-panel>summary,.quick-add-form .quick-duration-panel>summary {display:none;}
+
+.quick-add-form > div:first-child input {border:0!important;background:transparent!important;font-size:24px;padding:4px 0 12px;}
+.quick-fields [data-testid="create-event-title-input"],.quick-fields [data-testid="create-habit-name-input"],.quick-fields [data-testid="create-wish-title-input"] {display:none;}
+.quick-fields:has([data-testid="create-event-title-input"]) label:has(+ #unused) {display:none;}
+.review-amber {color:var(--text-secondary);border-left:3px solid #d9ad66;padding:8px 12px;}
+.weekly-review {max-height:64dvh;overflow-y:auto;}
+
+.today-habits button {flex-shrink:0;min-width:44px;}
+.today-habits .ui-row {padding:12px;gap:8px;}
+.today-habits .ui-icon-tile {width:32px;min-width:32px;}
+
+[data-testid="destination-view-today"]>.ui-week {margin-bottom:-2px;}
+.quick-add-form>div:has(>input) input {outline:0;border:0!important;background:transparent!important;font-size:24px;}

@@ -170,6 +170,7 @@ export function TodayTasksPanel({
         ]}
       />
       {error && <p role="alert">{error}</p>}
+      {plan.minimalDay&&projection.relevant.filter(t=>!projection.visible.includes(t)).length>0&&<Section title="Можна відкласти">{projection.relevant.filter(t=>!projection.visible.includes(t)).map(task=><div className="ui-row" key={task.id}><span className="flex-1">{task.title}</span><button type="button" className="ui-pill" onClick={async()=>{try{await repositories.setTaskDateOnlyPlanningTransactionally(task.id,null,new Date().toISOString(),task.revision);await onChanged();}catch{setError('Не вдалося повернути справу до списку.');}}}>До списку</button><button type="button" className="ui-pill" onClick={()=>onPlan(task,'Перенести')}>Перенести</button></div>)}</Section>}
       {!visible.length && (
         <EmptyState
           text="Поки немає завдань."

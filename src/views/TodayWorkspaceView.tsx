@@ -1,3 +1,4 @@
+import { DateField, Row, Section } from '../ui';
 import { formatSubtitle } from "../lib/format";
 import { evaluateHabitOnDate } from "../domain/habits";
 import { DayCanvas } from "../components/today/DayCanvas";
@@ -143,6 +144,12 @@ export function TodayWorkspaceView({
   const actionDate=effectiveMode==='day'?viewDate:selectedDate;
   const actionPlan=dailyPlans?.[actionDate]??(actionDate===selectedDate?dailyPlan:EMPTY_DAILY_PLAN);
   useEffect(() => setViewDate(selectedDate), [selectedDate]);
+  const [triageIndex,setTriageIndex]=useState(0);
+  const [triageDismissed,setTriageDismissed]=useState(false);
+  const [rescheduleOpen,setRescheduleOpen]=useState(false);
+  const [triageDate,setTriageDate]=useState(selectedDate);
+  const triageTasks=tasks.filter(task=>selectTaskReviewState(task,actualTodayDate,reservations,activeZone)==="needs_triage");
+  const triageTask=triageTasks[triageIndex];
   const [reviewOpen, setReviewOpen] = useState(false);
   const [focusOpen, setFocusOpen] = useState(false);
   useEffect(() => {
@@ -163,6 +170,7 @@ export function TodayWorkspaceView({
     task: Task;
     reservationId?: string;
     reviewAction?: string;
+    initialDate?: string;
   } | null>(null);
   useEffect(() => {
     onModalStateChange?.(Boolean(planningTask) || focusOpen || reviewOpen);
@@ -214,7 +222,7 @@ export function TodayWorkspaceView({
         </div>
         <div className="today-heading-actions">
           <RoundButton
-            aria-label="Мінімальний день"
+            aria-label={`Мінімальний день: ${actionPlan.minimalDay?"увімкнено":"вимкнено"}`}
             aria-pressed={actionPlan.minimalDay}
             onClick={async () => {
               try {
@@ -237,6 +245,7 @@ export function TodayWorkspaceView({
             <ActionMenu
               label="Інші дії дня"
               items={[
+                { label: "Повернути все", onSelect: async () => { await repositories.saveDailyPlan(actionDate,{...actionPlan,minimalDay:false},actionPlan); await onDataChanged(); } },
                 { label: "Фокус дня", onSelect: () => setFocusOpen(true) },
                 {
                   label: "Переглянути попередні плани",
@@ -304,44 +313,9 @@ export function TodayWorkspaceView({
         )}
       />
 
-      <Sheet
-        title="Попередні плани"
-        isOpen={reviewOpen}
-        onClose={() => setReviewOpen(false)}
-      >
-        <ul>
-          {tasks
-            .filter(
-              (task) =>
-                selectTaskReviewState(
-                  task,
-                  actualTodayDate,
-                  reservations,
-                  activeZone,
-                ) === "needs_triage",
-            )
-            .map((task) => (
-              <li key={task.id} data-review-state="needs_triage">
-                <p>{task.title}</p>
-                <div className="flex flex-wrap gap-2">
-                  {[
-                    "Перенести",
-                    "Зменшити обсяг",
-                    "Розділити",
-                    "Поставити на паузу",
-                    "Відмовитися",
-                  ].map((reviewAction) => (
-                    <Button
-                      key={reviewAction}
-                      onClick={() => setPlanningTask({ task, reviewAction })}
-                    >
-                      {reviewAction}
-                    </Button>
-                  ))}
-                </div>
-              </li>
-            ))}
-        </ul>
+      {effectiveMode!=='habits'&&!triageDismissed&&triageTasks.length>0&&<div data-ui="content-start"><Section><Row title="Переглянути попередні плани" trailing={<><Button onClick={()=>{setTriageIndex(0);setReviewOpen(true);}}>Переглянути</Button><RoundButton aria-label="Приховати пропозицію" onClick={()=>setTriageDismissed(true)}>×</RoundButton></>}/></Section></div>}
+      <Sheet title="Попередні плани" isOpen={reviewOpen} onClose={()=>setReviewOpen(false)}>
+        {triageTask?<div className="space-y-4"><div className="review-dots" role="group" aria-label={`${triageIndex+1} з ${triageTasks.length}`}>{triageTasks.map((task,i)=><span key={task.id} data-active={i===triageIndex}/>)}<small>{triageIndex+1} з {triageTasks.length}</small></div><h2>{triageTask.title}</h2><p>Потребує вашого рішення</p><div className="flex flex-wrap gap-2">{['Перенести','Зменшити обсяг','Розділити','Поставити на паузу','Відмовитися'].map(action=><button type="button" className="ui-pill" key={action} onClick={()=>action==='Перенести'?setRescheduleOpen(!rescheduleOpen):setPlanningTask({task:triageTask,reviewAction:action})}>{action}</button>)}</div>{rescheduleOpen&&<Section>{['Сьогодні ввечері','Завтра'].map(label=><Row key={label} title={label} trailing={<Button onClick={()=>{setRescheduleOpen(false);setPlanningTask({task:triageTask,reviewAction:'Перенести',initialDate:label==='Завтра'?addDaysToLocalDate(actualTodayDate,1):actualTodayDate});}}>Обрати</Button>}/>)}<DateField label="Інша дата" value={triageDate} onChange={e=>{setTriageDate(e.target.value);setPlanningTask({task:triageTask,reviewAction:'Перенести',initialDate:e.target.value});}}/></Section>}<button type="button" className="triage-keep" onClick={()=>{setRescheduleOpen(false);if(triageIndex+1<triageTasks.length)setTriageIndex(triageIndex+1);else setReviewOpen(false);}}>Залишити як є</button></div>:<p>Усе переглянуто</p>}
       </Sheet>
       <DailyFocusPanel
         key={actionDate + ":" + JSON.stringify(actionPlan)}
@@ -396,6 +370,7 @@ export function TodayWorkspaceView({
         <TaskPlanningSheet
           key={planningTask.task.id + ":" + (planningTask.reservationId ?? "")}
           reviewAction={planningTask.reviewAction}
+          initialDate={planningTask.initialDate}
           task={planningTask.task}
           initialReservationId={planningTask.reservationId}
           date={selectedDate}
@@ -472,74 +447,7 @@ export function TodayWorkspaceView({
 
       {effectiveMode === "habits" && habitsEnabled && (
         <section className="today-habits space-y-4" data-ui="content-start">
-          <h2 className="ui-section-label">Звички дня</h2>
-          {habits
-            .filter((h) => h.state === "active")
-            .map((h) => {
-              const state = evaluateHabitOnDate({
-                habit: h,
-                entriesForHabit: habitEntries.filter((e) => e.habitId === h.id),
-                localDate: selectedDate,
-                daysOff: dayOffAnnotations.map((d) => d.localDate),
-              });
-              return (
-                <div className="ui-row" key={h.id}>
-                  <div className="flex-1">
-                    <p className="ui-section-label">
-                      {h.contextCueUk || "Щодня"}
-                    </p>
-                    <h3>{h.name}</h3>
-                  </div>
-                  <Pill
-                    selected={state.cellStatus === "completed"}
-                    onClick={async () => {
-                      try {
-                        await repositories.recordHabitEntryForDateTransactionally(
-                          {
-                            habitId: h.id,
-                            localDate: selectedDate,
-                            input: { kind: "complete" },
-                          },
-                        );
-                        await onDataChanged();
-                      } catch {
-                        window.alert("Не вдалося записати виконання.");
-                      }
-                    }}
-                  >
-                    Стандарт
-                  </Pill>
-                  {h.minimumVersionUk && (
-                    <Pill
-                      selected={Boolean(state.entry?.minimumCompletedUk)}
-                      onClick={async () => {
-                        try {
-                          await repositories.recordHabitEntryForDateTransactionally(
-                            {
-                              habitId: h.id,
-                              localDate: selectedDate,
-                              input: { kind: "minimum" },
-                            },
-                          );
-                          await onDataChanged();
-                        } catch {
-                          window.alert("Не вдалося записати виконання.");
-                        }
-                      }}
-                    >
-                      Мінімум
-                    </Pill>
-                  )}
-                </div>
-              );
-            })}
-          {!habits.some((h) => h.state === "active") && (
-            <p className="text-sm">Додайте звичку для свого ритму дня.</p>
-          )}
-          <details>
-            <summary className="ui-pill">Керувати звичками й історією</summary>
-            {habitsContent}
-          </details>
+          {habitsContent}
         </section>
       )}
       {effectiveMode === "tasks" && (

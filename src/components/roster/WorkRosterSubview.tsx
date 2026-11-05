@@ -1118,7 +1118,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
             </div>
           )}
           <CalendarGrid
-            grid={{...monthGrid,secondaryFilter:"work"}}
+            grid={{ ...monthGrid, secondaryFilter: "work" }}
             compact={stampMode}
             markedDates={selectedBatchDates}
             onSelect={choose}
@@ -1240,8 +1240,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
               />
             </Section>
           )}
-          {!stampMode &&
-            interactionMode === "browse" &&
+          {(stampMode || interactionMode === "browse") &&
             !selectedDateWorkItems.length &&
             !selectedDateRawDayOffs.length && (
               <p className="calendar-muted-day">Немає запису</p>
@@ -1309,54 +1308,65 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
             <Row title="Немає запису" />
           )}
           {selectedDateWorkItems.map((item) => (
-            <Row
-              key={item.sourceId}
-              title={item.title}
-              secondary={formatTimeRange(
-                item.segment.displayStartLocalTime,
-                item.segment.displayEndLocalTime,
-              )}
-              trailing={
-                <ActionMenu
-                  label={`Дії зміни: ${item.title}`}
-                  items={[
-                    {
-                      label: "Змінити тільки цей день",
-                      onSelect: () => {
-                        const event = events.find(
-                          (e) => e.id === item.sourceId,
-                        );
-                        if (event) {
-                          setDayActions(false);
-                          onInspectEvent(event);
-                        }
-                      },
-                    },
-                    {
-                      label: "Вихідний",
-                      onSelect: () => {
-                        void paint([selectedDate], {
-                          kind: "day_off",
-                          code: "В",
-                          note: null,
-                        });
+            <React.Fragment key={item.sourceId}>
+              <Row
+                title={item.title}
+                secondary={formatTimeRange(
+                  item.segment.displayStartLocalTime,
+                  item.segment.displayEndLocalTime,
+                )}
+              />
+              <Row
+                title="Змінити тільки цей день"
+                trailing={
+                  <RoundButton
+                    aria-label="Змінити тільки цей день"
+                    onClick={() => {
+                      const event = events.find((e) => e.id === item.sourceId);
+                      if (event) {
                         setDayActions(false);
-                      },
-                    },
-                    {
-                      label: "Видалити",
-                      onSelect: () => {
-                        const event = events.find(
-                          (e) => e.id === item.sourceId,
-                        );
-                        if (event) void onCancelEvent(event.id, event.revision);
-                        setDayActions(false);
-                      },
-                    },
-                  ]}
-                />
-              }
-            />
+                        onInspectEvent(event);
+                      }
+                    }}
+                  >
+                    ›
+                  </RoundButton>
+                }
+              />
+              <Row
+                title="Вихідний"
+                trailing={
+                  <RoundButton
+                    aria-label="Вихідний"
+                    onClick={() => {
+                      void paint([selectedDate], {
+                        kind: "day_off",
+                        code: "В",
+                        note: null,
+                      });
+                      setDayActions(false);
+                    }}
+                  >
+                    ○
+                  </RoundButton>
+                }
+              />
+              <Row
+                title="Видалити"
+                trailing={
+                  <RoundButton
+                    aria-label="Видалити зміну"
+                    onClick={() => {
+                      const event = events.find((e) => e.id === item.sourceId);
+                      if (event) void onCancelEvent(event.id, event.revision);
+                      setDayActions(false);
+                    }}
+                  >
+                    ×
+                  </RoundButton>
+                }
+              />
+            </React.Fragment>
           ))}
           {selectedDateRawDayOffs.map((off) => (
             <Row

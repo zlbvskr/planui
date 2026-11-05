@@ -565,6 +565,7 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
       if (Array.from(document.querySelectorAll('[role=dialog]')).at(-1)!==dialogRef.current) return;
       if (e.key === 'Escape') {
         e.preventDefault();
+        e.stopImmediatePropagation();
         if (showDirtyConfirm) {
           setShowDirtyConfirm(false);
         } else if (isDirty) {

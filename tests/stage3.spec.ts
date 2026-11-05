@@ -30,6 +30,21 @@ try {
   assert.ok(await grid.locator(".calendar-night-bridge").count());
   const header = await page.locator('[data-ui="page-header"]').boundingBox();
   assert.ok(header && header.height <= 260, `Header ${header?.height}`);
+  await page.evaluate(() => scrollTo(0, 350));
+  await page.waitForTimeout(100);
+  assert.equal(
+    await page.locator('[data-ui="page-header"]').getAttribute("data-compact"),
+    "true",
+  );
+  const stampBounds = await page
+    .getByRole("button", { name: "Штамп змін", exact: true })
+    .boundingBox();
+  assert.ok(
+    stampBounds && stampBounds.y < 120,
+    "Stamp stays reachable in the compact bar",
+  );
+  await page.evaluate(() => scrollTo(0, 0));
+  await page.waitForTimeout(100);
   await page
     .getByRole("button", { name: "Наступний період", exact: true })
     .click();
@@ -80,14 +95,45 @@ try {
   assert.ok(newShift);
   assert.equal(newShift.schedule.interval.originStartLocalDate, "2026-11-18");
   assert.equal(newShift.schedule.interval.originEndLocalDate, "2026-11-19");
-  const firstDrag=await sheet.locator('[data-calendar-date="2026-11-20"]').boundingBox();
-  const lastDrag=await sheet.locator('[data-calendar-date="2026-11-21"]').boundingBox();
-  assert.ok(firstDrag&&lastDrag);
-  await page.mouse.move(firstDrag.x+firstDrag.width/2,firstDrag.y+firstDrag.height/2);
-  await page.mouse.down();await page.mouse.move(lastDrag.x+lastDrag.width/2,lastDrag.y+lastDrag.height/2,{steps:8});await page.mouse.up();
+  await sheet.locator('[data-calendar-date="2026-11-18"]').click();
+  for (const label of ["Змінити тільки цей день", "Вихідний", "Видалити зміну"])
+    assert.equal(
+      await page
+        .getByRole("dialog")
+        .last()
+        .getByRole("button", { name: label, exact: true })
+        .count(),
+      1,
+    );
+  await page.keyboard.press("Escape");
+  const firstDrag = await sheet
+    .locator('[data-calendar-date="2026-11-20"]')
+    .boundingBox();
+  const lastDrag = await sheet
+    .locator('[data-calendar-date="2026-11-21"]')
+    .boundingBox();
+  assert.ok(firstDrag && lastDrag);
+  await page.mouse.move(
+    firstDrag.x + firstDrag.width / 2,
+    firstDrag.y + firstDrag.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    lastDrag.x + lastDrag.width / 2,
+    lastDrag.y + lastDrag.height / 2,
+    { steps: 8 },
+  );
+  await page.mouse.up();
   await page.waitForTimeout(150);
-  const dragged=(await snapshot()).events.filter((e:any)=>e.type==='work_shift'&&e.schedule.kind==='timed'&&['2026-11-20','2026-11-21'].includes(e.schedule.interval.originStartLocalDate));
-  assert.equal(dragged.length,2,'Drag stamps each crossed day once');
+  const dragged = (await snapshot()).events.filter(
+    (e: any) =>
+      e.type === "work_shift" &&
+      e.schedule.kind === "timed" &&
+      ["2026-11-20", "2026-11-21"].includes(
+        e.schedule.interval.originStartLocalDate,
+      ),
+  );
+  assert.equal(dragged.length, 2, "Drag stamps each crossed day once");
   await sheet.getByRole("button", { name: "Шаблони", exact: true }).click();
   await sheet
     .getByRole("button", { name: "Шаблон: Нічна", exact: true })

@@ -1,184 +1,263 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Download,
-  Upload,
-  ShieldAlert,
-  Database,
-  Sun,
-  Globe,
-  Eye,
-  Gift,
-  Sliders,
-  Share2,
-  RotateCcw,
-  Trash2,
-  XCircle,
-  HeartHandshake,
-  Layers,
-  Repeat,
-  Sparkles,
-} from 'lucide-react';
-import { UK_STRINGS } from '../i18n/uk';
-import { PlanuiError } from '../i18n/errorsUk';
-import {
-  PLANUI_BACKUP_VERSION,
   PlanuiDomainSnapshot,
   PlanuiSettings,
   RecoverySnapshotRecord,
+  SUPPORTED_CURRENCIES,
   SupportedCurrencyCode,
   ThemePreference,
 } from '../domain/types';
-import { SUPPORTED_CURRENCIES } from '../domain/wishlist';
-import { PlanuiRepositories } from '../storage/repositories';
-import { BACKUP_LIMITS } from '../storage/backup/zipCodec';
 import {
-  ValidatedBackupPreview,
+  detectDeviceTimeZone,
+  isValidIanaZone,
+} from '../domain/temporal';
+import { PlanuiError } from '../i18n/errorsUk';
+import { formatInstant } from '../lib/format';
+import { downloadPersonalRecords, downloadPersonalRecordsCsv } from '../domain/stateCheckIns';
+import { PwaLifecycleState } from '../pwa/pwaController';
+import { PwaInstallAndOfflineView } from '../components/pwa/PwaStatusAndInstallCard';
+import {
+  applyThemeAndAccessibilityToDocument,
+} from '../state/shellStore';
+import {
   deleteRecoverySnapshotTransactionally,
   executeAtomicBackupReplacement,
   exportFullBackupZip,
   exportRecoverySnapshotZip,
+  MAX_RECOVERY_SNAPSHOTS,
   resetAllPlanuiDataTransactionally,
   restoreFromRecoverySnapshotTransactionally,
   validateBackupArchive,
+  ValidatedBackupPreview,
 } from '../storage/backup/backupService';
+import { PlanuiRepositories } from '../storage/repositories';
 import {
-  Button,
-  Card,
-  FeedbackBanner,
-  SegmentedControl,
+  Disclosure,
+  Row,
+  Section,
+  Segmented,
   SelectField,
-} from '../components/ui/primitives';
+  Sheet,
+  Toggle,
+} from '../ui';
 
-const COMMON_IANA_ZONES = [
-  { value: 'Europe/Kyiv', label: 'Europe/Kyiv (Київ)' },
-  { value: 'Europe/Warsaw', label: 'Europe/Warsaw (Варшава)' },
-  { value: 'Europe/Berlin', label: 'Europe/Berlin (Берлін)' },
-  { value: 'Europe/London', label: 'Europe/London (Лондон)' },
-  { value: 'America/New_York', label: 'America/New_York (Нью-Йорк)' },
-  { value: 'America/Chicago', label: 'America/Chicago (Чикаго)' },
-  { value: 'America/Los_Angeles', label: 'America/Los_Angeles (Лос-Анджелес)' },
-  { value: 'Asia/Tokyo', label: 'Asia/Tokyo (Токіо)' },
-  { value: 'UTC', label: 'UTC (Всесвітній координований час)' },
-];
+const COMMON_IANA_TIMEZONES = [
+  'Europe/Kyiv',
+  'Europe/Warsaw',
+  'Europe/Berlin',
+  'Europe/London',
+  'Europe/Paris',
+  'Europe/Madrid',
+  'Europe/Rome',
+  'Europe/Prague',
+  'Europe/Vienna',
+  'Europe/Vilnius',
+  'Europe/Riga',
+  'Europe/Tallinn',
+  'Europe/Bucharest',
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Los_Angeles',
+  'America/Toronto',
+  'Asia/Tokyo',
+  'UTC',
+] as const;
 
-function formatBytesUk(bytes: number): string {
-  if (bytes < 1024) return `${bytes} Б`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`;
-  return `${(bytes / (1024 * 1024)).toFixed(2)} МБ`;
-}
-
-function getRecoveryReasonLabelUk(
-  reason: RecoverySnapshotRecord['reason']
-): string {
-  switch (reason) {
-    case 'pre_import_replacement':
-      return UK_STRINGS.settings.recoveryReasonPreImport;
-    case 'pre_recovery_restore':
-      return UK_STRINGS.settings.recoveryReasonPreRestore;
-    case 'pre_reset':
-      return UK_STRINGS.settings.recoveryReasonPreReset;
-  }
+function getErrorMessageUk(err: unknown): string {
+  return err instanceof Error ? err.message : 'Сталася неочікувана помилка.';
 }
 
 export interface BasicSettingsViewProps {
   settings: PlanuiSettings;
+  activeZone: string;
   snapshot: PlanuiDomainSnapshot;
   recoverySnapshots: RecoverySnapshotRecord[];
   repositories: PlanuiRepositories;
-  onSettingsPatch: (patch: Partial<PlanuiSettings>) => void;
-  onDataReplaced: () => Promise<void>;
-  onOpenWorkRoster?: () => void;
-  onOpenHabits?: () => void;
-  onOpenWishlistCategories?: () => void;
-  onLocalModalOpenChange?: (open: boolean) => void;
+  onSettingsUpdated: (patch: Partial<PlanuiSettings>) => void;
+  onDataReplacedOrReset: (toastMessageUk?: string) => Promise<void>;
+  onOpenWorkRoster: () => void;
+  onOpenHabits: () => void;
+  onOpenWishlistCategories: () => void;
+  onConfirmationStateChange?: (open: boolean) => void;
+  pwaState?: PwaLifecycleState;
+}
+
+interface StoragePersistenceEstimate {
+  persisted: boolean | null;
+  usageBytes: number | null;
+  quotaBytes: number | null;
+}
+
+function formatBytesUk(bytes: number | null | undefined): string {
+  if (bytes === null || bytes === undefined || !Number.isFinite(bytes)) {
+    return 'Невідомо';
+  }
+  if (bytes < 1024) return `${bytes} Б`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} КБ`;
+  const mb = kb / 1024;
+  return `${mb.toFixed(2)} МБ`;
+}
+
+function formatSnapshotReasonUk(reason: RecoverySnapshotRecord['reason']): string {
+  switch (reason) {
+    case 'pre_import_replacement':
+      return 'Перед імпортом ZIP';
+    case 'pre_recovery_restore':
+      return 'Перед відновленням';
+    case 'pre_reset':
+      return 'Перед очищенням';
+  }
+}
+
+function triggerBrowserZipDownload(zipBytes: Uint8Array, filename: string): void {
+  const blob = new Blob([zipBytes as unknown as BlobPart], {
+    type: 'application/zip',
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+function canShareZipFiles(): boolean {
+  if (typeof navigator === 'undefined' || typeof navigator.share !== 'function' || typeof navigator.canShare !== 'function') {
+    return false;
+  }
+  try {
+    const testFile = new File([new Uint8Array([80, 75, 5, 6])], 'test.zip', {
+      type: 'application/zip',
+    });
+    return navigator.canShare({ files: [testFile] });
+  } catch {
+    return false;
+  }
+}
+
+async function shareBrowserZipFile(
+  zipBytes: Uint8Array,
+  filename: string,
+  titleUk: string
+): Promise<boolean> {
+  if (!canShareZipFiles()) return false;
+  const file = new File([zipBytes as unknown as BlobPart], filename, {
+    type: 'application/zip',
+  });
+  await navigator.share({
+    title: titleUk,
+    files: [file],
+  });
+  return true;
 }
 
 export const BasicSettingsView: React.FC<BasicSettingsViewProps> = ({
   settings,
+  activeZone,
   snapshot,
   recoverySnapshots,
   repositories,
-  onSettingsPatch,
-  onDataReplaced,
+  onSettingsUpdated,
+  onDataReplacedOrReset,
   onOpenWorkRoster,
   onOpenHabits,
   onOpenWishlistCategories,
-  onLocalModalOpenChange,
+  onConfirmationStateChange,
+  pwaState,
 }) => {
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [customZoneInput, setCustomZoneInput] = useState<string>(
+    settings.manualTimeZone ?? activeZone
+  );
+  const [zoneError, setZoneError] = useState<string | null>(null);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+
+  // Sheet states
+  const [backupSheetOpen, setBackupSheetOpen] = useState(false);
+  const [storageSheetOpen, setStorageSheetOpen] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+
+  // Storage & Persistence state
+  const [storageEstimate, setStorageEstimate] = useState<StoragePersistenceEstimate>({
+    persisted: null,
+    usageBytes: null,
+    quotaBytes: null,
+  });
+  const [isRequestingPersistence, setIsRequestingPersistence] = useState(false);
+
+  // Backup / Import / Restore / Reset state
+  const [isBusyBackup, setIsBusyBackup] = useState(false);
+  const [backupErrorUk, setBackupErrorUk] = useState<string | null>(null);
+  const [backupSuccessUk, setBackupSuccessUk] = useState<string | null>(null);
+  const [pendingPreview, setPendingPreview] = useState<ValidatedBackupPreview | null>(null);
+  const [pendingFileName, setPendingFileName] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const validationAbortRef = useRef<AbortController | null>(null);
 
-  const [feedback, setFeedback] = useState<{
-    tone: 'success' | 'error' | 'info';
-    message: string;
-  } | null>(null);
-  const [isExporting, setIsExporting] = useState(false);
-  const [isValidatingImport, setIsValidatingImport] = useState(false);
-  const [pendingPreview, setPendingPreview] =
-    useState<ValidatedBackupPreview | null>(null);
-  const [isReplacing, setIsReplacing] = useState(false);
-  const [recoveryFailedFallback, setRecoveryFailedFallback] = useState(false);
+  // Recovery snapshot confirmation states
+  const [confirmRestoreSnapshotId, setConfirmRestoreSnapshotId] = useState<string | null>(null);
+  const [confirmDeleteOnlySnapshotId, setConfirmDeleteOnlySnapshotId] = useState<string | null>(null);
 
-  const [persistenceState, setPersistenceState] = useState<
-    'granted' | 'not_granted' | 'unsupported'
-  >('unsupported');
-  const [storageEstimateText, setStorageEstimateText] = useState<string | null>(
-    null
-  );
-
-  const [restoreConfirmSnapshot, setRestoreConfirmSnapshot] =
-    useState<RecoverySnapshotRecord | null>(null);
-  const [deleteOnlyPointSnapshot, setDeleteOnlyPointSnapshot] =
-    useState<RecoverySnapshotRecord | null>(null);
-
-  const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
-  const [resetSnapshotMode, setResetSnapshotMode] = useState<
+  // Reset all data confirmation states
+  const [resetSnapshotHandling, setResetSnapshotHandling] = useState<
     'create_pre_reset_snapshot' | 'clear_all_snapshots'
   >('create_pre_reset_snapshot');
   const [resetConfirmedCheckbox, setResetConfirmedCheckbox] = useState(false);
 
-  const hasOpenConfirmation = Boolean(
-    pendingPreview ||
-      restoreConfirmSnapshot ||
-      deleteOnlyPointSnapshot ||
-      isResetDialogOpen
-  );
-
   useEffect(() => {
-    onLocalModalOpenChange?.(hasOpenConfirmation);
-    return () => {
-      onLocalModalOpenChange?.(false);
-    };
-  }, [hasOpenConfirmation, onLocalModalOpenChange]);
+    const anyConfirmationOpen = Boolean(
+      pendingPreview ||
+        confirmRestoreSnapshotId ||
+        confirmDeleteOnlySnapshotId ||
+        showResetConfirm ||
+        backupSheetOpen ||
+        storageSheetOpen
+    );
+    onConfirmationStateChange?.(anyConfirmationOpen);
+    return () => onConfirmationStateChange?.(false);
+  }, [
+    pendingPreview,
+    confirmRestoreSnapshotId,
+    confirmDeleteOnlySnapshotId,
+    showResetConfirm,
+    backupSheetOpen,
+    storageSheetOpen,
+    onConfirmationStateChange,
+  ]);
 
-  const refreshStoragePersistenceAndQuota = async () => {
-    if (typeof navigator === 'undefined' || !navigator.storage) {
-      setPersistenceState('unsupported');
-      return;
-    }
+  const refreshStorageEstimate = async () => {
+    if (typeof navigator === 'undefined' || !navigator.storage) return;
     try {
-      if (typeof navigator.storage.persisted === 'function') {
-        const persisted = await navigator.storage.persisted();
-        setPersistenceState(persisted ? 'granted' : 'not_granted');
-      } else {
-        setPersistenceState('unsupported');
-      }
-      if (typeof navigator.storage.estimate === 'function') {
-        const est = await navigator.storage.estimate();
-        if (typeof est.usage === 'number' && typeof est.quota === 'number') {
-          setStorageEstimateText(
-            `${formatBytesUk(est.usage)} з ${formatBytesUk(est.quota)}`
-          );
-        }
-      }
+      const persisted =
+        typeof navigator.storage.persisted === 'function'
+          ? await navigator.storage.persisted()
+          : null;
+      const estimate =
+        typeof navigator.storage.estimate === 'function'
+          ? await navigator.storage.estimate()
+          : null;
+      setStorageEstimate({
+        persisted,
+        usageBytes: estimate?.usage ?? null,
+        quotaBytes: estimate?.quota ?? null,
+      });
     } catch {
-      setPersistenceState('unsupported');
+      // Ignore browser storage inspection errors
     }
   };
 
   useEffect(() => {
-    void refreshStoragePersistenceAndQuota();
-  }, [snapshot, recoverySnapshots]);
+    void refreshStorageEstimate();
+  }, [snapshot.settings.dbGeneration, recoverySnapshots.length]);
+
+  useEffect(() => {
+    return () => {
+      validationAbortRef.current?.abort();
+    };
+  }, []);
 
   const handleRequestPersistentStorage = async () => {
     if (
@@ -186,1417 +265,1019 @@ export const BasicSettingsView: React.FC<BasicSettingsViewProps> = ({
       !navigator.storage ||
       typeof navigator.storage.persist !== 'function'
     ) {
-      setPersistenceState('unsupported');
       return;
     }
+    setIsRequestingPersistence(true);
     try {
-      const granted = await navigator.storage.persist();
-      setPersistenceState(granted ? 'granted' : 'not_granted');
-      setFeedback({
-        tone: granted ? 'success' : 'info',
-        message: granted
-          ? UK_STRINGS.settings.persistenceGranted
-          : UK_STRINGS.settings.persistenceNotGranted,
-      });
+      await navigator.storage.persist();
+      await refreshStorageEstimate();
     } catch {
-      setFeedback({
-        tone: 'info',
-        message: UK_STRINGS.settings.persistenceUnsupported,
-      });
-    }
-  };
-
-  const canShareZipFile = (): boolean => {
-    if (
-      typeof navigator === 'undefined' ||
-      typeof navigator.share !== 'function' ||
-      typeof navigator.canShare !== 'function' ||
-      typeof File === 'undefined'
-    ) {
-      return false;
-    }
-    try {
-      const testFile = new File([new Uint8Array([80, 75])], 'planui.zip', {
-        type: 'application/zip',
-      });
-      return navigator.canShare({ files: [testFile] });
-    } catch {
-      return false;
+      // Ignore
+    } finally {
+      setIsRequestingPersistence(false);
     }
   };
 
   const persistPatch = async (patch: Partial<PlanuiSettings>) => {
-    onSettingsPatch(patch);
+    setIsSavingSettings(true);
+    setZoneError(null);
     try {
-      const saved = await repositories.updateSettingsPatch(patch);
-      onSettingsPatch(saved);
+      const nowIso = new Date().toISOString();
+      const updated = await repositories.updateSettingsPatch(patch, nowIso);
+      applyThemeAndAccessibilityToDocument(
+        updated.theme,
+        updated.reducedMotionOverride,
+        updated.reducedTransparencyOverride
+      );
+      onSettingsUpdated(patch);
     } catch (err) {
-      setFeedback({
-        tone: 'error',
-        message:
-          err instanceof Error
-            ? err.message
-            : 'Не вдалося зберегти налаштування.',
-      });
-    }
-  };
-
-  const triggerBrowserZipDownload = (
-    zipBytes: Uint8Array,
-    fileName: string
-  ) => {
-    const blob = new Blob([zipBytes as unknown as BlobPart], {
-      type: 'application/zip',
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.setTimeout(() => URL.revokeObjectURL(url), 1500);
-  };
-
-  const handleExportZip = async () => {
-    setIsExporting(true);
-    setFeedback(null);
-    try {
-      const { zipBytes, manifest } = await exportFullBackupZip(repositories);
-      const dateStamp = manifest.createdAt.slice(0, 10);
-      triggerBrowserZipDownload(zipBytes, `planui-backup-${dateStamp}.zip`);
-      setFeedback({
-        tone: 'success',
-        message: UK_STRINGS.settings.exportHonestStatus,
-      });
-    } catch (err) {
-      setFeedback({
-        tone: 'error',
-        message:
-          err instanceof Error
-            ? err.message
-            : 'Помилка під час експорту резервної копії.',
-      });
+      setZoneError(getErrorMessageUk(err));
     } finally {
-      setIsExporting(false);
+      setIsSavingSettings(false);
     }
   };
 
-  const handleShareZip = async () => {
-    setIsExporting(true);
-    setFeedback(null);
+  const handleThemeChange = async (theme: ThemePreference) => {
+    await persistPatch({ theme });
+  };
+
+  const handleAccessibilityChange = async (
+    key: 'reducedMotionOverride' | 'reducedTransparencyOverride',
+    value: boolean
+  ) => {
+    await persistPatch({ [key]: value });
+  };
+
+  const handleModuleToggle = async (
+    key: 'habitsEnabled' | 'stateCheckInsEnabled' | 'desiredLifeEnabled' | 'wishlistEnabled',
+    enabled: boolean
+  ) => {
+    const currentModules = settings.modules ?? {
+      habitsEnabled: false,
+      stateCheckInsEnabled: false,
+      desiredLifeEnabled: false,
+      wishlistEnabled: false,
+      userConfigured: true,
+    };
+    await persistPatch({
+      modules: {
+        ...currentModules,
+        [key]: enabled,
+        userConfigured: true,
+      },
+    });
+  };
+
+  const handleTimeZoneModeChange = async (mode: 'device' | 'manual') => {
+    setZoneError(null);
+    if (mode === 'device') {
+      const detected = detectDeviceTimeZone() ?? activeZone;
+      await persistPatch({
+        timeZoneMode: 'device',
+        manualTimeZone: null,
+        lastDetectedTimeZone: detected,
+      });
+    } else {
+      const candidate = settings.manualTimeZone ?? activeZone;
+      setCustomZoneInput(candidate);
+      await persistPatch({
+        timeZoneMode: 'manual',
+        manualTimeZone: candidate,
+        lastDetectedTimeZone: candidate,
+      });
+    }
+  };
+
+  const handleSelectManualZone = async (zone: string) => {
+    setCustomZoneInput(zone);
+    if (!isValidIanaZone(zone)) {
+      setZoneError(`Недійсний ідентифікатор часового поясу: ${zone}`);
+      return;
+    }
+    await persistPatch({
+      timeZoneMode: 'manual',
+      manualTimeZone: zone,
+      lastDetectedTimeZone: zone,
+    });
+  };
+
+  const handlePreferredCurrencyChange = async (rawValue: string) => {
+    const nextCurrency: SupportedCurrencyCode | null = rawValue
+      ? (rawValue as SupportedCurrencyCode)
+      : null;
+    await persistPatch({ preferredWishlistCurrency: nextCurrency });
+  };
+
+  // Backup handlers
+  const handleExportFullBackup = async () => {
+    setBackupErrorUk(null);
+    setBackupSuccessUk(null);
+    setIsBusyBackup(true);
     try {
-      const { zipBytes, manifest } = await exportFullBackupZip(repositories);
-      const dateStamp = manifest.createdAt.slice(0, 10);
-      const fileName = `planui-backup-${dateStamp}.zip`;
-      const file = new File([zipBytes as unknown as BlobPart], fileName, {
-        type: 'application/zip',
-      });
-      await navigator.share({
-        title: fileName,
-        files: [file],
-      });
-      setFeedback({
-        tone: 'success',
-        message: UK_STRINGS.settings.exportHonestStatus,
-      });
+      const nowIso = new Date().toISOString();
+      const { zipBytes } = await exportFullBackupZip(repositories, nowIso);
+      const dateStamp = nowIso.slice(0, 10);
+      triggerBrowserZipDownload(zipBytes, `planui-backup-${dateStamp}.zip`);
+      setBackupSuccessUk('Резервну копію ZIP сформовано та завантажено.');
     } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') {
+      setBackupErrorUk(getErrorMessageUk(err));
+    } finally {
+      setIsBusyBackup(false);
+    }
+  };
+
+  const handleShareFullBackup = async () => {
+    setBackupErrorUk(null);
+    setBackupSuccessUk(null);
+    setIsBusyBackup(true);
+    try {
+      const nowIso = new Date().toISOString();
+      const { zipBytes } = await exportFullBackupZip(repositories, nowIso);
+      const dateStamp = nowIso.slice(0, 10);
+      const shared = await shareBrowserZipFile(
+        zipBytes,
+        `planui-backup-${dateStamp}.zip`,
+        'Резервна копія PLANUI'
+      );
+      if (shared) {
+        setBackupSuccessUk('Резервну копію ZIP передано через меню поширення.');
+      }
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
         return;
       }
-      setFeedback({
-        tone: 'error',
-        message:
-          err instanceof Error
-            ? err.message
-            : 'Не вдалося поділитися файлом резервної копії.',
-      });
+      setBackupErrorUk(getErrorMessageUk(err));
     } finally {
-      setIsExporting(false);
+      setIsBusyBackup(false);
     }
   };
 
-  const handleCancelValidation = () => {
-    if (validationAbortRef.current) {
-      validationAbortRef.current.abort();
-      validationAbortRef.current = null;
-    }
-    setIsValidatingImport(false);
-    setFeedback({
-      tone: 'info',
-      message: 'Перевірку файлу резервної копії скасовано.',
-    });
-  };
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleBackupFileSelected = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
     const file = e.target.files?.[0];
-    e.target.value = '';
     if (!file) return;
 
-    setFeedback(null);
+    setBackupSheetOpen(true);
+    setBackupErrorUk(null);
+    setBackupSuccessUk(null);
     setPendingPreview(null);
-    setRecoveryFailedFallback(false);
+    setPendingFileName(file.name);
+    setIsBusyBackup(true);
 
+    validationAbortRef.current?.abort();
     const abortController = new AbortController();
     validationAbortRef.current = abortController;
-    setIsValidatingImport(true);
 
     try {
-      const buffer = await file.arrayBuffer();
-      const bytes = new Uint8Array(buffer);
-      const validated = await validateBackupArchive(
-        bytes,
-        BACKUP_LIMITS,
+      const arrayBuffer = await file.arrayBuffer();
+      const zipBytes = new Uint8Array(arrayBuffer);
+      const preview = await validateBackupArchive(
+        zipBytes,
+        undefined,
         abortController.signal
       );
-      setPendingPreview(validated);
-      setFeedback({
-        tone: 'info',
-        message: UK_STRINGS.settings.importValidationSuccess,
-      });
+      setPendingPreview(preview);
     } catch (err) {
-      setFeedback({
-        tone: 'error',
-        message:
-          err instanceof Error
-            ? err.message
-            : 'Не вдалося перевірити файл резервної копії.',
-      });
+      setBackupErrorUk(getErrorMessageUk(err));
+      setPendingFileName(null);
     } finally {
-      validationAbortRef.current = null;
-      setIsValidatingImport(false);
+      setIsBusyBackup(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
     }
+  };
+
+  const handleCancelImportPreview = () => {
+    validationAbortRef.current?.abort();
+    setPendingPreview(null);
+    setPendingFileName(null);
+    setBackupErrorUk(null);
   };
 
   const handleConfirmImportReplacement = async () => {
     if (!pendingPreview) return;
-    setIsReplacing(true);
-    setFeedback(null);
-    setRecoveryFailedFallback(false);
+    setBackupErrorUk(null);
+    setBackupSuccessUk(null);
+    setIsBusyBackup(true);
     try {
       await executeAtomicBackupReplacement(repositories, pendingPreview, {
         explicitUserConfirmation: true,
+        nowIso: new Date().toISOString(),
       });
       setPendingPreview(null);
-      await onDataReplaced();
-      setFeedback({
-        tone: 'success',
-        message: UK_STRINGS.settings.importSuccess,
-      });
+      setPendingFileName(null);
+      setBackupSheetOpen(false);
+      await onDataReplacedOrReset('Дані відновлено з резервної копії ZIP.');
     } catch (err) {
-      if (err instanceof PlanuiError && (err.code === 'RECOVERY_SNAPSHOT_FAILED' || err.code === 'STORAGE_QUOTA_EXCEEDED')) {
-        setRecoveryFailedFallback(true);
-      }
-      setFeedback({
-        tone: 'error',
-        message:
-          err instanceof Error
-            ? err.message
-            : 'Помилка під час заміни даних із резервної копії.',
-      });
+      setBackupErrorUk(getErrorMessageUk(err));
     } finally {
-      setIsReplacing(false);
+      setIsBusyBackup(false);
     }
   };
 
-  const handleConfirmRestoreSnapshot = async () => {
-    if (!restoreConfirmSnapshot) return;
-    setIsReplacing(true);
-    setFeedback(null);
-    setRecoveryFailedFallback(false);
+  const handleExportRecoverySnapshot = async (snapshotId: string) => {
+    setBackupErrorUk(null);
+    setBackupSuccessUk(null);
+    setIsBusyBackup(true);
+    try {
+      const nowIso = new Date().toISOString();
+      const { zipBytes, recoveryRecord } = await exportRecoverySnapshotZip(
+        repositories,
+        snapshotId,
+        nowIso
+      );
+      const dateStamp = recoveryRecord.createdAt.slice(0, 10);
+      triggerBrowserZipDownload(
+        zipBytes,
+        `planui-recovery-${dateStamp}-${snapshotId.slice(-6)}.zip`
+      );
+      setBackupSuccessUk('Знімок відновлення експортовано у ZIP.');
+    } catch (err) {
+      setBackupErrorUk(getErrorMessageUk(err));
+    } finally {
+      setIsBusyBackup(false);
+    }
+  };
+
+  const handleConfirmRestoreSnapshot = async (snapshotId: string) => {
+    setBackupErrorUk(null);
+    setBackupSuccessUk(null);
+    setIsBusyBackup(true);
     try {
       await restoreFromRecoverySnapshotTransactionally(
         repositories,
-        restoreConfirmSnapshot.id,
-        { explicitUserConfirmation: true }
+        snapshotId,
+        {
+          explicitUserConfirmation: true,
+          nowIso: new Date().toISOString(),
+        }
       );
-      setRestoreConfirmSnapshot(null);
-      await onDataReplaced();
-      setFeedback({
-        tone: 'success',
-        message: UK_STRINGS.settings.restoreSnapshotSuccess,
-      });
+      setConfirmRestoreSnapshotId(null);
+      setBackupSheetOpen(false);
+      await onDataReplacedOrReset('Дані відновлено з точки відновлення.');
     } catch (err) {
-      if (err instanceof PlanuiError && (err.code === 'RECOVERY_SNAPSHOT_FAILED' || err.code === 'STORAGE_QUOTA_EXCEEDED')) {
-        setRecoveryFailedFallback(true);
+      setBackupErrorUk(getErrorMessageUk(err));
+    } finally {
+      setIsBusyBackup(false);
+    }
+  };
+
+  const handleDeleteRecoverySnapshot = async (
+    snapshotId: string,
+    allowOnlyPoint: boolean
+  ) => {
+    setBackupErrorUk(null);
+    setBackupSuccessUk(null);
+    setIsBusyBackup(true);
+    try {
+      await deleteRecoverySnapshotTransactionally(repositories, snapshotId, {
+        allowDeleteOnlyRecoveryPoint: allowOnlyPoint,
+      });
+      setConfirmDeleteOnlySnapshotId(null);
+      await onDataReplacedOrReset('Точку відновлення видалено.');
+    } catch (err) {
+      if (
+        err instanceof PlanuiError &&
+        err.code === 'ONLY_RECOVERY_POINT_CONFIRMATION_REQUIRED'
+      ) {
+        setConfirmDeleteOnlySnapshotId(snapshotId);
+      } else {
+        setBackupErrorUk(getErrorMessageUk(err));
       }
-      setFeedback({
-        tone: 'error',
-        message:
-          err instanceof Error
-            ? err.message
-            : 'Не вдалося відновити дані зі знімка.',
-      });
     } finally {
-      setIsReplacing(false);
+      setIsBusyBackup(false);
     }
   };
 
-  const handleExportRecoverySnapshotZip = async (
-    snap: RecoverySnapshotRecord
-  ) => {
-    setIsExporting(true);
-    setFeedback(null);
-    try {
-      const { zipBytes } = await exportRecoverySnapshotZip(
-        repositories,
-        snap.id
-      );
-      const dateStamp = snap.createdAt.slice(0, 10);
-      triggerBrowserZipDownload(
-        zipBytes,
-        `planui-recovery-${dateStamp}-${snap.id.slice(-6)}.zip`
-      );
-      setFeedback({
-        tone: 'success',
-        message: UK_STRINGS.settings.exportHonestStatus,
-      });
-    } catch (err) {
-      setFeedback({
-        tone: 'error',
-        message:
-          err instanceof Error
-            ? err.message
-            : 'Не вдалося експортувати знімок відновлення.',
-      });
-    } finally {
-      setIsExporting(false);
-    }
-  };
-
-  const handleDeleteRecoverySnapshotRequest = async (
-    snap: RecoverySnapshotRecord,
-    allowDeleteOnly = false
-  ) => {
-    if (recoverySnapshots.length === 1 && !allowDeleteOnly) {
-      setDeleteOnlyPointSnapshot(snap);
-      return;
-    }
-    try {
-      await deleteRecoverySnapshotTransactionally(repositories, snap.id, {
-        allowDeleteOnlyRecoveryPoint: allowDeleteOnly,
-      });
-      setDeleteOnlyPointSnapshot(null);
-      await onDataReplaced();
-      setFeedback({
-        tone: 'info',
-        message: UK_STRINGS.settings.deleteSnapshotSuccess,
-      });
-    } catch (err) {
-      setFeedback({
-        tone: 'error',
-        message:
-          err instanceof Error
-            ? err.message
-            : 'Не вдалося видалити знімок відновлення.',
-      });
-    }
-  };
-
-  const handleConfirmResetPlanui = async () => {
+  const handleConfirmResetAllData = async () => {
     if (!resetConfirmedCheckbox) return;
-    setIsReplacing(true);
-    setFeedback(null);
-    setRecoveryFailedFallback(false);
+    setBackupErrorUk(null);
+    setBackupSuccessUk(null);
+    setIsBusyBackup(true);
     try {
       await resetAllPlanuiDataTransactionally(repositories, {
         explicitUserConfirmation: true,
-        snapshotHandling: resetSnapshotMode,
+        snapshotHandling: resetSnapshotHandling,
+        nowIso: new Date().toISOString(),
       });
-      setIsResetDialogOpen(false);
+      setShowResetConfirm(false);
       setResetConfirmedCheckbox(false);
-      await onDataReplaced();
-      setFeedback({
-        tone: 'success',
-        message: UK_STRINGS.settings.resetSuccess,
-      });
+      await onDataReplacedOrReset('Усі локальні дані очищено.');
     } catch (err) {
-      if (err instanceof PlanuiError && (err.code === 'RECOVERY_SNAPSHOT_FAILED' || err.code === 'STORAGE_QUOTA_EXCEEDED')) {
-        setRecoveryFailedFallback(true);
-      }
-      setFeedback({
-        tone: 'error',
-        message:
-          err instanceof Error
-            ? err.message
-            : 'Не вдалося скинути локальні дані PLANUI.',
-      });
+      setBackupErrorUk(getErrorMessageUk(err));
     } finally {
-      setIsReplacing(false);
+      setIsBusyBackup(false);
     }
   };
 
-  const activeZone =
-    settings.timeZoneMode === 'manual' && settings.manualTimeZone
-      ? settings.manualTimeZone
-      : settings.lastDetectedTimeZone;
+  const manualZoneOptions = [
+    ...COMMON_IANA_TIMEZONES.map((z) => ({ value: z, label: z })),
+    ...(customZoneInput &&
+    !(COMMON_IANA_TIMEZONES as readonly string[]).includes(customZoneInput)
+      ? [{ value: customZoneInput, label: customZoneInput }]
+      : []),
+  ];
 
   return (
-    <div className="space-y-4" data-testid="basic-settings-view">
-      {feedback && (
-        <FeedbackBanner
-          tone={feedback.tone}
-          message={feedback.message}
-          onDismiss={() => setFeedback(null)}
-        />
-      )}
+    <div
+      className="space-y-5"
+      data-testid="basic-settings-view"
+      data-ui="content-start"
+    >
+      {/* Hidden ZIP input mounted at root so automated tests or sheet buttons can trigger it */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".zip,application/zip"
+        onChange={handleBackupFileSelected}
+        disabled={isBusyBackup}
+        className="hidden"
+        data-testid="import-backup-file-input"
+      />
 
-      {/* 0. Optional Modules Configuration */}
-      <Card
-        title={UK_STRINGS.settings.sectionModules}
-        subtitle={UK_STRINGS.settings.sectionModulesSubtitle}
-        headerRight={
-          <Layers
-            className="w-5 h-5"
-            style={{ color: 'var(--text-secondary)' }}
-            aria-hidden="true"
+      {/* 1. РОЗДІЛИ */}
+      <div className="space-y-2" data-testid="optional-modules-settings">
+        <Section title="Розділи">
+          <Row
+            title="Звички"
+            secondary="Регулярні дії без жорстких слотів"
+            trailing={
+              <Toggle
+                label="Звички"
+                checked={settings.modules?.habitsEnabled ?? false}
+                onChange={(v) => void handleModuleToggle('habitsEnabled', v)}
+                disabled={isSavingSettings}
+                testId="toggle-module-habits"
+              />
+            }
           />
-        }
-      >
-        <div className="space-y-3.5">
-          {/* Habits */}
-          <label className="flex items-start justify-between gap-4 cursor-pointer">
-            <div className="space-y-0.5">
-              <div className="flex items-center gap-2 text-[15px] font-medium">
-                <Repeat className="w-4 h-4" style={{ color: 'var(--color-work)' }} aria-hidden="true" />
-                <span>{UK_STRINGS.settings.moduleHabitsLabel}</span>
-              </div>
-              <div
-                className="text-[13px]"
-                style={{ color: 'var(--text-secondary)' }}
-              >
-                {UK_STRINGS.settings.moduleHabitsDescription}
-              </div>
-            </div>
-            <input
-              type="checkbox"
-              data-testid="toggle-module-habits"
-              checked={Boolean(settings.modules?.habitsEnabled)}
-              onChange={(e) =>
-                persistPatch({
-                  modules: {
-                    habitsEnabled: e.target.checked,
-                    stateCheckInsEnabled: Boolean(settings.modules?.stateCheckInsEnabled),
-                    desiredLifeEnabled: Boolean(settings.modules?.desiredLifeEnabled),
-                    wishlistEnabled: Boolean(settings.modules?.wishlistEnabled),
-                    userConfigured: true,
-                  },
-                })
-              }
-              className="w-5 h-5 mt-1 shrink-0 accent-[#B93E4B] cursor-pointer"
-            />
-          </label>
-
-          {/* State Check-ins */}
-          <div
-            className="border-t pt-3.5"
-            style={{ borderColor: 'var(--border-subtle)' }}
-          >
-            <label className="flex items-start justify-between gap-4 cursor-pointer">
-              <div className="space-y-0.5">
-                <div className="flex items-center gap-2 text-[15px] font-medium">
-                  <HeartHandshake className="w-4 h-4" style={{ color: 'var(--color-brand)' }} aria-hidden="true" />
-                  <span>{UK_STRINGS.settings.moduleStateCheckInsLabel}</span>
-                </div>
-                <div
-                  className="text-[13px]"
-                  style={{ color: 'var(--text-secondary)' }}
-                >
-                  {UK_STRINGS.settings.moduleStateCheckInsDescription}
-                </div>
-              </div>
-              <input
-                type="checkbox"
-                data-testid="toggle-module-state-check-ins"
-                checked={Boolean(settings.modules?.stateCheckInsEnabled)}
-                onChange={(e) =>
-                  persistPatch({
-                    modules: {
-                      habitsEnabled: Boolean(settings.modules?.habitsEnabled),
-                      stateCheckInsEnabled: e.target.checked,
-                      desiredLifeEnabled: Boolean(settings.modules?.desiredLifeEnabled),
-                      wishlistEnabled: Boolean(settings.modules?.wishlistEnabled),
-                      userConfigured: true,
-                    },
-                  })
-                }
-                className="w-5 h-5 mt-1 shrink-0 accent-[#B93E4B] cursor-pointer"
+          <Row
+            title="Стан"
+            secondary="Самопочуття, енергія, напруга та сон"
+            trailing={
+              <Toggle
+                label="Стан"
+                checked={settings.modules?.stateCheckInsEnabled ?? false}
+                onChange={(v) => void handleModuleToggle('stateCheckInsEnabled', v)}
+                disabled={isSavingSettings}
+                testId="toggle-module-state-check-ins"
               />
-            </label>
-          </div>
-
-          {/* Desired Life / Inspiration */}
-          <div
-            className="border-t pt-3.5"
-            style={{ borderColor: 'var(--border-subtle)' }}
-          >
-            <label className="flex items-start justify-between gap-4 cursor-pointer">
-              <div className="space-y-0.5">
-                <div className="flex items-center gap-2 text-[15px] font-medium">
-                  <Sparkles className="w-4 h-4" style={{ color: 'var(--color-personal)' }} aria-hidden="true" />
-                  <span>{UK_STRINGS.settings.moduleDesiredLifeLabel}</span>
-                </div>
-                <div
-                  className="text-[13px]"
-                  style={{ color: 'var(--text-secondary)' }}
-                >
-                  {UK_STRINGS.settings.moduleDesiredLifeDescription}
-                </div>
-              </div>
-              <input
-                type="checkbox"
-                data-testid="toggle-module-desired-life"
-                checked={Boolean(settings.modules?.desiredLifeEnabled)}
-                onChange={(e) =>
-                  persistPatch({
-                    modules: {
-                      habitsEnabled: Boolean(settings.modules?.habitsEnabled),
-                      stateCheckInsEnabled: Boolean(settings.modules?.stateCheckInsEnabled),
-                      desiredLifeEnabled: e.target.checked,
-                      wishlistEnabled: Boolean(settings.modules?.wishlistEnabled),
-                      userConfigured: true,
-                    },
-                  })
-                }
-                className="w-5 h-5 mt-1 shrink-0 accent-[#B93E4B] cursor-pointer"
+            }
+          />
+          <Row
+            title="Моє бажане життя"
+            secondary="Описи, фото, цитати й орієнтири"
+            trailing={
+              <Toggle
+                label="Моє бажане життя"
+                checked={settings.modules?.desiredLifeEnabled ?? false}
+                onChange={(v) => void handleModuleToggle('desiredLifeEnabled', v)}
+                disabled={isSavingSettings}
+                testId="toggle-module-desired-life"
               />
-            </label>
-          </div>
-
-          {/* Wishlist */}
-          <div
-            className="border-t pt-3.5"
-            style={{ borderColor: 'var(--border-subtle)' }}
-          >
-            <label className="flex items-start justify-between gap-4 cursor-pointer">
-              <div className="space-y-0.5">
-                <div className="flex items-center gap-2 text-[15px] font-medium">
-                  <Gift className="w-4 h-4" style={{ color: 'var(--color-dayoff)' }} aria-hidden="true" />
-                  <span>{UK_STRINGS.settings.moduleWishlistLabel}</span>
-                </div>
-                <div
-                  className="text-[13px]"
-                  style={{ color: 'var(--text-secondary)' }}
-                >
-                  {UK_STRINGS.settings.moduleWishlistDescription}
-                </div>
-              </div>
-              <input
-                type="checkbox"
-                data-testid="toggle-module-wishlist"
-                checked={Boolean(settings.modules?.wishlistEnabled)}
-                onChange={(e) =>
-                  persistPatch({
-                    modules: {
-                      habitsEnabled: Boolean(settings.modules?.habitsEnabled),
-                      stateCheckInsEnabled: Boolean(settings.modules?.stateCheckInsEnabled),
-                      desiredLifeEnabled: Boolean(settings.modules?.desiredLifeEnabled),
-                      wishlistEnabled: e.target.checked,
-                      userConfigured: true,
-                    },
-                  })
-                }
-                className="w-5 h-5 mt-1 shrink-0 accent-[#B93E4B] cursor-pointer"
+            }
+          />
+          <Row
+            title="Список бажань"
+            secondary="Бажані речі та ідеї без бюджетів"
+            trailing={
+              <Toggle
+                label="Список бажань"
+                checked={settings.modules?.wishlistEnabled ?? false}
+                onChange={(v) => void handleModuleToggle('wishlistEnabled', v)}
+                disabled={isSavingSettings}
+                testId="toggle-module-wishlist"
               />
-            </label>
-          </div>
+            }
+          />
+        </Section>
+        <p className="text-xs text-[var(--text-secondary)] px-1">
+          Вимкнення лише ховає розділ, дані зберігаються
+        </p>
+      </div>
+
+      {/* 2. ВИГЛЯД */}
+      <Section title="Вигляд">
+        <div className="p-3">
+          <Segmented<ThemePreference>
+            label="Тема оформлення"
+            value={settings.theme}
+            onChange={(theme) => void handleThemeChange(theme)}
+            options={[
+              { value: 'system', label: 'Системна' },
+              { value: 'light', label: 'Світла' },
+              { value: 'dark', label: 'Темна' },
+            ]}
+          />
         </div>
-      </Card>
-
-      {/* 1. Theme & Appearance */}
-      <Card
-        title={UK_STRINGS.settings.sectionAppearance}
-        subtitle={UK_STRINGS.settings.themeDescription}
-        headerRight={<Sun className="w-5 h-5" style={{ color: 'var(--text-secondary)' }} aria-hidden="true" />}
-      >
-        <div className="space-y-3">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-            <span className="text-[15px] font-medium">
-              {UK_STRINGS.settings.themeLabel}
-            </span>
-            <SegmentedControl<ThemePreference>
-              ariaLabel={UK_STRINGS.settings.themeLabel}
-              value={settings.theme}
-              onChange={(nextTheme) => persistPatch({ theme: nextTheme })}
-              options={[
-                { value: 'system', label: UK_STRINGS.settings.themeSystem },
-                { value: 'light', label: UK_STRINGS.settings.themeLight },
-                { value: 'dark', label: UK_STRINGS.settings.themeDark },
-              ]}
-            />
-          </div>
-        </div>
-      </Card>
-
-      {/* 2. Accessibility, Motion & Transparency */}
-      <Card
-        title={UK_STRINGS.settings.sectionAccessibility}
-        headerRight={<Eye className="w-5 h-5" style={{ color: 'var(--text-secondary)' }} aria-hidden="true" />}
-      >
-        <div className="space-y-4">
-          <label className="flex items-start justify-between gap-4 cursor-pointer">
-            <div className="space-y-0.5">
-              <div className="text-[15px] font-medium">
-                {UK_STRINGS.settings.reducedMotionLabel}
-              </div>
-              <div
-                className="text-[13px]"
-                style={{ color: 'var(--text-secondary)' }}
-              >
-                {UK_STRINGS.settings.reducedMotionDescription}
-              </div>
-            </div>
-            <input
-              type="checkbox"
-              data-testid="toggle-reduced-motion"
+        <Row
+          title="Зменшити рух"
+          secondary="Плавні переходи без анімацій"
+          trailing={
+            <Toggle
+              label="Зменшити рух"
               checked={settings.reducedMotionOverride}
-              onChange={(e) =>
-                persistPatch({ reducedMotionOverride: e.target.checked })
+              onChange={(v) =>
+                void handleAccessibilityChange('reducedMotionOverride', v)
               }
-              className="w-5 h-5 mt-1 shrink-0 accent-[#B93E4B] cursor-pointer"
+              disabled={isSavingSettings}
+              testId="toggle-reduced-motion"
             />
-          </label>
-
-          <div
-            className="border-t pt-3.5"
-            style={{ borderColor: 'var(--border-subtle)' }}
-          >
-            <label className="flex items-start justify-between gap-4 cursor-pointer">
-              <div className="space-y-0.5">
-                <div className="text-[15px] font-medium">
-                  {UK_STRINGS.settings.reducedTransparencyLabel}
-                </div>
-                <div
-                  className="text-[13px]"
-                  style={{ color: 'var(--text-secondary)' }}
-                >
-                  {UK_STRINGS.settings.reducedTransparencyDescription}
-                </div>
-              </div>
-              <input
-                type="checkbox"
-                data-testid="toggle-reduced-transparency"
-                checked={settings.reducedTransparencyOverride}
-                onChange={(e) =>
-                  persistPatch({
-                    reducedTransparencyOverride: e.target.checked,
-                  })
-                }
-                className="w-5 h-5 mt-1 shrink-0 accent-[#B93E4B] cursor-pointer"
-              />
-            </label>
-          </div>
-        </div>
-      </Card>
-
-      {/* 3. Time Zone & Calendar Context */}
-      <Card
-        title={UK_STRINGS.settings.sectionTimeZone}
-        headerRight={<Globe className="w-5 h-5" style={{ color: 'var(--text-secondary)' }} aria-hidden="true" />}
-      >
-        <div className="space-y-3.5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-            <span className="text-[15px] font-medium">
-              {UK_STRINGS.settings.timeZoneModeLabel}
-            </span>
-            <SegmentedControl<'device' | 'manual'>
-              ariaLabel={UK_STRINGS.settings.timeZoneModeLabel}
-              value={settings.timeZoneMode}
-              onChange={(mode) =>
-                persistPatch({
-                  timeZoneMode: mode,
-                  manualTimeZone:
-                    mode === 'manual'
-                      ? settings.manualTimeZone ?? settings.lastDetectedTimeZone
-                      : settings.manualTimeZone,
-                })
+          }
+        />
+        <Row
+          title="Зменшити прозорість"
+          secondary="Суцільний фон замість скла"
+          trailing={
+            <Toggle
+              label="Зменшити прозорість"
+              checked={settings.reducedTransparencyOverride}
+              onChange={(v) =>
+                void handleAccessibilityChange('reducedTransparencyOverride', v)
               }
-              options={[
-                {
-                  value: 'device',
-                  label: UK_STRINGS.settings.timeZoneModeDevice,
-                },
-                {
-                  value: 'manual',
-                  label: UK_STRINGS.settings.timeZoneModeManual,
-                },
-              ]}
+              disabled={isSavingSettings}
+              testId="toggle-reduced-transparency"
             />
-          </div>
+          }
+        />
+      </Section>
 
-          <div
-            className="p-3 rounded-xl flex flex-wrap items-center justify-between gap-2 text-[14px]"
-            style={{ backgroundColor: 'var(--bg-elevated)' }}
-          >
-            <span style={{ color: 'var(--text-secondary)' }}>
-              {UK_STRINGS.settings.activeZoneLabel}:
-            </span>
-            <span className="font-mono font-semibold" data-testid="active-iana-zone">
+      {/* 3. ЧАС */}
+      <Section title="Час">
+        <Row
+          title="Часовий пояс"
+          secondary={
+            settings.timeZoneMode === 'device'
+              ? 'За пристроєм'
+              : 'Обраний вручну'
+          }
+          trailing={
+            <span
+              className="text-sm font-medium text-[var(--text-primary)]"
+              data-testid="active-iana-zone"
+            >
               {activeZone}
             </span>
-          </div>
-
-          {settings.timeZoneMode === 'manual' && (
-            <SelectField
-              label={UK_STRINGS.settings.manualZoneSelectLabel}
-              options={COMMON_IANA_ZONES}
-              value={settings.manualTimeZone ?? settings.lastDetectedTimeZone}
-              onChange={(e) =>
-                persistPatch({
-                  timeZoneMode: 'manual',
-                  manualTimeZone: e.target.value,
-                })
-              }
-            />
-          )}
-        </div>
-      </Card>
-
-      {/* 3b. Wishlist Currency Default & Quick Editor Links (10.1 & 10.7 / C15) */}
-      <Card
-        title="Список бажань та швидкі переходи до редакторів"
-        subtitle="Валюта за замовчуванням застосовується лише до нових орієнтовних цін і ніколи не перераховує та не змінює валюту вже збережених бажань."
-        headerRight={
-          <Gift
-            className="w-5 h-5"
-            style={{ color: 'var(--text-secondary)' }}
-            aria-hidden="true"
-          />
-        }
-      >
-        <div className="space-y-4">
-          <SelectField
-            label="Валюта списку бажань за замовчуванням"
-            value={settings.preferredWishlistCurrency ?? ''}
-            onChange={(e) =>
-              persistPatch({
-                preferredWishlistCurrency: e.target.value
-                  ? (e.target.value as SupportedCurrencyCode)
-                  : null,
-              })
-            }
+          }
+        />
+        <div className="p-3 border-t border-[var(--border-subtle)]">
+          <Segmented<'device' | 'manual'>
+            label="Режим часового поясу"
+            value={settings.timeZoneMode}
+            onChange={(mode) => void handleTimeZoneModeChange(mode)}
             options={[
-              {
-                value: '',
-                label: 'Не обрано — запитувати під час першого введення ціни',
-              },
-              ...Object.values(SUPPORTED_CURRENCIES).map((c) => ({
-                value: c.code,
-                label: c.labelUk,
+              { value: 'device', label: 'За пристроєм' },
+              { value: 'manual', label: 'Вручну' },
+            ]}
+          />
+        </div>
+        {settings.timeZoneMode === 'manual' && (
+          <div className="border-t border-[var(--border-subtle)]">
+            <SelectField
+              label="Обрати пояс"
+              value={customZoneInput}
+              onChange={(e) => void handleSelectManualZone(e.target.value)}
+              options={manualZoneOptions}
+              data-testid="manual-timezone-select"
+            />
+          </div>
+        )}
+        {zoneError && (
+          <p role="alert" className="text-xs text-[var(--color-danger)] px-4 pb-3">
+            {zoneError}
+          </p>
+        )}
+      </Section>
+
+      {/* 4. ПРИВАТНІСТЬ І ДАНІ */}
+      <Section title="Приватність і дані">
+        <Row
+          title="Резервна копія"
+          secondary="Експорт ZIP, відновлення, JSON і CSV"
+          trailing={
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => void handleExportFullBackup()}
+                disabled={isBusyBackup}
+                data-testid={!backupSheetOpen ? 'export-backup-zip-button' : undefined}
+                className="min-h-[44px] min-w-[44px] px-3 rounded-xl bg-[var(--bg-elevated)] border border-[var(--border-subtle)] text-xs font-medium text-[var(--text-primary)] disabled:opacity-40"
+              >
+                ZIP
+              </button>
+              <button
+                type="button"
+                onClick={() => setBackupSheetOpen(true)}
+                data-testid="open-backup-sheet-button"
+                className="min-h-[44px] min-w-[44px] px-3 rounded-xl bg-[var(--bg-elevated)] border border-[var(--border-subtle)] text-xs font-medium text-[var(--text-primary)]"
+              >
+                Відкрити
+              </button>
+            </div>
+          }
+        />
+
+        <Disclosure
+          title="Сховище"
+          secondary={
+            storageEstimate.persisted === true
+              ? 'Постійне сховище захищено'
+              : 'Локальна база на пристрої'
+          }
+          onClick={() => setStorageSheetOpen(true)}
+          testId="open-storage-sheet-button"
+        />
+
+        {settings.modules?.wishlistEnabled !== false && (
+          <SelectField
+            label="Валюта бажань"
+            value={settings.preferredWishlistCurrency ?? ''}
+            onChange={(e) => void handlePreferredCurrencyChange(e.target.value)}
+            data-testid="settings-preferred-currency-select"
+            options={[
+              { value: '', label: 'Без валюти' },
+              ...Object.values(SUPPORTED_CURRENCIES).map((spec) => ({
+                value: spec.code,
+                label: spec.labelUk,
               })),
             ]}
-            data-testid="settings-preferred-wishlist-currency-select"
           />
+        )}
 
-          {(onOpenWorkRoster || onOpenHabits || onOpenWishlistCategories) && (
-            <div
-              className="border-t pt-3.5 space-y-2.5"
-              style={{ borderColor: 'var(--border-subtle)' }}
-            >
-              <div className="flex items-center gap-2 text-[14px] font-medium">
-                <Sliders
-                  className="w-4 h-4"
-                  style={{ color: 'var(--text-secondary)' }}
-                  aria-hidden="true"
-                />
-                <span>Повторне використання наявних редакторів</span>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {onOpenWorkRoster && (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={onOpenWorkRoster}
-                    data-testid="settings-link-work-roster"
-                  >
-                    Робочий графік і шаблони змін
-                  </Button>
-                )}
-                {onOpenHabits && (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={onOpenHabits}
-                    data-testid="settings-link-habits"
-                  >
-                    Редактор звичок
-                  </Button>
-                )}
-                {onOpenWishlistCategories && (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={onOpenWishlistCategories}
-                    data-testid="settings-link-wishlist-categories"
-                  >
-                    Категорії списку бажань
-                  </Button>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      </Card>
+        <Disclosure
+          title="Графік роботи та зміни"
+          secondary="Шаблони змін і вихідні"
+          onClick={onOpenWorkRoster}
+          testId="settings-open-roster"
+        />
 
-      {/* 4. Local Storage, Full ZIP Backup & Recovery (11.1 - 11.5) */}
-      <Card
-        title={UK_STRINGS.settings.sectionStorageBackup}
-        headerRight={<Database className="w-5 h-5" style={{ color: 'var(--text-secondary)' }} aria-hidden="true" />}
+        {settings.modules?.habitsEnabled !== false && (
+          <Disclosure
+            title="Керування звичками"
+            secondary="Правила, пауза та архів"
+            onClick={onOpenHabits}
+            testId="settings-open-habits"
+          />
+        )}
+
+        {settings.modules?.wishlistEnabled !== false && (
+          <Disclosure
+            title="Категорії списку бажань"
+            secondary="Власні категорії бажань"
+            onClick={onOpenWishlistCategories}
+            testId="settings-open-wishlist-categories"
+          />
+        )}
+
+        <Row
+          title="Версія застосунку"
+          secondary="Усі дані зберігаються локально"
+          trailing={
+            <span className="text-xs text-[var(--text-secondary)]">
+              v{settings.appVersion} · сx. {settings.dbSchemaVersion}
+            </span>
+          }
+        />
+
+        <Disclosure
+          title="Стерти всі дані"
+          secondary="Очистити локальну базу на пристрої"
+          onClick={() => {
+            setShowResetConfirm(true);
+            setResetConfirmedCheckbox(false);
+          }}
+          testId="open-reset-confirm-button"
+        />
+      </Section>
+
+      {/* PWA offline & install status */}
+      {pwaState && <PwaInstallAndOfflineView pwaState={pwaState} />}
+
+      {/* SHEET 1: РЕЗЕРВНА КОПІЯ */}
+      <Sheet
+        title="Резервна копія"
+        isOpen={backupSheetOpen}
+        onClose={() => {
+          if (!isBusyBackup) {
+            setBackupSheetOpen(false);
+          }
+        }}
       >
         <div className="space-y-4">
-          <div className="space-y-2">
-            <p
-              className="text-[14px] m-0 leading-relaxed"
-              style={{ color: 'var(--text-secondary)' }}
-            >
-              {UK_STRINGS.settings.localPrivacyNotice}
-            </p>
-            <p
-              className="text-[13px] m-0 leading-relaxed"
-              style={{ color: 'var(--text-secondary)' }}
-            >
-              {UK_STRINGS.settings.privateModeRiskNotice}
-            </p>
-          </div>
-
-          {/* Feature-detected Storage Persistence & Quota */}
-          <div
-            className="p-3.5 rounded-xl space-y-2 border"
-            style={{
-              backgroundColor: 'var(--bg-elevated)',
-              borderColor: 'var(--border-subtle)',
-            }}
-            data-testid="storage-persistence-card"
-          >
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="space-y-0.5">
-                <div className="text-[14px] font-medium">
-                  {UK_STRINGS.settings.persistenceLabel}
-                </div>
-                <div
-                  className="text-[13px]"
-                  style={{ color: 'var(--text-secondary)' }}
-                  data-testid="storage-persistence-status"
-                >
-                  {persistenceState === 'granted'
-                    ? UK_STRINGS.settings.persistenceGranted
-                    : persistenceState === 'not_granted'
-                    ? UK_STRINGS.settings.persistenceNotGranted
-                    : UK_STRINGS.settings.persistenceUnsupported}
-                  {storageEstimateText
-                    ? ` · ${UK_STRINGS.settings.storageQuotaLabel}: ${storageEstimateText}`
-                    : ''}
-                </div>
-              </div>
-              {persistenceState === 'not_granted' && (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={handleRequestPersistentStorage}
-                  data-testid="request-persistent-storage-button"
-                >
-                  {UK_STRINGS.settings.persistenceRequestButton}
-                </Button>
-              )}
-            </div>
-            <p
-              className="text-[12px] m-0 leading-relaxed"
-              style={{ color: 'var(--text-secondary)' }}
-            >
-              {UK_STRINGS.settings.persistenceNote}
-            </p>
-          </div>
-
-          {/* Complete Domain Inventory Summary */}
-          <div
-            className="p-3.5 rounded-xl grid grid-cols-2 sm:grid-cols-4 gap-3 text-[13px]"
-            style={{ backgroundColor: 'var(--bg-elevated)' }}
-            data-testid="storage-counts-summary"
-          >
-            <div>
-              <div style={{ color: 'var(--text-secondary)' }}>Папки / Проєкти</div>
-              <div className="text-[16px] font-semibold">
-                {snapshot.folders.length} / {snapshot.projects.length}
-              </div>
-            </div>
-            <div>
-              <div style={{ color: 'var(--text-secondary)' }}>
-                Справи / Резервації
-              </div>
-              <div className="text-[16px] font-semibold">
-                {snapshot.tasks.length} / {snapshot.reservations.length}
-              </div>
-            </div>
-            <div>
-              <div style={{ color: 'var(--text-secondary)' }}>
-                Події та зміни / Шаблони
-              </div>
-              <div className="text-[16px] font-semibold">
-                {snapshot.events.length} / {snapshot.shiftTemplates.length}
-              </div>
-            </div>
-            <div>
-              <div style={{ color: 'var(--text-secondary)' }}>
-                Звички / Записи звичок
-              </div>
-              <div className="text-[16px] font-semibold">
-                {snapshot.habits.length} / {snapshot.habitEntries.length}
-              </div>
-            </div>
-            <div>
-              <div style={{ color: 'var(--text-secondary)' }}>
-                Особисті записи / Оцінки сфер
-              </div>
-              <div className="text-[16px] font-semibold">
-                {snapshot.personalRecords.length} /{' '}
-                {snapshot.lifeAreaAssessments.length}
-              </div>
-            </div>
-            <div>
-              <div style={{ color: 'var(--text-secondary)' }}>
-                Натхнення / Медіафайли
-              </div>
-              <div className="text-[16px] font-semibold">
-                {snapshot.inspirationItems.length} / {snapshot.mediaMeta.length}
-              </div>
-            </div>
-            <div>
-              <div style={{ color: 'var(--text-secondary)' }}>
-                Бажання / Категорії
-              </div>
-              <div className="text-[16px] font-semibold">
-                {snapshot.wishes.length} / {snapshot.wishlistCategories.length}
-              </div>
-            </div>
-            <div>
-              <div style={{ color: 'var(--text-secondary)' }}>
-                Позначки вихідних
-              </div>
-              <div className="text-[16px] font-semibold">
-                {snapshot.dayOffAnnotations.length}
-              </div>
-            </div>
-          </div>
-
-          {/* Export / Share / Import Controls */}
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2.5">
-              <Button
-                variant="secondary"
-                onClick={handleExportZip}
-                disabled={isExporting || isReplacing}
-                data-testid="export-backup-zip-button"
-              >
-                <Download className="w-4 h-4" aria-hidden="true" />
-                <span>
-                  {isExporting
-                    ? UK_STRINGS.settings.exportInProgress
-                    : UK_STRINGS.settings.exportBackupButton}
-                </span>
-              </Button>
-
-              {canShareZipFile() && (
-                <Button
-                  variant="secondary"
-                  onClick={handleShareZip}
-                  disabled={isExporting || isReplacing}
-                  data-testid="share-backup-zip-button"
-                >
-                  <Share2 className="w-4 h-4" aria-hidden="true" />
-                  <span>{UK_STRINGS.settings.shareBackupButton}</span>
-                </Button>
-              )}
-
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".zip,application/zip"
-                onChange={handleFileChange}
-                className="hidden"
-                data-testid="import-backup-file-input"
-              />
-              <Button
-                variant="secondary"
-                disabled={isValidatingImport || isReplacing}
-                onClick={() => fileInputRef.current?.click()}
-                data-testid="import-backup-zip-button"
-              >
-                <Upload className="w-4 h-4" aria-hidden="true" />
-                <span>
-                  {isValidatingImport
-                    ? UK_STRINGS.settings.importValidationInProgress
-                    : UK_STRINGS.settings.importBackupButton}
-                </span>
-              </Button>
-
-              {isValidatingImport && (
-                <Button
-                  variant="subtle"
-                  size="sm"
-                  onClick={handleCancelValidation}
-                  data-testid="cancel-backup-validation-button"
-                >
-                  <XCircle className="w-4 h-4" aria-hidden="true" />
-                  <span>{UK_STRINGS.settings.importCancelValidationAction}</span>
-                </Button>
-              )}
-            </div>
-            <p
-              className="text-[12px] m-0 leading-relaxed"
-              style={{ color: 'var(--text-secondary)' }}
-            >
-              {UK_STRINGS.settings.checksumHonestNote}
-            </p>
-          </div>
-
-          {/* Recovery Failure Fallback Panel (11.5) */}
-          {recoveryFailedFallback && (
+          {backupErrorUk && (
             <div
               role="alert"
-              className="p-4 rounded-2xl space-y-2.5 border"
-              style={{
-                backgroundColor: 'var(--bg-elevated)',
-                borderColor: 'var(--color-brand)',
-              }}
-              data-testid="recovery-failed-fallback-panel"
+              className="p-3 rounded-xl bg-[var(--color-danger)]/10 border border-[var(--color-danger)]/30 text-xs text-[var(--color-danger)]"
+              data-testid="backup-error-banner"
             >
-              <div className="text-[15px] font-semibold">
-                {UK_STRINGS.settings.recoveryFailedFallbackTitle}
-              </div>
-              <p
-                className="text-[13px] m-0 leading-relaxed"
-                style={{ color: 'var(--text-secondary)' }}
-              >
-                {UK_STRINGS.settings.recoveryFailedFallbackHint}
-              </p>
-              <div className="flex flex-wrap items-center gap-2 pt-1">
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={handleExportZip}
-                  data-testid="fallback-export-live-zip-button"
-                >
-                  <Download className="w-4 h-4" aria-hidden="true" />
-                  <span>{UK_STRINGS.settings.exportBackupButton}</span>
-                </Button>
-              </div>
+              {backupErrorUk}
             </div>
           )}
 
-          {/* Explicit Import Preview & Replacement Confirmation (11.4) */}
+          {backupSuccessUk && (
+            <div
+              role="status"
+              className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-500"
+              data-testid="backup-success-banner"
+            >
+              {backupSuccessUk}
+            </div>
+          )}
+
+          <Section title="Архів ZIP">
+            <Row
+              title="Експорт ZIP"
+              secondary="Усі дані та локальні фото"
+              trailing={
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => void handleExportFullBackup()}
+                    disabled={isBusyBackup}
+                    data-testid={backupSheetOpen ? 'export-backup-zip-button' : undefined}
+                    className="ui-primary text-xs px-4 py-2"
+                  >
+                    Експорт ZIP
+                  </button>
+                  {canShareZipFiles() && (
+                    <button
+                      type="button"
+                      onClick={() => void handleShareFullBackup()}
+                      disabled={isBusyBackup}
+                      data-testid="share-backup-zip-button"
+                      className="min-h-[44px] px-3 rounded-xl bg-[var(--bg-elevated)] border border-[var(--border-subtle)] text-xs font-medium"
+                    >
+                      Поділитися
+                    </button>
+                  )}
+                </div>
+              }
+            />
+            <Row
+              title="Відновлення з ZIP"
+              secondary="Перевірка перед заміною"
+              trailing={
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isBusyBackup}
+                  data-testid="trigger-import-backup-button"
+                  className="min-h-[44px] px-3 rounded-xl bg-[var(--bg-elevated)] border border-[var(--border-subtle)] text-xs font-medium"
+                >
+                  Обрати файл
+                </button>
+              }
+            />
+          </Section>
+
           {pendingPreview && (
             <div
-              role="region"
-              aria-label={UK_STRINGS.settings.importPreviewTitle}
-              className="p-4 rounded-2xl space-y-3 border"
-              style={{
-                backgroundColor: 'var(--bg-elevated)',
-                borderColor: 'var(--color-brand)',
-              }}
+              className="p-3.5 rounded-2xl border border-[var(--color-brand)]/40 bg-[var(--bg-elevated)] space-y-3"
               data-testid="import-replacement-preview"
             >
-              <div className="flex items-start gap-2.5">
-                <ShieldAlert
-                  className="w-5 h-5 shrink-0 mt-0.5"
-                  style={{ color: 'var(--color-brand-text)' }}
-                  aria-hidden="true"
-                />
-                <div className="space-y-1">
-                  <h3 className="text-[15px] font-semibold m-0">
-                    {UK_STRINGS.settings.importPreviewTitle}
-                  </h3>
-                  <p
-                    className="text-[13px] m-0 leading-relaxed"
-                    style={{ color: 'var(--text-secondary)' }}
-                  >
-                    {UK_STRINGS.settings.importPreviewWarning}
-                  </p>
+              <p className="text-sm font-semibold text-[var(--text-primary)]">
+                Підтвердження заміни ({pendingFileName})
+              </p>
+              <p className="text-xs text-[var(--text-secondary)]">
+                Створено:{' '}
+                {formatInstant(pendingPreview.manifest.createdAt, activeZone, {
+                  day: 'numeric',
+                  month: 'short',
+                  year: 'numeric',
+                })}{' '}
+                · Розархівовано: {formatBytesUk(pendingPreview.totalExpandedBytes)}
+              </p>
+              <p className="text-xs text-[var(--text-secondary)]">
+                Завдань: {pendingPreview.snapshot.tasks.length} · Подій:{' '}
+                {pendingPreview.snapshot.events.length} · Бажань:{' '}
+                {pendingPreview.snapshot.wishes.length}
+              </p>
+              {pendingPreview.warningsUk && pendingPreview.warningsUk.length > 0 && (
+                <div className="space-y-1 text-xs text-amber-500">
+                  {pendingPreview.warningsUk.map((w, idx) => (
+                    <p key={idx}>{w}</p>
+                  ))}
                 </div>
-              </div>
-
-              {pendingPreview.warningsUk &&
-                pendingPreview.warningsUk.length > 0 && (
-                  <div
-                    className="p-2.5 rounded-xl text-[13px] space-y-1"
-                    style={{ backgroundColor: 'var(--bg-surface)' }}
-                    data-testid="import-preview-warnings"
-                  >
-                    {pendingPreview.warningsUk.map((w, idx) => (
-                      <div key={idx}>{w}</div>
-                    ))}
-                  </div>
-                )}
-
-              <div className="text-[13px] grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1">
-                <div>
-                  Папки в архіві:{' '}
-                  <strong>{pendingPreview.snapshot.folders.length}</strong>
-                </div>
-                <div>
-                  Проєкти в архіві:{' '}
-                  <strong>{pendingPreview.snapshot.projects.length}</strong>
-                </div>
-                <div>
-                  Справи в архіві:{' '}
-                  <strong>{pendingPreview.snapshot.tasks.length}</strong>
-                </div>
-                <div>
-                  Події та зміни:{' '}
-                  <strong>{pendingPreview.snapshot.events.length}</strong>
-                </div>
-                <div>
-                  Звички / Записи:{' '}
-                  <strong>
-                    {pendingPreview.snapshot.habits.length} /{' '}
-                    {pendingPreview.snapshot.habitEntries.length}
-                  </strong>
-                </div>
-                <div>
-                  Особисті записи:{' '}
-                  <strong>
-                    {pendingPreview.snapshot.personalRecords.length}
-                  </strong>
-                </div>
-                <div>
-                  Бажання / Категорії:{' '}
-                  <strong>
-                    {pendingPreview.snapshot.wishes.length} /{' '}
-                    {pendingPreview.snapshot.wishlistCategories.length}
-                  </strong>
-                </div>
-                <div>
-                  Натхнення / Медіа:{' '}
-                  <strong>
-                    {pendingPreview.snapshot.inspirationItems.length} /{' '}
-                    {pendingPreview.snapshot.mediaMeta.length}
-                  </strong>
-                </div>
-                <div>
-                  Розмір після розпакування:{' '}
-                  <strong>
-                    {formatBytesUk(pendingPreview.totalExpandedBytes)}
-                  </strong>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setPendingPreview(null)}
-                >
-                  {UK_STRINGS.settings.importCancelAction}
-                </Button>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  disabled={isReplacing}
-                  onClick={handleConfirmImportReplacement}
+              )}
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => void handleConfirmImportReplacement()}
+                  disabled={isBusyBackup}
                   data-testid="confirm-import-replacement-button"
+                  className="ui-primary text-xs px-4 py-2"
                 >
-                  {UK_STRINGS.settings.importConfirmAction}
-                </Button>
+                  Замінити локальні дані
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCancelImportPreview}
+                  disabled={isBusyBackup}
+                  data-testid="cancel-import-preview-button"
+                  className="min-h-[44px] px-4 rounded-full bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-xs font-medium"
+                >
+                  Скасувати
+                </button>
               </div>
             </div>
           )}
 
-          {/* Local Recovery Snapshots (11.5) */}
-          <div
-            className="border-t pt-3.5 space-y-2.5"
-            style={{ borderColor: 'var(--border-subtle)' }}
-          >
-            <div className="space-y-1">
-              <div className="text-[14px] font-medium">
-                {UK_STRINGS.settings.recoverySnapshotsTitle}
-              </div>
-              <p
-                className="text-[12px] m-0 leading-relaxed"
-                style={{ color: 'var(--text-secondary)' }}
-              >
-                {UK_STRINGS.settings.recoverySnapshotsHint}
-              </p>
-            </div>
-
-            {recoverySnapshots.length === 0 ? (
-              <p
-                className="text-[13px] m-0"
-                style={{ color: 'var(--text-secondary)' }}
-              >
-                {UK_STRINGS.settings.noRecoverySnapshots}
-              </p>
-            ) : (
-              <ul
-                className="space-y-2 m-0 p-0 list-none text-[13px]"
-                data-testid="recovery-snapshots-list"
-              >
-                {recoverySnapshots.map((snap) => (
-                  <li
-                    key={snap.id}
-                    className="p-3 rounded-xl space-y-2"
-                    style={{ backgroundColor: 'var(--bg-elevated)' }}
-                    data-testid={`recovery-snapshot-item-${snap.id}`}
+          <Section title="JSON-CSV експорт">
+            <Row
+              title="Особисті записи та стан"
+              secondary={`Усього записів: ${snapshot.personalRecords.length}`}
+              trailing={
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      downloadPersonalRecords(
+                        snapshot.personalRecords,
+                        snapshot.personalRecords.map((r) => r.id)
+                      )
+                    }
+                    data-testid="settings-export-records-json"
+                    className="min-h-[44px] min-w-[44px] px-3 rounded-xl bg-[var(--bg-elevated)] border border-[var(--border-subtle)] text-xs font-medium"
                   >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div>
-                        <div className="font-medium">
-                          {getRecoveryReasonLabelUk(snap.reason)}
-                        </div>
-                        <div
-                          className="text-[12px]"
-                          style={{ color: 'var(--text-secondary)' }}
-                        >
-                          {snap.createdAt.slice(0, 19).replace('T', ' ')} ·
-                          Справ: {snap.snapshot.tasks.length} · Подій:{' '}
-                          {snap.snapshot.events.length} · Бажань:{' '}
-                          {snap.snapshot.wishes.length} · Медіа:{' '}
-                          {snap.snapshot.mediaMeta.length}
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          disabled={isReplacing}
-                          onClick={() => setRestoreConfirmSnapshot(snap)}
-                          data-testid={`restore-snapshot-button-${snap.id}`}
-                        >
-                          <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />
-                          <span>
-                            {UK_STRINGS.settings.restoreSnapshotAction}
-                          </span>
-                        </Button>
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          disabled={isExporting}
-                          onClick={() => handleExportRecoverySnapshotZip(snap)}
-                          data-testid={`export-snapshot-button-${snap.id}`}
-                        >
-                          <Download className="w-3.5 h-3.5" aria-hidden="true" />
-                          <span>
-                            {UK_STRINGS.settings.exportSnapshotAction}
-                          </span>
-                        </Button>
-                        <Button
-                          variant="subtle"
-                          size="sm"
-                          disabled={isReplacing}
+                    JSON
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      downloadPersonalRecordsCsv(
+                        snapshot.personalRecords,
+                        snapshot.personalRecords.map((r) => r.id)
+                      )
+                    }
+                    data-testid="settings-export-records-csv"
+                    className="min-h-[44px] min-w-[44px] px-3 rounded-xl bg-[var(--bg-elevated)] border border-[var(--border-subtle)] text-xs font-medium"
+                  >
+                    CSV
+                  </button>
+                </div>
+              }
+            />
+          </Section>
+
+          <Section
+            title={`Точки відновлення (${recoverySnapshots.length}/${MAX_RECOVERY_SNAPSHOTS})`}
+          >
+            {recoverySnapshots.length === 0 ? (
+              <Row
+                title="Точок відновлення поки немає"
+                secondary="Створюються автоматично перед імпортом"
+              />
+            ) : (
+              recoverySnapshots.map((snap) => (
+                <div
+                  key={snap.id}
+                  className="p-3 border-b last:border-b-0 border-[var(--border-subtle)] space-y-2"
+                  data-testid={`recovery-snapshot-item-${snap.id}`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-medium text-[var(--text-primary)]">
+                        {formatSnapshotReasonUk(snap.reason)}
+                      </p>
+                      <p className="text-xs text-[var(--text-secondary)]">
+                        {formatInstant(snap.createdAt, activeZone, {
+                          day: 'numeric',
+                          month: 'short',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}{' '}
+                        · Завдань: {snap.snapshot.tasks.length}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setConfirmRestoreSnapshotId(snap.id)}
+                        disabled={isBusyBackup}
+                        data-testid={`restore-recovery-snapshot-${snap.id}`}
+                        className="min-h-[44px] px-2.5 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-xs font-medium"
+                      >
+                        Відновити
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleExportRecoverySnapshot(snap.id)}
+                        disabled={isBusyBackup}
+                        data-testid={`export-recovery-snapshot-${snap.id}`}
+                        className="min-h-[44px] px-2.5 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-xs font-medium"
+                      >
+                        ZIP
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void handleDeleteRecoverySnapshot(snap.id, false)
+                        }
+                        disabled={isBusyBackup}
+                        data-testid={`delete-recovery-snapshot-${snap.id}`}
+                        className="min-h-[44px] px-2.5 rounded-xl text-xs font-medium text-[var(--color-danger)]"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  </div>
+
+                  {confirmRestoreSnapshotId === snap.id && (
+                    <div className="p-2.5 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-strong)] space-y-2">
+                      <p className="text-xs text-[var(--text-secondary)]">
+                        Поточні дані буде збережено у нову точку відновлення.
+                      </p>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
                           onClick={() =>
-                            handleDeleteRecoverySnapshotRequest(snap, false)
+                            void handleConfirmRestoreSnapshot(snap.id)
                           }
-                          data-testid={`delete-snapshot-button-${snap.id}`}
+                          disabled={isBusyBackup}
+                          data-testid={`confirm-restore-snapshot-${snap.id}`}
+                          className="ui-primary text-xs px-3 py-2"
                         >
-                          <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
-                          <span>
-                            {UK_STRINGS.settings.deleteSnapshotAction}
-                          </span>
-                        </Button>
+                          Підтвердити відновлення
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmRestoreSnapshotId(null)}
+                          className="min-h-[44px] px-3 rounded-xl text-xs"
+                        >
+                          Скасувати
+                        </button>
                       </div>
                     </div>
+                  )}
 
-                    {restoreConfirmSnapshot?.id === snap.id && (
-                      <div
-                        className="p-3 rounded-xl space-y-2 border mt-2"
-                        style={{
-                          backgroundColor: 'var(--bg-surface)',
-                          borderColor: 'var(--color-brand)',
-                        }}
-                        data-testid="confirm-restore-snapshot-box"
-                      >
-                        <div className="font-semibold">
-                          {UK_STRINGS.settings.restoreSnapshotConfirmTitle}
-                        </div>
-                        <p
-                          className="text-[12px] m-0 leading-relaxed"
-                          style={{ color: 'var(--text-secondary)' }}
+                  {confirmDeleteOnlySnapshotId === snap.id && (
+                    <div className="p-2.5 rounded-xl bg-[var(--color-danger)]/10 border border-[var(--color-danger)]/30 space-y-2">
+                      <p className="text-xs text-[var(--color-danger)]">
+                        Це єдина точка відновлення. Видалити її остаточно?
+                      </p>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void handleDeleteRecoverySnapshot(snap.id, true)
+                          }
+                          disabled={isBusyBackup}
+                          data-testid={`confirm-delete-only-snapshot-${snap.id}`}
+                          className="min-h-[44px] px-3 rounded-xl bg-[var(--color-danger)] text-white text-xs font-medium"
                         >
-                          {UK_STRINGS.settings.restoreSnapshotConfirmWarning}
-                        </p>
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => setRestoreConfirmSnapshot(null)}
-                          >
-                            {UK_STRINGS.settings.importCancelAction}
-                          </Button>
-                          <Button
-                            variant="primary"
-                            size="sm"
-                            disabled={isReplacing}
-                            onClick={handleConfirmRestoreSnapshot}
-                            data-testid="confirm-restore-snapshot-submit"
-                          >
-                            {UK_STRINGS.settings.restoreSnapshotConfirmButton}
-                          </Button>
-                        </div>
+                          Видалити єдину точку
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteOnlySnapshotId(null)}
+                          className="min-h-[44px] px-3 rounded-xl text-xs"
+                        >
+                          Скасувати
+                        </button>
                       </div>
-                    )}
-
-                    {deleteOnlyPointSnapshot?.id === snap.id && (
-                      <div
-                        className="p-3 rounded-xl space-y-2 border mt-2"
-                        style={{
-                          backgroundColor: 'var(--bg-surface)',
-                          borderColor: 'var(--color-brand)',
-                        }}
-                        data-testid="confirm-delete-only-snapshot-box"
-                      >
-                        <p className="text-[12px] m-0 leading-relaxed">
-                          {UK_STRINGS.settings.deleteOnlySnapshotWarning}
-                        </p>
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => setDeleteOnlyPointSnapshot(null)}
-                          >
-                            {UK_STRINGS.settings.importCancelAction}
-                          </Button>
-                          <Button
-                            variant="primary"
-                            size="sm"
-                            onClick={() =>
-                              handleDeleteRecoverySnapshotRequest(snap, true)
-                            }
-                            data-testid="confirm-delete-only-snapshot-submit"
-                          >
-                            {UK_STRINGS.settings.deleteOnlySnapshotConfirmButton}
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-
-          {/* Controlled Reset of PLANUI Data (11.6) */}
-          <div
-            className="border-t pt-3.5 space-y-2.5"
-            style={{ borderColor: 'var(--border-subtle)' }}
-          >
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="space-y-0.5">
-                <div className="text-[14px] font-medium">
-                  {UK_STRINGS.settings.resetSectionTitle}
+                    </div>
+                  )}
                 </div>
-                <p
-                  className="text-[12px] m-0 leading-relaxed"
-                  style={{ color: 'var(--text-secondary)' }}
+              ))
+            )}
+          </Section>
+        </div>
+      </Sheet>
+
+      {/* SHEET 2: СХОВИЩЕ */}
+      <Sheet
+        title="Сховище"
+        isOpen={storageSheetOpen}
+        onClose={() => setStorageSheetOpen(false)}
+      >
+        <div className="space-y-4">
+          <Section title="Стан сховища браузера">
+            <Row
+              title="Постійне сховище"
+              trailing={
+                <span
+                  className="text-xs font-medium"
+                  data-testid="persistent-storage-status"
                 >
-                  {UK_STRINGS.settings.resetSectionHint}
-                </p>
-              </div>
-              {!isResetDialogOpen && (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    setIsResetDialogOpen(true);
-                    setResetConfirmedCheckbox(false);
-                  }}
-                  data-testid="open-reset-planui-dialog-button"
+                  {storageEstimate.persisted === true
+                    ? 'Захищено'
+                    : storageEstimate.persisted === false
+                    ? 'Стандартний режим'
+                    : 'Перевірка…'}
+                </span>
+              }
+            />
+            <Row
+              title="Використано"
+              trailing={
+                <span
+                  className="text-xs text-[var(--text-secondary)]"
+                  data-testid="storage-usage-quota"
                 >
-                  {UK_STRINGS.settings.resetOpenDialogButton}
-                </Button>
-              )}
+                  {formatBytesUk(storageEstimate.usageBytes)} з{' '}
+                  {formatBytesUk(storageEstimate.quotaBytes)}
+                </span>
+              }
+            />
+            {storageEstimate.persisted !== true && (
+              <Row
+                title="Захист від автоочищення"
+                trailing={
+                  <button
+                    type="button"
+                    onClick={() => void handleRequestPersistentStorage()}
+                    disabled={isRequestingPersistence}
+                    data-testid="request-persistent-storage-button"
+                    className="min-h-[44px] px-3 rounded-xl bg-[var(--bg-elevated)] border border-[var(--border-subtle)] text-xs font-medium"
+                  >
+                    {isRequestingPersistence ? 'Запит…' : 'Запросити захист'}
+                  </button>
+                }
+              />
+            )}
+          </Section>
+
+          <Section title="Обсяг записів на пристрої">
+            <Row
+              title="Напрями, цілі, проєкти"
+              trailing={`${snapshot.folders.length} / ${snapshot.goals?.length ?? 0} / ${snapshot.projects.length}`}
+            />
+            <Row
+              title="Завдання та події"
+              trailing={`${snapshot.tasks.length} / ${snapshot.events.length}`}
+            />
+            <Row
+              title="Звички та записи стану"
+              trailing={`${snapshot.habits.length} / ${snapshot.personalRecords.length}`}
+            />
+            <Row
+              title="Натхнення та бажання"
+              trailing={`${snapshot.inspirationItems.length} / ${snapshot.wishes.length}`}
+            />
+          </Section>
+        </div>
+      </Sheet>
+
+      {/* SHEET 3: СТЕРТИ ВСІ ДАНІ (Double-Confirm Sheet) */}
+      <Sheet
+        title="Стерти всі дані"
+        isOpen={showResetConfirm}
+        onClose={() => {
+          if (!isBusyBackup) {
+            setShowResetConfirm(false);
+            setResetConfirmedCheckbox(false);
+          }
+        }}
+      >
+        <div className="space-y-4" data-testid="reset-confirmation-dialog">
+          <p className="text-sm text-[var(--text-secondary)]">
+            Усі завдання, події, звички, нотатки та бажання буде видалено з цього пристрою.
+          </p>
+
+          <Section title="1. Точки відновлення">
+            <div className="p-3">
+              <Segmented<'create_pre_reset_snapshot' | 'clear_all_snapshots'>
+                label="Точки відновлення перед очищенням"
+                value={resetSnapshotHandling}
+                onChange={setResetSnapshotHandling}
+                options={[
+                  { value: 'create_pre_reset_snapshot', label: 'Зберегти копію' },
+                  { value: 'clear_all_snapshots', label: 'Видалити все' },
+                ]}
+              />
             </div>
+          </Section>
 
-            {isResetDialogOpen && (
-              <div
-                role="region"
-                aria-label={UK_STRINGS.settings.resetSectionTitle}
-                className="p-4 rounded-2xl space-y-3 border"
-                style={{
-                  backgroundColor: 'var(--bg-elevated)',
-                  borderColor: 'var(--color-brand)',
-                }}
-                data-testid="reset-planui-confirmation-dialog"
-              >
-                <div className="space-y-2 text-[13px]">
-                  <label className="flex items-start gap-2.5 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="reset-snapshot-mode"
-                      checked={
-                        resetSnapshotMode === 'create_pre_reset_snapshot'
-                      }
-                      onChange={() =>
-                        setResetSnapshotMode('create_pre_reset_snapshot')
-                      }
-                      className="mt-1 accent-[var(--color-brand)]"
-                      data-testid="reset-mode-keep-snapshot"
-                    />
-                    <span>{UK_STRINGS.settings.resetKeepSnapshotOption}</span>
-                  </label>
-                  <label className="flex items-start gap-2.5 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="reset-snapshot-mode"
-                      checked={resetSnapshotMode === 'clear_all_snapshots'}
-                      onChange={() =>
-                        setResetSnapshotMode('clear_all_snapshots')
-                      }
-                      className="mt-1 accent-[var(--color-brand)]"
-                      data-testid="reset-mode-clear-snapshots"
-                    />
-                    <span>{UK_STRINGS.settings.resetClearSnapshotsOption}</span>
-                  </label>
-                </div>
+          <Section title="2. Підтвердження">
+            <Row
+              title="Я розумію, що дані буде очищено"
+              trailing={
+                <Toggle
+                  label="Я розумію, що локальні дані буде очищено"
+                  checked={resetConfirmedCheckbox}
+                  onChange={setResetConfirmedCheckbox}
+                  disabled={isBusyBackup}
+                  testId="reset-explicit-confirm-checkbox"
+                />
+              }
+            />
+          </Section>
 
-                <label className="flex items-start gap-2.5 cursor-pointer text-[13px] pt-1">
-                  <input
-                    type="checkbox"
-                    checked={resetConfirmedCheckbox}
-                    onChange={(e) =>
-                      setResetConfirmedCheckbox(e.target.checked)
-                    }
-                    className="mt-0.5 w-4 h-4 accent-[var(--color-brand)]"
-                    data-testid="reset-confirm-checkbox"
-                  />
-                  <span>{UK_STRINGS.settings.resetConfirmCheckboxLabel}</span>
-                </label>
-
-                <div className="flex justify-end gap-2 pt-1">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => {
-                      setIsResetDialogOpen(false);
-                      setResetConfirmedCheckbox(false);
-                    }}
-                  >
-                    {UK_STRINGS.settings.importCancelAction}
-                  </Button>
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    disabled={!resetConfirmedCheckbox || isReplacing}
-                    onClick={handleConfirmResetPlanui}
-                    data-testid="confirm-reset-planui-submit"
-                  >
-                    {UK_STRINGS.settings.resetConfirmButton}
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div
-            className="text-[12px] pt-1 flex flex-wrap items-center justify-between gap-2"
-            style={{ color: 'var(--text-secondary)' }}
-            data-testid="settings-version-footer"
-          >
-            <span>{UK_STRINGS.settings.appVersionLabel}</span>
-            <span className="font-mono">
-              PLANUI {settings.appVersion} · DB v{settings.dbSchemaVersion} ·
-              Backup v{PLANUI_BACKUP_VERSION} · Gen {settings.dbGeneration}
-            </span>
+          <div className="flex flex-col gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => void handleConfirmResetAllData()}
+              disabled={!resetConfirmedCheckbox || isBusyBackup}
+              data-testid="confirm-reset-all-data-button"
+              className="w-full min-h-[44px] rounded-full bg-[var(--color-danger)] text-[var(--btn-primary-fg)] font-semibold px-5 py-3 disabled:opacity-40"
+            >
+              Підтвердити очищення даних
+            </button>
           </div>
         </div>
-      </Card>
+      </Sheet>
     </div>
   );
 };

@@ -11,33 +11,23 @@ import {
   Sheet,
   EmptyState,
   Disclosure,
-  SelectField as ContractSelectField,
+  DateField,
+  TimeField,
 } from "../ui";
+import { formatDate, formatDuration } from "../lib/format";
 import { PlanDetail } from "./PlanDetail";
 import { RoadmapView } from './RoadmapView';
 import React, { useMemo, useState } from 'react';
 import {
   Folder as FolderIcon,
-  Briefcase,
   CheckCircle2,
   Circle,
-  XCircle,
-  ChevronRight,
   ArrowUp,
   ArrowDown,
-  Edit3,
   Trash2,
-  Archive,
-  CheckSquare,
-  Square,
-  Layers,
-  AlertCircle,
-  Clock,
-  Calendar as CalendarIcon,
   Search,
   ArrowUpRight,
   Plus,
-  Target,
 } from 'lucide-react';
 import { UK_STRINGS } from '../i18n/uk';
 import {
@@ -57,9 +47,6 @@ import {
 } from '../domain/types';
 import {
   buildAbbreviatedBreadcrumbs,
-  calculateGoalProgress,
-  calculateProjectTaskProgress,
-  classifyTaskTemporalNotice,
   computeFolderDeleteImpact,
   getAllowedMoveTargetFolders,
   getUnresolvedProjectTasks,
@@ -74,7 +61,6 @@ import {
   DestinationContextMap,
   ImplementedCreationActionKind,
   PlansPriorityFilter,
-  PlansTaskStateFilter,
 } from '../state/shellStore';
 import {
   PlanuiRepositories,
@@ -82,11 +68,8 @@ import {
 } from '../storage/repositories';
 import {
   Button,
-  Card,
-  EmptyStateCard,
   InputField,
   ModalSheet,
-  ProgressBar,
   SegmentedControl,
   SelectField,
   TextAreaField,
@@ -121,7 +104,7 @@ export const PlansView: React.FC<PlansViewProps> = ({
   tasks,
   reservations,
   events = [],
-  activeZone = 'Europe/Kyiv',
+  activeZone = '',
   actualTodayDate,
   plansContext,
   repositories,
@@ -199,9 +182,6 @@ export const PlansView: React.FC<PlansViewProps> = ({
   const [editingStage, setEditingStage] = useState<ProjectStage | null>(null);
   const [stageEditTitle, setStageEditTitle] = useState('');
   const [stageEditOutcome, setStageEditOutcome] = useState('');
-  const [stageEditTargetDate, setStageEditTargetDate] = useState<string | null>(
-    null
-  );
 
   // Task Detail / Editor Sheet state
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
@@ -234,12 +214,9 @@ export const PlansView: React.FC<PlansViewProps> = ({
   const [taskEditStageId, setTaskEditStageId] = useState<string | null>(null);
   const [newChecklistTitle, setNewChecklistTitle] = useState('');
 
-  // Stage 5: Bounded immediate lifecycle undo & conflict notice
+  // Stage 5: Bounded immediate lifecycle undo
   const [lastUndoToken, setLastUndoToken] =
     useState<TaskLifecycleUndoToken | null>(null);
-  const [undoConflictMessage, setUndoConflictMessage] = useState<string | null>(
-    null
-  );
 
   // Stage 5: Add / Reschedule Reservation Session state inside Task Sheet
   const [showAddSessionForm, setShowAddSessionForm] = useState(false);
@@ -260,8 +237,6 @@ export const PlansView: React.FC<PlansViewProps> = ({
   const [rescheduleOverlapConfirmed, setRescheduleOverlapConfirmed] =
     useState(false);
 
-  // Selected tasks for batch operations
-  const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
   const [modalError, setModalError] = useState<string | null>(null);
 
   const isAnyLocalModalOpen = Boolean(
@@ -301,16 +276,6 @@ export const PlansView: React.FC<PlansViewProps> = ({
     () => buildAbbreviatedBreadcrumbs(folders, plansContext.activeFolderId, 3),
     [folders, plansContext.activeFolderId]
   );
-
-  const visibleBreadcrumbFolders = useMemo(() => {
-    if (!breadcrumbData.isAbbreviated) {
-      return breadcrumbData.fullChain;
-    }
-    return [
-      ...breadcrumbData.visibleLeading,
-      ...breadcrumbData.visibleTrailing,
-    ];
-  }, [breadcrumbData]);
 
   const openTaskEditor = (task: Task) => {
     setModalError(null);
@@ -430,29 +395,6 @@ export const PlansView: React.FC<PlansViewProps> = ({
     }
   };
 
-  const handleToggleGoalCompleted = async (goal: Goal) => {
-    setModalError(null);
-    const nowIso = new Date().toISOString();
-    const isCompleted = goal.state === 'completed';
-    const nextState: GoalState = isCompleted ? 'active' : 'completed';
-    try {
-      await repositories.saveGoal({
-        ...goal,
-        state: nextState,
-        completedAt: isCompleted ? null : nowIso,
-        updatedAt: nowIso,
-        revision: goal.revision + 1,
-      });
-      await onDataChanged(
-        isCompleted ? 'Ціль повернуто в активні.' : 'Ціль досягнуто!'
-      );
-    } catch (err) {
-      setModalError(
-        err instanceof Error ? err.message : 'Не вдалося змінити стан цілі.'
-      );
-    }
-  };
-
   const handleToggleGoalArchived = async (goal: Goal) => {
     setModalError(null);
     try {
@@ -495,34 +437,6 @@ export const PlansView: React.FC<PlansViewProps> = ({
     } catch (err) {
       setModalError(
         err instanceof Error ? err.message : 'Не вдалося видалити ціль.'
-      );
-    }
-  };
-
-  const handleCreateStarterDirections = async () => {
-    setModalError(null);
-    const nowIso = new Date().toISOString();
-    const starters = ['Творчість', 'Університет', 'Поточна робота', 'Перехід на іншу роботу', 'Англійська мова'];
-    try {
-      for (let i = 0; i < starters.length; i++) {
-        const id =
-          typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-            ? crypto.randomUUID()
-            : `starter-${Date.now()}-${i}`;
-        await repositories.saveFolder({
-          id,
-          name: starters[i],
-          parentId: null,
-          order: i,
-          createdAt: nowIso,
-          updatedAt: nowIso,
-          revision: 1,
-        });
-      }
-      await onDataChanged('Базові напрями створено.');
-    } catch (err) {
-      setModalError(
-        err instanceof Error ? err.message : 'Не вдалося створити напрями.'
       );
     }
   };
@@ -725,19 +639,6 @@ export const PlansView: React.FC<PlansViewProps> = ({
     plansContext.showCompletedTasks,
   ]);
 
-  const activeGoalProgress = useMemo(() => {
-    if (!activeGoal) return null;
-    return calculateGoalProgress(activeGoal.id, tasks, projects);
-  }, [tasks, activeGoal, projects]);
-
-  // Stages and tasks for the active project
-  const activeProjectStages = useMemo(() => {
-    if (!activeProject) return [];
-    return stages
-      .filter((s) => s.projectId === activeProject.id)
-      .sort((a, b) => a.order - b.order);
-  }, [stages, activeProject]);
-
   const activeProjectAllTasks = useMemo(() => {
     if (!activeProject) return [];
     return tasks.filter(
@@ -906,23 +807,6 @@ export const PlansView: React.FC<PlansViewProps> = ({
     }
   };
 
-  const handleUnarchiveProject = async (project: Project) => {
-    try {
-      await repositories.archiveProjectTransactionally(
-        project.id,
-        false,
-        'retain_planning',
-        new Date().toISOString(),
-        actualTodayDate
-      );
-      await onDataChanged('Проєкт повернуто з архіву.');
-    } catch (err) {
-      setModalError(
-        err instanceof Error ? err.message : 'Не вдалося розархівувати проєкт.'
-      );
-    }
-  };
-
   const handleConfirmDeleteProject = async () => {
     if (!deletingProject) return;
     setModalError(null);
@@ -944,37 +828,6 @@ export const PlansView: React.FC<PlansViewProps> = ({
     }
   };
 
-  const handleReorderStage = async (
-    stageId: string,
-    direction: 'up' | 'down'
-  ) => {
-    try {
-      const target = stages.find((s) => s.id === stageId);
-      if (!target || target.projectId === null) return;
-      const siblings = stages
-        .filter((s) => s.projectId === target.projectId)
-        .sort((a, b) => a.order - b.order);
-      const idx = siblings.findIndex((s) => s.id === stageId);
-      if (idx === -1) return;
-      const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
-      if (swapIdx < 0 || swapIdx >= siblings.length) return;
-      const reordered = [...siblings];
-      const temp = reordered[idx];
-      reordered[idx] = reordered[swapIdx];
-      reordered[swapIdx] = temp;
-      await repositories.reorderStagesTransactionally(
-        target.projectId,
-        reordered.map((s) => s.id),
-        new Date().toISOString()
-      );
-      await onDataChanged();
-    } catch (err) {
-      setModalError(
-        err instanceof Error ? err.message : 'Не вдалося змінити порядок етапів.'
-      );
-    }
-  };
-
   const handleSaveStageEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingStage) return;
@@ -987,7 +840,6 @@ export const PlansView: React.FC<PlansViewProps> = ({
         expectedOutcome: stageEditOutcome.trim()
           ? stageEditOutcome.trim()
           : null,
-        targetDate: stageEditTargetDate || null,
         updatedAt: nowIso,
         revision: editingStage.revision + 1,
       });
@@ -1000,61 +852,16 @@ export const PlansView: React.FC<PlansViewProps> = ({
     }
   };
 
-  const handleDeleteStage = async (stageId: string) => {
-    try {
-      await repositories.deleteStageTransactionally(
-        stageId,
-        new Date().toISOString()
-      );
-      await onDataChanged('Етап видалено. Справи залишено в проєкті.');
-    } catch (err) {
-      setModalError(
-        err instanceof Error ? err.message : 'Не вдалося видалити етап.'
-      );
-    }
-  };
-
-  const handleToggleTaskQuick = async (task: Task) => {
-    const nowIso = new Date().toISOString();
-    setUndoConflictMessage(null);
-    try {
-      if (task.state === 'open') {
-        const res = await repositories.completeTaskTransactionally(
-          task.id,
-          nowIso,
-          task.revision
-        );
-        setLastUndoToken(res.undoToken);
-      } else {
-        setLastUndoToken(null);
-        await repositories.reopenTaskTransactionally(
-          task.id,
-          nowIso,
-          task.revision
-        );
-      }
-      await onDataChanged();
-    } catch (err) {
-      setModalError(
-        err instanceof Error ? err.message : 'Не вдалося змінити стан справи.'
-      );
-    }
-  };
-
   const handleUndoTaskLifecycle = async () => {
     if (!lastUndoToken) return;
     setModalError(null);
-    setUndoConflictMessage(null);
     try {
-      const res = await repositories.undoTaskLifecycleTransactionally(
+      await repositories.undoTaskLifecycleTransactionally(
         lastUndoToken,
         new Date().toISOString(),
         activeZone
       );
       setLastUndoToken(null);
-      if (res.conflictReport.hasConflicts && res.conflictReport.warningMessageUk) {
-        setUndoConflictMessage(res.conflictReport.warningMessageUk);
-      }
       await onDataChanged(UK_STRINGS.scheduling.undoSuccessFeedback);
     } catch (err) {
       setLastUndoToken(null);
@@ -1323,7 +1130,6 @@ export const PlansView: React.FC<PlansViewProps> = ({
   ) => {
     if (!editingTask) return;
     setModalError(null);
-    setUndoConflictMessage(null);
     const nowIso = new Date().toISOString();
     try {
       if (targetState === 'completed') {
@@ -1457,255 +1263,6 @@ export const PlansView: React.FC<PlansViewProps> = ({
           : 'Не вдалося перетворити крок на справу.'
       );
     }
-  };
-
-  // Batch selection & actions
-  const toggleSelectTask = (taskId: string) => {
-    setSelectedTaskIds((prev) =>
-      prev.includes(taskId)
-        ? prev.filter((id) => id !== taskId)
-        : [...prev, taskId]
-    );
-  };
-
-  const handleBatchOperation = async (
-    operation:
-      | { kind: 'set_planned_date'; plannedDate: string | null }
-      | { kind: 'move_ownership'; ownership: TaskOwnership }
-      | { kind: 'complete' }
-      | { kind: 'cancel' }
-  ) => {
-    if (selectedTaskIds.length === 0) return;
-    try {
-      await repositories.batchUpdateTasksTransactionally(
-        selectedTaskIds,
-        operation,
-        new Date().toISOString()
-      );
-      setSelectedTaskIds([]);
-      await onDataChanged(UK_STRINGS.plansView.batchUpdatedFeedback);
-    } catch (err) {
-      setModalError(
-        err instanceof Error
-          ? err.message
-          : 'Не вдалося виконати групову дію.'
-      );
-    }
-  };
-
-  // Render single task row
-  const renderTaskRow = (task: Task) => {
-    const completed = task.state === 'completed';
-    const canceled = task.state === 'canceled';
-    const selected = selectedTaskIds.includes(task.id);
-    const temporalNotice = classifyTaskTemporalNotice(
-      task,
-      reservations,
-      actualTodayDate,
-      new Date().toISOString()
-    );
-    const hasTemporalNotice =
-      temporalNotice.isDeadlineOverdue ||
-      temporalNotice.isPastPlannedDate ||
-      temporalNotice.isElapsedTimedPlanning;
-    const doneSteps = task.checklist.filter((c) => c.completed).length;
-
-    const priorityLabel =
-      task.priority === 'high'
-        ? UK_STRINGS.creation.taskForm.priorityHigh
-        : task.priority === 'low'
-        ? UK_STRINGS.creation.taskForm.priorityLow
-        : UK_STRINGS.creation.taskForm.priorityNormal;
-
-    return (
-      <li
-        key={task.id}
-        data-testid={`task-row-${task.title}`}
-        className="p-3 rounded-xl flex items-start justify-between gap-2.5"
-        style={{
-          backgroundColor: 'var(--bg-elevated)',
-          border: selected
-            ? '1.5px solid var(--color-brand)'
-            : '1px solid var(--border-subtle)',
-        }}
-      >
-        <div className="flex items-start gap-2.5 flex-1 min-w-0">
-          {/* Batch selection toggle */}
-          <button
-            type="button"
-            onClick={() => toggleSelectTask(task.id)}
-            aria-label={`${UK_STRINGS.plansView.selectForBatchAria}: ${task.title}`}
-            data-testid={`batch-select-task-${task.title}`}
-            className="min-w-[36px] min-h-[44px] flex items-center justify-center cursor-pointer shrink-0"
-            style={{ color: 'var(--text-secondary)' }}
-          >
-            {selected ? (
-              <CheckSquare
-                className="w-4 h-4"
-                style={{ color: 'var(--color-brand)' }}
-                aria-hidden="true"
-              />
-            ) : (
-              <Square className="w-4 h-4" aria-hidden="true" />
-            )}
-          </button>
-
-          {/* Complete / Reopen toggle */}
-          <button
-            type="button"
-            onClick={() => void handleToggleTaskQuick(task)}
-            aria-label={
-              completed
-                ? `${UK_STRINGS.plansView.reopenTaskButton}: ${task.title}`
-                : `${UK_STRINGS.plansView.completeTaskButton}: ${task.title}`
-            }
-            data-testid={`toggle-task-state-${task.title}`}
-            className="min-w-[36px] min-h-[44px] flex items-center justify-center cursor-pointer shrink-0"
-          >
-            {completed ? (
-              <CheckCircle2
-                className="w-5 h-5"
-                style={{ color: 'var(--color-dayoff)' }}
-                aria-hidden="true"
-              />
-            ) : canceled ? (
-              <XCircle
-                className="w-5 h-5"
-                style={{ color: 'var(--text-secondary)' }}
-                aria-hidden="true"
-              />
-            ) : (
-              <Circle
-                className="w-5 h-5"
-                style={{ color: 'var(--text-secondary)' }}
-                aria-hidden="true"
-              />
-            )}
-          </button>
-
-          {/* Main task button opening detail/editor sheet */}
-          <button
-            type="button"
-            onClick={() => openTaskEditor(task)}
-            data-testid={`open-task-editor-${task.title}`}
-            className="flex-1 text-left py-1 cursor-pointer min-w-0"
-          >
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span
-                className={`text-[15px] font-medium break-words ${
-                  completed || canceled ? 'line-through opacity-70' : ''
-                }`}
-              >
-                {task.title}
-              </span>
-              {canceled && (
-                <span
-                  className="px-2 py-0.5 rounded-md text-[11px] font-medium"
-                  style={{
-                    backgroundColor: 'var(--bg-surface)',
-                    color: 'var(--text-secondary)',
-                  }}
-                >
-                  {UK_STRINGS.plansView.taskStateCanceled}
-                </span>
-              )}
-              {task.priority !== 'normal' && (
-                <span
-                  className="px-2 py-0.5 rounded-md text-[11px] font-semibold"
-                  style={{
-                    backgroundColor:
-                      task.priority === 'high'
-                        ? 'var(--color-brand-tint)'
-                        : 'var(--bg-surface)',
-                    color:
-                      task.priority === 'high'
-                        ? 'var(--color-brand-text)'
-                        : 'var(--text-secondary)',
-                  }}
-                  data-testid={`task-priority-badge-${task.title}`}
-                >
-                  {UK_STRINGS.plansView.priorityBadgePrefix}: {priorityLabel}
-                </span>
-              )}
-            </div>
-
-            <div
-              className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-[12px]"
-              style={{ color: 'var(--text-secondary)' }}
-            >
-              <span>
-                {task.planningState === 'date_only' && task.plannedDate
-                  ? `${UK_STRINGS.plansView.plannedDateBadgePrefix}: ${task.plannedDate}`
-                  : task.planningState === 'timed'
-                  ? 'Заплановано в розкладі'
-                  : UK_STRINGS.creation.taskForm.planningNoDate}
-              </span>
-
-              {task.deadline && (
-                <span data-testid={`task-deadline-badge-${task.title}`}>
-                  {UK_STRINGS.plansView.deadlineBadgePrefix}:{' '}
-                  {task.deadline.kind === 'date_only'
-                    ? task.deadline.localDate
-                    : task.deadline.instant.slice(0, 16).replace('T', ' ')}
-                </span>
-              )}
-
-              {task.estimatedDurationMinutes !== null && (
-                <span>
-                  {UK_STRINGS.plansView.estimateBadgePrefix}:{' '}
-                  {task.estimatedDurationMinutes}{' '}
-                  {UK_STRINGS.plansView.minutesShort}
-                </span>
-              )}
-
-              {task.checklist.length > 0 && (
-                <span data-testid={`task-checklist-count-${task.title}`}>
-                  Чекліст: {doneSteps}/{task.checklist.length}
-                </span>
-              )}
-            </div>
-
-            {/* Distinct non-punitive temporal notices (C06 & 4.5) */}
-            {hasTemporalNotice && (
-              <div
-                className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[12px] font-medium"
-                style={{
-                  backgroundColor: temporalNotice.isDeadlineOverdue
-                    ? 'var(--color-brand-tint)'
-                    : 'var(--bg-surface)',
-                  color: temporalNotice.isDeadlineOverdue
-                    ? 'var(--color-brand-text)'
-                    : 'var(--text-secondary)',
-                }}
-                data-testid={`task-temporal-notice-${task.title}`}
-              >
-                {temporalNotice.isDeadlineOverdue ? (
-                  <AlertCircle className="w-3.5 h-3.5" aria-hidden="true" />
-                ) : (
-                  <Clock className="w-3.5 h-3.5" aria-hidden="true" />
-                )}
-                <span>
-                  {temporalNotice.isDeadlineOverdue
-                    ? UK_STRINGS.plansView.temporalNoticeOverdueDeadline
-                    : temporalNotice.isPastPlannedDate
-                    ? UK_STRINGS.plansView.temporalNoticePastPlannedDate
-                    : UK_STRINGS.plansView.temporalNoticeElapsedReservation}
-                </span>
-              </div>
-            )}
-          </button>
-        </div>
-
-        <Button
-          variant="subtle"
-          size="icon"
-          aria-label={`${UK_STRINGS.plansView.editTaskTitle}: ${task.title}`}
-          onClick={() => openTaskEditor(task)}
-        >
-          <Edit3 className="w-4 h-4" aria-hidden="true" />
-        </Button>
-      </li>
-    );
   };
 
   const folderDeleteImpact = useMemo(() => {
@@ -1906,6 +1463,7 @@ export const PlansView: React.FC<PlansViewProps> = ({
             tasks={activeProject ? activeProjectVisibleTasks : activeGoalTasks}
             reservations={reservations}
             repositories={repositories}
+            zone={activeZone}
             onChanged={onDataChanged}
             onTask={openTaskEditor}
             onAdd={() => onOpenGlobalCreation("task")}
@@ -2082,7 +1640,7 @@ export const PlansView: React.FC<PlansViewProps> = ({
         isOpen={filtersOpen}
         onClose={() => setFiltersOpen(false)}
       >
-        <ContractSelectField
+        <SelectField
           label="Пріоритет"
           value={plansContext.priorityFilter}
           onChange={(e) =>
@@ -2323,24 +1881,17 @@ export const PlansView: React.FC<PlansViewProps> = ({
             </div>
 
             {folderDeleteStrategy === 'recursive_delete' && (
-              <label
-                className="flex items-start gap-2.5 p-3 rounded-xl cursor-pointer"
-                style={{
-                  backgroundColor: 'var(--color-brand-tint)',
-                  color: 'var(--color-brand-text)',
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={folderDeleteConfirmed}
-                  onChange={(e) => setFolderDeleteConfirmed(e.target.checked)}
-                  data-testid="folder-delete-recursive-confirm-checkbox"
-                  className="mt-1"
-                />
-                <span className="text-[13px] font-medium">
-                  {UK_STRINGS.plansView.deleteFolderRecursiveConfirmCheckbox}
-                </span>
-              </label>
+              <Row
+                title={UK_STRINGS.plansView.deleteFolderRecursiveConfirmCheckbox}
+                trailing={
+                  <Toggle
+                    label={UK_STRINGS.plansView.deleteFolderRecursiveConfirmCheckbox}
+                    checked={folderDeleteConfirmed}
+                    onChange={setFolderDeleteConfirmed}
+                    data-testid="folder-delete-recursive-confirm-checkbox"
+                  />
+                }
+              />
             )}
 
             <div className="flex justify-end gap-2">
@@ -2812,11 +2363,10 @@ export const PlansView: React.FC<PlansViewProps> = ({
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <div className="space-y-0.5">
                               <div className="text-[13px] font-semibold">
-                                {res.interval.originStartLocalDate}{' '}
+                                {formatDate(res.interval.originStartLocalDate)}{' '}
                                 {res.interval.originStartLocalTime} –{' '}
-                                {res.interval.originEndLocalDate}{' '}
-                                {res.interval.originEndLocalTime} ({durationMin}{' '}
-                                хв • {res.interval.originZone})
+                                {formatDate(res.interval.originEndLocalDate)}{' '}
+                                {res.interval.originEndLocalTime} ({formatDuration(durationMin)})
                               </div>
                               <div
                                 className="text-[11px] font-medium"
@@ -2888,12 +2438,10 @@ export const PlansView: React.FC<PlansViewProps> = ({
                               data-testid={`reschedule-reservation-form-${res.id}`}
                             >
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                <InputField
+                                <DateField
                                   label={
                                     UK_STRINGS.creation.eventForm.startDateLabel
                                   }
-                                  type="date"
-                                  lang="uk"
                                   value={rescheduleStartDate}
                                   onChange={(e) => {
                                     setRescheduleStartDate(e.target.value);
@@ -2901,12 +2449,10 @@ export const PlansView: React.FC<PlansViewProps> = ({
                                   }}
                                   data-testid="reschedule-start-date-input"
                                 />
-                                <InputField
+                                <TimeField
                                   label={
                                     UK_STRINGS.creation.eventForm.startTimeLabel
                                   }
-                                  type="time"
-                                  lang="uk"
                                   value={rescheduleStartTime}
                                   onChange={(e) => {
                                     setRescheduleStartTime(e.target.value);
@@ -2916,12 +2462,10 @@ export const PlansView: React.FC<PlansViewProps> = ({
                                 />
                               </div>
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                <InputField
+                                <DateField
                                   label={
                                     UK_STRINGS.creation.eventForm.endDateLabel
                                   }
-                                  type="date"
-                                  lang="uk"
                                   value={rescheduleEndDate}
                                   onChange={(e) => {
                                     setRescheduleEndDate(e.target.value);
@@ -2929,12 +2473,10 @@ export const PlansView: React.FC<PlansViewProps> = ({
                                   }}
                                   data-testid="reschedule-end-date-input"
                                 />
-                                <InputField
+                                <TimeField
                                   label={
                                     UK_STRINGS.creation.eventForm.endTimeLabel
                                   }
-                                  type="time"
-                                  lang="uk"
                                   value={rescheduleEndTime}
                                   onChange={(e) => {
                                     setRescheduleEndTime(e.target.value);
@@ -2943,24 +2485,23 @@ export const PlansView: React.FC<PlansViewProps> = ({
                                   data-testid="reschedule-end-time-input"
                                 />
                               </div>
-                              <label className="flex items-center gap-2 text-[12px] cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={rescheduleOverlapConfirmed}
-                                  onChange={(e) =>
-                                    setRescheduleOverlapConfirmed(
-                                      e.target.checked
-                                    )
-                                  }
-                                  data-testid="reschedule-overlap-confirm-checkbox"
-                                />
-                                <span>
-                                  {
-                                    UK_STRINGS.creation.eventForm
-                                      .confirmConsciousOverlapLabel
-                                  }
-                                </span>
-                              </label>
+                              <Row
+                                title={
+                                  UK_STRINGS.creation.eventForm
+                                    .confirmConsciousOverlapLabel
+                                }
+                                trailing={
+                                  <Toggle
+                                    label={
+                                      UK_STRINGS.creation.eventForm
+                                        .confirmConsciousOverlapLabel
+                                    }
+                                    checked={rescheduleOverlapConfirmed}
+                                    onChange={setRescheduleOverlapConfirmed}
+                                    data-testid="reschedule-overlap-confirm-checkbox"
+                                  />
+                                }
+                              />
                               <div className="flex justify-end gap-2">
                                 <Button
                                   variant="secondary"
@@ -2996,10 +2537,8 @@ export const PlansView: React.FC<PlansViewProps> = ({
                   data-testid="add-reservation-session-form"
                 >
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <InputField
+                    <DateField
                       label={UK_STRINGS.creation.eventForm.startDateLabel}
-                      type="date"
-                      lang="uk"
                       value={newSessionStartDate}
                       onChange={(e) => {
                         setNewSessionStartDate(e.target.value);
@@ -3008,10 +2547,8 @@ export const PlansView: React.FC<PlansViewProps> = ({
                       }}
                       data-testid="new-session-start-date-input"
                     />
-                    <InputField
+                    <TimeField
                       label={UK_STRINGS.creation.eventForm.startTimeLabel}
-                      type="time"
-                      lang="uk"
                       value={newSessionStartTime}
                       onChange={(e) => {
                         setNewSessionStartTime(e.target.value);
@@ -3021,10 +2558,8 @@ export const PlansView: React.FC<PlansViewProps> = ({
                     />
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <InputField
+                    <DateField
                       label={UK_STRINGS.creation.eventForm.endDateLabel}
-                      type="date"
-                      lang="uk"
                       value={newSessionEndDate}
                       onChange={(e) => {
                         setNewSessionEndDate(e.target.value);
@@ -3032,10 +2567,8 @@ export const PlansView: React.FC<PlansViewProps> = ({
                       }}
                       data-testid="new-session-end-date-input"
                     />
-                    <InputField
+                    <TimeField
                       label={UK_STRINGS.creation.eventForm.endTimeLabel}
-                      type="time"
-                      lang="uk"
                       value={newSessionEndTime}
                       onChange={(e) => {
                         setNewSessionEndTime(e.target.value);
@@ -3063,28 +2596,29 @@ export const PlansView: React.FC<PlansViewProps> = ({
                           }
                         >
                           {UK_STRINGS.creation.eventForm.applyNextDaySuggestionButton} (
-                          {sug.suggestedEndLocalDate})
+                          {formatDate(sug.suggestedEndLocalDate)})
                         </Button>
                       );
                     }
                     return null;
                   })()}
-                  <label className="flex items-center gap-2 text-[12px] cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={newSessionOverlapConfirmed}
-                      onChange={(e) =>
-                        setNewSessionOverlapConfirmed(e.target.checked)
-                      }
-                      data-testid="new-session-overlap-confirm-checkbox"
-                    />
-                    <span>
-                      {
-                        UK_STRINGS.creation.eventForm
-                          .confirmConsciousOverlapLabel
-                      }
-                    </span>
-                  </label>
+                  <Row
+                    title={
+                      UK_STRINGS.creation.eventForm
+                        .confirmConsciousOverlapLabel
+                    }
+                    trailing={
+                      <Toggle
+                        label={
+                          UK_STRINGS.creation.eventForm
+                            .confirmConsciousOverlapLabel
+                        }
+                        checked={newSessionOverlapConfirmed}
+                        onChange={setNewSessionOverlapConfirmed}
+                        data-testid="new-session-overlap-confirm-checkbox"
+                      />
+                    }
+                  />
                   <div className="flex justify-end gap-2">
                     <Button
                       variant="secondary"
@@ -3444,22 +2978,13 @@ export const PlansView: React.FC<PlansViewProps> = ({
                     </Button>
                   ) : (
                     <div className="flex items-center gap-2">
-                      <input
-                        type="date"
-                        lang="uk"
+                      <DateField
+                        label={UK_STRINGS.creation.fieldTargetDate}
                         value={taskEditPlannedDate}
                         onChange={(e) =>
-                          setTaskEditPlannedDate(
-                            e.target.value ? e.target.value : null
-                          )
+                          setTaskEditPlannedDate(e.target.value ? e.target.value : null)
                         }
                         data-testid="edit-task-planned-date-input"
-                        className="flex-1 min-h-[42px] px-3 py-1.5 rounded-xl text-[16px]"
-                        style={{
-                          backgroundColor: 'var(--bg-surface)',
-                          color: 'var(--text-primary)',
-                          border: '1px solid var(--border-subtle)',
-                        }}
                       />
                       <Button
                         variant="secondary"
@@ -3512,10 +3037,8 @@ export const PlansView: React.FC<PlansViewProps> = ({
                 />
 
                 {taskEditDeadlineKind === 'date_only' && (
-                  <InputField
+                  <DateField
                     label={UK_STRINGS.creation.taskForm.deadlineDateLabel}
-                    type="date"
-                    lang="uk"
                     value={taskEditDeadlineDate}
                     onChange={(e) => setTaskEditDeadlineDate(e.target.value)}
                     data-testid="edit-task-deadline-date-input"
@@ -3664,16 +3187,10 @@ export const PlansView: React.FC<PlansViewProps> = ({
             />
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <InputField
+              <DateField
                 label={UK_STRINGS.creation.goalForm.targetDateLabel}
-                type="date"
-                lang="uk"
                 value={goalEditTargetDate ?? ''}
-                onChange={(e) =>
-                  setGoalEditTargetDate(
-                    e.target.value ? e.target.value : null
-                  )
-                }
+                onChange={(e) => setGoalEditTargetDate(e.target.value ? e.target.value : null)}
                 data-testid="edit-goal-target-date-input"
               />
               <InputField

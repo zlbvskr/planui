@@ -1,24 +1,16 @@
 import {formatDate} from '../lib/format';
-import {Section, Row, Slider, Toggle, Sheet, RoundButton, InfoSheet, Disclosure, PillRow, DateField} from '../ui';
-
-import { WeeklyReviewSheet } from '../components/today/WeeklyReviewSheet';
-import { OptionalSlider } from '../components/ui/OptionalSlider';
+import {Section, Row, Slider, Toggle, Sheet, RoundButton, InfoSheet, Disclosure, PillRow, SelectField} from '../ui';
 import { PlanuiError } from '../i18n/errorsUk';
 import React, { useEffect, useState } from 'react';
 import { LifeAreaQuestion, PlanuiDomainSnapshot, Project, Task, RoadmapOwner } from '../domain/types';
-import { STARTER_LIFE_AREAS, SATISFACTION_QUESTION_UK, ReviewAnswerDraft, LifeAreaLink, buildLifeReview, lifeAreaMergeSignature, projectLifeAreaLinks } from '../domain/lifeAreas';
+import { STARTER_LIFE_AREAS, ReviewAnswerDraft, LifeAreaLink, buildLifeReview, lifeAreaMergeSignature, projectLifeAreaLinks } from '../domain/lifeAreas';
 import { updateLifeAreaQuestionWording } from '../domain/personalSpace';
-import { addDaysToLocalDate, formatUkrainianDateHeading } from '../domain/temporal';
+import { addDaysToLocalDate } from '../domain/temporal';
 import { PlanuiRepositories } from '../storage/repositories';
-import { Button, Card, InputField, ModalSheet, TextAreaField } from '../components/ui/primitives';
+import { Button, InputField, ModalSheet, TextAreaField } from '../components/ui/primitives';
 import { PlanningReviewPanel } from '../components/today/PlanningReviewPanel';
 import { TaskPlanningSheet } from '../components/today/TaskPlanningSheet';
 import { RoadmapView } from './RoadmapView';
-
-function SelectField({label,value,options,onChange}:{label:string;value:string;options:{value:string;label:string}[];onChange:(event:React.ChangeEvent<HTMLSelectElement>)=>void}) {
- const [open,setOpen]=useState(false);
- return <><Disclosure title={label} secondary={options.find(o=>o.value===value)?.label} onClick={()=>setOpen(true)}/><Sheet isOpen={open} title={label} onClose={()=>setOpen(false)}><Section>{options.map(o=><Disclosure key={o.value} title={o.label} onClick={()=>{onChange({target:{value:o.value}} as React.ChangeEvent<HTMLSelectElement>);setOpen(false);}}/>)}</Section></Sheet></>;
-}
 
 const EMPTY_ANSWER: ReviewAnswerDraft = { score: null, attentionNow: null, usefulChangeUk: null };
 const KIND_UK = { inspiration: 'Матеріал', folder: 'Напрям', goal: 'Ціль', project: 'Проєкт', task: 'Завдання', habit: 'Звичка', event: 'Подія', reservation: 'Запланована дія' };
@@ -39,7 +31,7 @@ function AreaEditor({ area, repositories, onChanged }: { area: LifeAreaQuestion;
 export function LifeAreasReviewView({ snapshot, zone, today, repositories, onChanged, onOpenPlan, onInspectEvent, onModalStateChange, initialPlanningReview }: { snapshot: PlanuiDomainSnapshot; zone: string; today: string; repositories: PlanuiRepositories; onChanged: () => Promise<void> | void; onOpenPlan: (kind: 'goal' | 'project', id: string) => void; onInspectEvent: (id: string) => void; onModalStateChange?: (open: boolean) => void; initialPlanningReview?: boolean }) {
   const areas = [...snapshot.lifeAreaQuestions].sort((a, b) => a.order - b.order);
   const active = areas.filter(a => !a.archived && !a.mergedIntoId);
-  const [start, setStart] = useState(addDaysToLocalDate(today,-13)), [end, setEnd] = useState(today);
+  const [start, setStart] = useState(addDaysToLocalDate(today,-13)), end = today;
   const [reviewRhythm,setReviewRhythm]=useState('14');
   const [reviewDirty, setReviewDirty] = useState(false);
   const [leavePlan, setLeavePlan] = useState<{ kind: 'goal' | 'project'; id: string } | null>(null);
@@ -56,7 +48,11 @@ export function LifeAreasReviewView({ snapshot, zone, today, repositories, onCha
   const [planning, setPlanning] = useState<{ task: Task; reservationId?: string } | null>(null);
   const [roadmap, setRoadmap] = useState<RoadmapOwner | null>(null);
   const selected = areas.find(a => a.id === areaId && !a.mergedIntoId);
-  const links = projectLifeAreaLinks(snapshot);
+  const desiredLifeOn = snapshot.settings.modules?.desiredLifeEnabled !== false;
+  const habitsOn = snapshot.settings.modules?.habitsEnabled !== false;
+  const links = projectLifeAreaLinks(snapshot).filter(
+    link => (link.kind !== 'inspiration' || desiredLifeOn) && (link.kind !== 'habit' || habitsOn)
+  );
   const related = links.filter(link => link.effectiveId === areaId);
   const missing = STARTER_LIFE_AREAS.filter(([key]) => !areas.some(a => a.starterKeys?.includes(key)));
   const [lifeReviewOpen,setLifeReviewOpen]=useState(false);
@@ -65,8 +61,7 @@ export function LifeAreasReviewView({ snapshot, zone, today, repositories, onCha
   const [picker,setPicker]=useState(false), [history,setHistory]=useState(false);
   const latest=(id:string)=>[...snapshot.lifeAreaAssessments].filter(r=>r.scale?.min===0).sort((a,b)=>b.recordedAt.localeCompare(a.recordedAt)).flatMap(r=>r.answers).find(a=>a.questionId===id);
   const answerFor=(id:string)=>drafts[id] ?? latest(id) ?? EMPTY_ANSWER;
-  const [weeklyOpen,setWeeklyOpen]=useState(false);
-  const modalOpen = history || detail || manage || picker || lifeReviewOpen || weeklyOpen || !!(merge || pause || linkPreview || planning || leavePlan);
+  const modalOpen = history || detail || manage || picker || lifeReviewOpen || !!(merge || pause || linkPreview || planning || leavePlan);
   useEffect(() => { onModalStateChange?.(modalOpen); return () => onModalStateChange?.(false); }, [modalOpen]);
   async function act(work: () => Promise<unknown>, close?: () => void) {
     setError(''); setBusy(true);
@@ -108,7 +103,7 @@ export function LifeAreasReviewView({ snapshot, zone, today, repositories, onCha
       <button className="ui-primary" disabled={busy} onClick={()=>void act(()=>repositories.saveLifeAreaAssessment(buildLifeReview(crypto.randomUUID(),active,Object.fromEntries(active.map(a=>[a.id,answerFor(a.id)])),start,end,new Date().toISOString())),()=>{setDrafts({});setReviewDirty(false);setLifeReviewOpen(false);})}>Зберегти огляд</button>
     </Sheet>
     <Sheet isOpen={picker} title="Крок і зв’язки" onClose={()=>setPicker(false)}>
-    <Card className="space-y-3"><h2 className="font-semibold">Від огляду до явної дії</h2>
+    <Section title="Від огляду до явної дії"><div className="p-4 space-y-3">
       <SelectField label="Сфера для перегляду зв’язків і наступного кроку" value={selected?.id ?? ''} onChange={e => { setAreaId(e.target.value); setMergeTarget(''); }} options={[{ value: '', label: 'Оберіть сферу' }, ...areas.filter(a => !a.mergedIntoId).map(a => ({ value: a.id, label: a.questionTextUk }))]} />
       {selected && <>
         <p>Прямий зв’язок має перевагу над успадкованим. Записи не копіюються.</p>
@@ -123,7 +118,7 @@ export function LifeAreasReviewView({ snapshot, zone, today, repositories, onCha
         <SelectField label="Об’єднати поточну сферу з іншою" value={mergeTarget} onChange={e => setMergeTarget(e.target.value)} options={[{ value: '', label: 'Оберіть цільову сферу' }, ...active.filter(a => a.id !== selected.id).map(a => ({ value: a.id, label: a.questionTextUk }))]} />
         <Button disabled={!mergeTarget || busy} onClick={() => { const target = areas.find(a => a.id === mergeTarget); if (target) { setMerge({ source: selected, target, signature: lifeAreaMergeSignature(snapshot, selected.id), links: related }); setMergeConfirmed(false); } }}>Переглянути об’єднання</Button>
       </>}
-    </Card>
+    </div></Section>
     </Sheet>
     {roadmap && <RoadmapView key={`${roadmap.kind}:${roadmap.id}`} source={snapshot} repositories={repositories} initialOwner={roadmap} onChanged={onChanged} onInspect={owner => { if (owner.kind !== 'stage') openPlan(owner.kind, owner.id); }} />}
     <Sheet isOpen={history} title="Історія оглядів" onClose={()=>setHistory(false)}><h2 className="font-semibold">Історія оглядів</h2>

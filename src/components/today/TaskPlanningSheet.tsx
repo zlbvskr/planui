@@ -1,4 +1,4 @@
-import { formatInstant, formatDuration } from "../../lib/format";
+import { formatDate, formatInstant, formatDuration } from "../../lib/format";
 import React, { useState } from "react";
 import {
   DateField,
@@ -18,7 +18,6 @@ import {
 } from "../../domain/today";
 import {
   formatInstantInZone,
-  formatUkrainianDateHeading,
 } from "../../domain/temporal";
 import { detectScheduleConflicts } from "../../domain/scheduling";
 import { PlanuiRepositories } from "../../storage/repositories";
@@ -344,11 +343,11 @@ export function TaskPlanningSheet({
               <p>
                 Дата без часу:{" "}
                 {preview.previousDate
-                  ? formatUkrainianDateHeading(preview.previousDate)
+                  ? formatDate(preview.previousDate)
                   : "Не задана"}{" "}
                 →{" "}
                 {preview.nextDate
-                  ? formatUkrainianDateHeading(preview.nextDate)
+                  ? formatDate(preview.nextDate)
                   : "Без дати, у загальному списку"}
                 .
               </p>
@@ -597,7 +596,7 @@ export function TaskPlanningSheet({
               <p>
                 Сеанс: {label(interval.startInstant)} –{" "}
                 {label(interval.endInstant)} ({formatDuration(Number(duration))}
-                ). Часовий пояс: {zone}.
+                ).
               </p>
             )}
             {conflict?.hasConflicts && (

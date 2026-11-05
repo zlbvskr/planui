@@ -1,4 +1,5 @@
-import { formatDuration } from '../../lib/format';
+import { formatDate, formatDuration } from '../../lib/format';
+import { Row, TimeField, Toggle } from '../../ui';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   CalendarEvent,
@@ -253,7 +254,7 @@ export function GapTaskPickerSheet({
     <ModalSheet
       isOpen={isOpen}
       title={UK_STRINGS.gapPicker.modalTitle}
-      subtitle={`${UK_STRINGS.gapPicker.gapSummaryPrefix}: ${gap.localDate}, ${gap.startLocalTime}–${gap.endLocalTime} (${formatDuration(gap.durationMinutes)})`}
+      subtitle={`${UK_STRINGS.gapPicker.gapSummaryPrefix}: ${formatDate(gap.localDate)}, ${gap.startLocalTime}–${gap.endLocalTime} (${formatDuration(gap.durationMinutes)})`}
       onClose={onClose}
       isDirty={Boolean(durationInputStr.trim())}
     >
@@ -363,7 +364,7 @@ export function GapTaskPickerSheet({
                         {task.plannedDate && (
                           <>
                             <span aria-hidden="true">·</span>
-                            <span>Дата: {task.plannedDate}</span>
+                            <span>Дата: {formatDate(task.plannedDate)}</span>
                           </>
                         )}
                       </div>
@@ -461,10 +462,9 @@ export function GapTaskPickerSheet({
               )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <InputField
+              <TimeField
                 id="gap-picker-start-time"
                 label={UK_STRINGS.gapPicker.sessionStartTimeLabel}
-                type="time"
                 data-testid="gap-picker-start-time-input"
                 value={startLocalTime}
                 onChange={(e) => {
@@ -498,12 +498,11 @@ export function GapTaskPickerSheet({
                 <span>
                   {UK_STRINGS.gapPicker.sessionPreviewRangeLabel}:{' '}
                   <strong style={{ color: 'var(--text-primary)' }}>
-                    {gap.localDate} {proposal.displayStartLocalTime} –{' '}
+                    {formatDate(gap.localDate)} {proposal.displayStartLocalTime} –{' '}
                     {proposal.displayEndLocalDate !== gap.localDate
-                      ? `${proposal.displayEndLocalDate} `
+                      ? `${formatDate(proposal.displayEndLocalDate)} `
                       : ''}
-                    {proposal.displayEndLocalTime} ({proposal.durationMinutes}{' '}
-                    хв)
+                    {proposal.displayEndLocalTime} ({formatDuration(proposal.durationMinutes)})
                   </strong>
                 </span>
                 {proposal.isPartialSession && (
@@ -528,21 +527,17 @@ export function GapTaskPickerSheet({
                   >
                     {proposal.conflictReport.warningMessageUk}
                   </div>
-                  <label className="flex items-start gap-2.5 cursor-pointer min-h-[44px] pt-1">
-                    <input
-                      type="checkbox"
-                      checked={confirmOverlap}
-                      onChange={(e) => setConfirmOverlap(e.target.checked)}
-                      data-testid="gap-picker-confirm-overlap-checkbox"
-                      className="mt-0.5 w-4 h-4"
-                    />
-                    <span>
-                      {
-                        UK_STRINGS.creation.eventForm
-                          .confirmConsciousOverlapLabel
-                      }
-                    </span>
-                  </label>
+                  <Row
+                    title={UK_STRINGS.creation.eventForm.confirmConsciousOverlapLabel}
+                    trailing={
+                      <Toggle
+                        label={UK_STRINGS.creation.eventForm.confirmConsciousOverlapLabel}
+                        checked={confirmOverlap}
+                        onChange={setConfirmOverlap}
+                        testId="gap-picker-confirm-overlap-checkbox"
+                      />
+                    }
+                  />
                 </div>
               )}
           </div>

@@ -1,15 +1,11 @@
 import React, { useState } from 'react';
 import {
-  Download,
   RefreshCw,
-  Smartphone,
-  Wifi,
   WifiOff,
-  CheckCircle2,
-  Info,
 } from 'lucide-react';
 import { PwaLifecycleState } from '../../pwa/pwaController';
-import { Button, Card } from '../ui/primitives';
+import { Disclosure, Row, Section, Sheet } from '../../ui';
+import { Button } from '../ui/primitives';
 
 export interface PwaStatusBannerProps {
   pwaState: PwaLifecycleState;
@@ -124,146 +120,104 @@ export const PwaStatusBanner: React.FC<PwaStatusBannerProps> = ({
   );
 };
 
-export interface PwaInstallAndOfflineCardProps {
+export interface PwaInstallAndOfflineViewProps {
   pwaState: PwaLifecycleState;
 }
 
-export const PwaInstallAndOfflineCard: React.FC<
-  PwaInstallAndOfflineCardProps
+export const PwaInstallAndOfflineView: React.FC<
+  PwaInstallAndOfflineViewProps
 > = ({ pwaState }) => {
   const [showFallbackGuide, setShowFallbackGuide] = useState(false);
 
   const swStatusTextUk = (() => {
     switch (pwaState.swStatus) {
       case 'cached_ready':
-        return 'Офлайн-кеш активний (ядро, редактори, список бажань, резервні копії ZIP)';
+        return 'Офлайн-кеш активний';
       case 'update_available':
-        return 'Нова версія ресурсів очікує безпечного перезавантаження';
+        return 'Доступне оновлення ресурсів';
       case 'registering':
-        return 'Підготовка локального кешу ресурсів...';
+        return 'Підготовка локального кешу…';
       case 'error':
-        return 'Кешування ресурсів обмежене середовищем перегляду (база даних IndexedDB працює повноцінно)';
+        return 'Локальна база IndexedDB активна';
       case 'unsupported':
-        return 'Service Worker не підтримується в цьому середовищі';
+        return 'Стандартний режим браузера';
     }
   })();
 
   return (
-    <Card
-      title="Встановлення PWA, офлайн-режим та оновлення"
-      subtitle="Статична робота через HTTPS без серверів, облікових записів, хмарної синхронізації чи зовнішніх курсів валют."
-      headerRight={
-        <Smartphone
-          className="w-5 h-5"
-          style={{ color: 'var(--text-secondary)' }}
-          aria-hidden="true"
-        />
-      }
-    >
-      <div className="space-y-3.5" data-testid="pwa-settings-card">
-        <div
-          className="p-3.5 rounded-xl space-y-2 border text-[13px]"
-          style={{
-            backgroundColor: 'var(--bg-elevated)',
-            borderColor: 'var(--border-subtle)',
-          }}
-        >
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2 font-medium">
-              {pwaState.isOnline ? (
-                <Wifi
-                  className="w-4 h-4 shrink-0"
-                  style={{ color: 'var(--color-dayoff-text)' }}
-                  aria-hidden="true"
-                />
-              ) : (
-                <WifiOff
-                  className="w-4 h-4 shrink-0"
-                  style={{ color: 'var(--color-work-text)' }}
-                  aria-hidden="true"
-                />
-              )}
-              <span data-testid="pwa-network-status-label">
-                {pwaState.isOnline
-                  ? 'Мережа активна (усі операції виконуються локально)'
-                  : 'Офлайн-режим (робота з локальним кешем та IndexedDB)'}
-              </span>
-            </div>
+    <div data-testid="pwa-settings-card">
+      <Section title="Офлайн і встановлення">
+        <Row
+          title={
+            <span data-testid="pwa-network-status-label">
+              {pwaState.isOnline
+                ? 'Мережа активна (локальна робота)'
+                : 'Офлайн-режим (локальний кеш)'}
+            </span>
+          }
+          secondary={swStatusTextUk}
+          trailing={
             <span
-              className="text-[12px] px-2.5 py-0.5 rounded-lg"
-              style={{
-                backgroundColor: 'var(--bg-surface)',
-                color: 'var(--text-secondary)',
-              }}
+              className="text-xs font-medium text-[var(--text-secondary)]"
               data-testid="pwa-standalone-status-badge"
             >
               {pwaState.installAssessment.statusLabelUk}
             </span>
-          </div>
-
-          <div
-            className="text-[12px] flex items-center gap-1.5"
-            style={{ color: 'var(--text-secondary)' }}
-            data-testid="pwa-sw-cache-status"
-          >
-            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-            <span>{swStatusTextUk}</span>
-          </div>
-        </div>
-
-        <p
-          className="text-[12px] m-0 leading-relaxed"
-          style={{ color: 'var(--text-secondary)' }}
-        >
-          {pwaState.installAssessment.honestLimitationsUk}
-        </p>
-
-        {!pwaState.installAssessment.isInstalledStandalone && (
-          <div className="space-y-2 pt-0.5">
-            <div className="flex flex-wrap items-center gap-2">
-              {pwaState.installAssessment.canTriggerInstallPrompt && (
-                <Button
-                  variant="primary"
-                  size="sm"
+          }
+        />
+        <Row
+          title="Стан офлайн-оболонки"
+          secondary="Усі дані зберігаються на пристрої"
+          trailing={
+            <span
+              className="text-xs text-[var(--text-secondary)]"
+              data-testid="pwa-sw-cache-status"
+            >
+              {pwaState.swStatus === 'cached_ready' ? 'Готово' : 'Локально'}
+            </span>
+          }
+        />
+        {!pwaState.installAssessment.isInstalledStandalone &&
+          pwaState.installAssessment.canTriggerInstallPrompt && (
+            <Row
+              title="Встановити застосунок"
+              secondary="Запуск з головного екрана"
+              trailing={
+                <button
+                  type="button"
                   onClick={() => void pwaState.triggerInstallPrompt()}
+                  className="ui-primary text-xs px-4 py-2"
                   data-testid="pwa-install-prompt-button"
                 >
-                  <Download className="w-4 h-4" aria-hidden="true" />
-                  <span>Встановити застосунок PLANUI</span>
-                </Button>
-              )}
-
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setShowFallbackGuide((prev) => !prev)}
-                data-testid="pwa-toggle-install-guide-button"
-              >
-                <Info className="w-4 h-4" aria-hidden="true" />
-                <span>
-                  {showFallbackGuide
-                    ? 'Сховати інструкцію зі встановлення'
-                    : 'Як додати на початковий екран'}
-                </span>
-              </Button>
-            </div>
-
-            {showFallbackGuide && (
-              <div
-                className="p-3 rounded-xl text-[13px] leading-relaxed border"
-                style={{
-                  backgroundColor: 'var(--bg-elevated)',
-                  borderColor: 'var(--border-subtle)',
-                  color: 'var(--text-primary)',
-                }}
-                data-testid="pwa-fallback-install-guide"
-              >
-                {pwaState.installAssessment.fallbackInstructionsUk}
-              </div>
-            )}
-          </div>
+                  Встановити
+                </button>
+              }
+            />
+          )}
+        {!pwaState.installAssessment.isInstalledStandalone && (
+          <Disclosure
+            title="Як додати на початковий екран"
+            secondary="Підказка для iOS, Android і ПК"
+            onClick={() => setShowFallbackGuide(true)}
+            testId="pwa-toggle-install-guide-button"
+          />
         )}
-      </div>
-    </Card>
+      </Section>
+
+      <Sheet
+        title="Як додати на початковий екран"
+        isOpen={showFallbackGuide}
+        onClose={() => setShowFallbackGuide(false)}
+      >
+        <div
+          className="space-y-3 text-sm text-[var(--text-secondary)]"
+          data-testid="pwa-fallback-install-guide"
+          data-ui="info-sheet"
+        >
+          <p>{pwaState.installAssessment.fallbackInstructionsUk}</p>
+          <p>{pwaState.installAssessment.honestLimitationsUk}</p>
+        </div>
+      </Sheet>
+    </div>
   );
 };

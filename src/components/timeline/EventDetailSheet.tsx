@@ -14,6 +14,8 @@ import {
 import { detectScheduleConflicts } from '../../domain/scheduling';
 import { PlanuiRepositories } from '../../storage/repositories';
 import { UK_STRINGS } from '../../i18n/uk';
+import { formatDate } from '../../lib/format';
+import { DateField, Row, TimeField, Toggle } from '../../ui';
 import {
   Button,
   FeedbackBanner,
@@ -129,10 +131,6 @@ export function EventDetailSheet({
   if (!event) return null;
 
   const isWorkShift = event.type === 'work_shift';
-  const originZone =
-    event.schedule.kind === 'timed'
-      ? event.schedule.interval.originZone
-      : event.schedule.originZone;
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -256,9 +254,7 @@ export function EventDetailSheet({
     <ModalSheet
       isOpen={Boolean(event)}
       title={UK_STRINGS.timeline.eventDetailsModalTitle}
-      subtitle={`${
-        isWorkShift ? 'Робоча зміна' : 'Подія календаря'
-      } • Пояс запису: ${originZone}`}
+      subtitle={isWorkShift ? 'Робоча зміна' : 'Подія календаря'}
       onClose={onClose}
     >
       <form
@@ -285,18 +281,16 @@ export function EventDetailSheet({
         {event.schedule.kind === 'timed' ? (
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
-              <InputField
+              <DateField
                 id="edit-event-start-date"
                 label={UK_STRINGS.creation.eventForm.startDateLabel}
-                type="date"
                 data-testid="edit-event-start-date-input"
                 value={startLocalDate}
                 onChange={(e) => setStartLocalDate(e.target.value)}
               />
-              <InputField
+              <TimeField
                 id="edit-event-start-time"
                 label={UK_STRINGS.creation.eventForm.startTimeLabel}
-                type="time"
                 data-testid="edit-event-start-time-input"
                 value={startLocalTime}
                 onChange={(e) => setStartLocalTime(e.target.value)}
@@ -304,18 +298,16 @@ export function EventDetailSheet({
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <InputField
+              <DateField
                 id="edit-event-end-date"
                 label={UK_STRINGS.creation.eventForm.endDateLabel}
-                type="date"
                 data-testid="edit-event-end-date-input"
                 value={endLocalDate}
                 onChange={(e) => setEndLocalDate(e.target.value)}
               />
-              <InputField
+              <TimeField
                 id="edit-event-end-time"
                 label={UK_STRINGS.creation.eventForm.endTimeLabel}
-                type="time"
                 data-testid="edit-event-end-time-input"
                 value={endLocalTime}
                 onChange={(e) => {
@@ -340,24 +332,22 @@ export function EventDetailSheet({
                   style={{ color: 'var(--color-work-text)' }}
                 >
                   {UK_STRINGS.creation.eventForm.overnightSuggestedBadge}:{' '}
-                  {startLocalDate} {startLocalTime} → {endLocalDate}{' '}
+                  {formatDate(startLocalDate)} {startLocalTime} → {formatDate(endLocalDate)}{' '}
                   {endLocalTime}
                 </div>
               )}
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-3">
-            <InputField
+            <DateField
               id="edit-allday-start-date"
               label={UK_STRINGS.creation.eventForm.startDateLabel}
-              type="date"
               value={startLocalDate}
               onChange={(e) => setStartLocalDate(e.target.value)}
             />
-            <InputField
+            <DateField
               id="edit-allday-end-date"
               label={UK_STRINGS.creation.eventForm.allDayEndInclusiveLabel}
-              type="date"
               value={endLocalDate}
               onChange={(e) => setEndLocalDate(e.target.value)}
             />
@@ -373,17 +363,16 @@ export function EventDetailSheet({
             onChange={(e) => setColor(e.target.value as EventPaletteColor)}
           />
 
-          <div className="flex items-center pt-5">
-            <label className="flex items-center gap-2.5 cursor-pointer min-h-[44px] text-[13px]">
-              <input
-                type="checkbox"
+          <Row
+            title={UK_STRINGS.creation.eventForm.blockingLabel}
+            trailing={
+              <Toggle
+                label={UK_STRINGS.creation.eventForm.blockingLabel}
                 checked={isBlocking}
-                onChange={(e) => setIsBlocking(e.target.checked)}
-                className="w-4 h-4"
+                onChange={setIsBlocking}
               />
-              <span>{UK_STRINGS.creation.eventForm.blockingLabel}</span>
-            </label>
-          </div>
+            }
+          />
         </div>
 
         <TextAreaField
@@ -409,17 +398,16 @@ export function EventDetailSheet({
               >
                 {candidateConflictReport.warningMessageUk}
               </div>
-              <label className="flex items-start gap-2.5 cursor-pointer min-h-[44px]">
-                <input
-                  type="checkbox"
-                  checked={confirmOverlap}
-                  onChange={(e) => setConfirmOverlap(e.target.checked)}
-                  className="mt-0.5 w-4 h-4"
-                />
-                <span>
-                  {UK_STRINGS.creation.eventForm.confirmConsciousOverlapLabel}
-                </span>
-              </label>
+              <Row
+                title={UK_STRINGS.creation.eventForm.confirmConsciousOverlapLabel}
+                trailing={
+                  <Toggle
+                    label={UK_STRINGS.creation.eventForm.confirmConsciousOverlapLabel}
+                    checked={confirmOverlap}
+                    onChange={setConfirmOverlap}
+                  />
+                }
+              />
             </div>
           )}
 

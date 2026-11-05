@@ -1,60 +1,17 @@
-import { PageHeader, SubHeader, Section, Row } from '../ui';
-import { WeeklyReviewSheet } from '../components/today/WeeklyReviewSheet';
-import { formatInstant } from '../lib/format';
-import {
-  ArrowLeft,
-  ArrowUp,
-  ArrowDown,
-  ChevronRight,
-  Compass,
-  Edit3,
-  ExternalLink,
-  Gift,
-  HeartHandshake,
-  Image as ImageIcon,
-  Link2,
-  Plus,
-  Quote,
-  Settings,
-  Sparkles,
-  Star,
-  Tag,
-  Trash2,
-  Archive,
-} from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Button,
-  Card,
-  EmptyStateCard,
-  FeedbackBanner,
-  InputField,
-  ModalSheet,
-  SegmentedControl,
-  SelectField,
-  TextAreaField,
-} from '../components/ui/primitives';
+  Bookmark,
+  Compass,
+  Gift,
+  Heart,
+  Settings,
+  Sparkles,
+} from 'lucide-react';
 import {
-  WishExtrasFields,
-  WishLocalImage,
-  emptyWishExtras,
-  resolveWishExtras,
-} from '../components/wishlist/WishExtrasFields';
-import {
-  ENERGY_SCALE_LABELS_UK,
-  MOOD_SCALE_LABELS_UK,
-  MediaObjectUrlRegistry,
-  STRESS_SCALE_LABELS_UK,
-  buildInspirationItemRecord,
-  buildLifeAreaAssessmentSnapshot,
-  updateLifeAreaQuestionWording,
-  validateAndPrepareRasterMedia,
-} from '../domain/personalSpace';
-import type { WishPurchaseStatus } from '../domain/types';
-import {
-  IanaTimeZone,
+  EntityId,
+  ExactPrice,
   InspirationItem,
-  InspirationItemKind,
+  InspirationKind,
   LifeAreaAssessment,
   LifeAreaQuestion,
   MediaAssetMeta,
@@ -64,50 +21,79 @@ import {
   Project,
   RecoverySnapshotRecord,
   SUPPORTED_CURRENCIES,
-  Scale1To10,
   SupportedCurrencyCode,
   WishItem,
+  WishPurchaseStatus,
   WishlistCategory,
   WishlistTimingGroup,
 } from '../domain/types';
 import {
-  getWishPurchaseStatus,
-  setWishPurchaseStatus,
-  WISH_STATUS_LABELS_UK,
-} from '../domain/wishlist';
+  buildInspirationItemRecord,
+  isMediaReferencedByLiveOrSnapshots,
+  MediaObjectUrlRegistry,
+  ValidatedMediaPreparationResult,
+  validateAndPrepareRasterMedia,
+  validateSafeHttpUrl,
+} from '../domain/personalSpace';
 import {
-  WISHLIST_TIMING_LABELS_UK,
-  WISHLIST_TIMING_ORDER,
-  WishlistCategoryFilter,
-  WishlistTimingFilter,
-  WishlistViewScope,
   buildWishItemRecord,
   computeWishlistCategoryDeleteImpact,
   filterAndGroupWishes,
   formatExactPriceUk,
+  getWishPurchaseStatus,
   setWishArchivedState,
+  setWishPurchaseStatus,
   sortWishlistCategories,
+  WISH_STATUS_LABELS_UK,
+  WISHLIST_TIMING_LABELS_UK,
+  WishlistCategoryFilter,
+  WishlistTimingFilter,
+  WishlistViewScope,
 } from '../domain/wishlist';
 import { UK_STRINGS } from '../i18n/uk';
-import { ImplementedCreationActionKind, MeSubViewMode } from '../state/shellStore';
+import { PwaLifecycleState } from '../pwa/pwaController';
+import {
+  ImplementedCreationActionKind,
+  MeSubViewMode,
+} from '../state/shellStore';
 import { PlanuiRepositories } from '../storage/repositories';
+import {
+  ActionMenu,
+  Disclosure,
+  EmptyState,
+  InfoSheet,
+  PageHeader,
+  PillRow,
+  RoundButton,
+  Row,
+  Section,
+  Segmented,
+  SelectField,
+  Sheet,
+  SubHeader,
+  Toggle,
+} from '../ui';
+import { InputField, TextAreaField } from '../components/ui/primitives';
 import { BasicSettingsView } from './BasicSettingsView';
 import { LifeAreasReviewView } from './LifeAreasReviewView';
 import { StateCheckInsView } from './StateCheckInsView';
+import { WeeklyReviewSheet } from '../components/today/WeeklyReviewSheet';
+
+function getErrorMessageUk(err: unknown): string {
+  return err instanceof Error ? err.message : 'Сталася неочікувана помилка.';
+}
 
 export interface MeWorkspaceViewProps {
-  onOpenPlan: (kind: 'goal' | 'project', id: string) => void;
-  onInspectCalendarEvent: (id: string) => void;
   subView: MeSubViewMode;
-  activeWishlistCategoryId: string | null;
-  activeZone: IanaTimeZone;
+  activeWishlistCategoryId?: string | null;
+  activeZone: string;
   actualTodayDate: string;
   personalRecords: PersonalRecord[];
   lifeAreaQuestions: LifeAreaQuestion[];
   lifeAreaAssessments: LifeAreaAssessment[];
   inspirationItems: InspirationItem[];
   mediaMeta: MediaAssetMeta[];
-  mediaBlobs: Map<string, Uint8Array>;
+  mediaBlobs: ReadonlyMap<string, Uint8Array>;
   wishlistCategories: WishlistCategory[];
   wishes: WishItem[];
   projects: Project[];
@@ -119,19 +105,70 @@ export interface MeWorkspaceViewProps {
     subView: MeSubViewMode,
     activeWishlistCategoryId?: string | null
   ) => void;
-  onOpenGlobalCreation: (
-    preferredAction?: ImplementedCreationActionKind
-  ) => void;
+  onOpenPlan: (kind: 'goal' | 'project', id: string) => void;
+  onInspectCalendarEvent: (id: string) => void;
+  onOpenGlobalCreation: (initialKind?: ImplementedCreationActionKind) => void;
   onSettingsPatch: (patch: Partial<PlanuiSettings>) => void;
-  onDataChanged: (feedbackMessage?: string) => Promise<void>;
+  onDataChanged: (toastMessageUk?: string) => Promise<void>;
   onNavigateToWorkRoster: () => void;
   onNavigateToHabits: () => void;
-  onModalStateChange?: (isOpen: boolean) => void;
-  onSettingsConfirmationChange?: (isOpen: boolean) => void;
+  onSettingsConfirmationChange?: (open: boolean) => void;
+  onModalStateChange?: (open: boolean) => void;
+  pwaState?: PwaLifecycleState;
+}
+
+const INSPIRATION_KIND_LABELS_UK: Record<InspirationKind, string> = {
+  text: 'Нотатка',
+  quote: 'Цитата',
+  link: 'Посилання',
+  image: 'Фото',
+};
+
+const WISH_SCOPE_LABELS_UK: Record<WishlistViewScope, string> = {
+  active: 'Хочу',
+  purchased: 'Куплено',
+  not_relevant: 'Більше не актуально',
+  fulfilled: 'Здійснено раніше',
+  archived: 'Архів',
+};
+
+type InspirationTypeFilter =
+  | 'all'
+  | 'favorite'
+  | 'text'
+  | 'quote'
+  | 'link'
+  | 'image';
+
+type WishChipKey =
+  | 'price'
+  | 'link'
+  | 'photo'
+  | 'project'
+  | 'category'
+  | 'timing';
+
+function safeHostname(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return url;
+  }
+}
+
+function formatWishApproximatePriceUk(price: ExactPrice | null): string | null {
+  if (!price) return null;
+  if (price.currency === 'UAH' && price.amountMinor % 100 === 0) {
+    const whole = new Intl.NumberFormat('uk-UA', {
+      maximumFractionDigits: 0,
+    }).format(BigInt(price.amountMinor) / 100n);
+    return `≈ ${whole} грн`;
+  }
+  const exact = formatExactPriceUk(price);
+  return exact ? `≈ ${exact}` : null;
 }
 
 export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
-  onOpenPlan, onInspectCalendarEvent,
   subView,
   activeWishlistCategoryId,
   activeZone,
@@ -150,729 +187,746 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
   recoverySnapshots,
   repositories,
   onChangeSubView,
-  onOpenGlobalCreation,
+  onOpenPlan,
+  onInspectCalendarEvent,
   onSettingsPatch,
   onDataChanged,
   onNavigateToWorkRoster,
   onNavigateToHabits,
-  onModalStateChange, onSettingsConfirmationChange,
+  onSettingsConfirmationChange,
+  onModalStateChange,
+  pwaState,
 }) => {
-  const [initialPlanningReview, setInitialPlanningReview] = useState(false);
-  const [weeklyHub, setWeeklyHub] = useState(false);
-  useEffect(()=>{const addGoal=()=>onOpenGlobalCreation('goal');window.addEventListener('planui:add-goal',addGoal);return()=>window.removeEventListener('planui:add-goal',addGoal);},[onOpenGlobalCreation]);
-  useEffect(()=>{const add=()=>onOpenGlobalCreation('event');window.addEventListener('planui:add-recovery',add);return()=>window.removeEventListener('planui:add-recovery',add);},[onOpenGlobalCreation]);
-  const [localError, setLocalError] = useState<string | null>(null);
+  const [planningReviewOpen, setPlanningReviewOpen] = useState(false);
+  const [weeklyOpen, setWeeklyOpen] = useState(false);
 
-  // ---------------------------------------------------------------------------
-  // 10.2 Personal Records State
-  // ---------------------------------------------------------------------------
-  // ---------------------------------------------------------------------------
-  // 10.3 Life Areas State
-  // ---------------------------------------------------------------------------
-  const [periodStartDate, setPeriodStartDate] =
-    useState<string>(actualTodayDate);
-  const [periodEndDate, setPeriodEndDate] = useState<string>(actualTodayDate);
-  const [draftScores, setDraftScores] = useState<
-    Record<string, Scale1To10 | null>
-  >({});
-  const [draftNotes, setDraftNotes] = useState<Record<string, string>>({});
-  const [editingQuestion, setEditingQuestion] =
-    useState<LifeAreaQuestion | null>(null);
-  const [editingQuestionText, setEditingQuestionText] = useState<string>('');
+  // Guard disabled module subviews so turning a module off hides its screen too
+  const effectiveSubView: MeSubViewMode = useMemo(() => {
+    if (
+      subView === 'records' &&
+      settings.modules?.stateCheckInsEnabled === false
+    ) {
+      return 'overview';
+    }
+    if (
+      subView === 'inspiration' &&
+      settings.modules?.desiredLifeEnabled === false
+    ) {
+      return 'overview';
+    }
+    if (
+      subView === 'wishlist' &&
+      settings.modules?.wishlistEnabled === false
+    ) {
+      return 'overview';
+    }
+    return subView;
+  }, [subView, settings.modules]);
 
-  // ---------------------------------------------------------------------------
-  // 10.4 Inspiration & Media State
-  // ---------------------------------------------------------------------------
-  const [inspFilterKind, setInspFilterKind] = useState<
-    'all' | InspirationItemKind | 'favorites'
-  >('all');
-  const [inspFilterProjectId, setInspFilterProjectId] = useState<string>('');
-  const [isInspModalOpen, setIsInspModalOpen] = useState<boolean>(false);
-  const [inspKind, setInspKind] = useState<InspirationItemKind>('text');
-  const [inspCollection, setInspCollection] = useState<'preferred_life' | 'saved'>('preferred_life');
-  const [inspArea, setInspArea] = useState('');
-  const [inspGoal, setInspGoal] = useState('');
-  const [inspTitle, setInspTitle] = useState<string>('');
-  const [inspText, setInspText] = useState<string>('');
-  const [inspUrl, setInspUrl] = useState<string>('');
-  const [inspProjectId, setInspProjectId] = useState<string>('');
-  const [inspFavorite, setInspFavorite] = useState<boolean>(false);
-  const [inspImageCandidate, setInspImageCandidate] = useState<{
-    bytes: Uint8Array;
-    mimeType: string;
-    wasOptimized: boolean;
-    originalWidth?: number;
-    originalHeight?: number;
-  } | null>(null);
+  const handleSubViewChange = (
+    next: MeSubViewMode,
+    categoryId?: string | null,
+    keepPlanningReview = false
+  ) => {
+    if (!keepPlanningReview) {
+      setPlanningReviewOpen(false);
+    }
+    onChangeSubView(next, categoryId);
+  };
 
-  const objectUrlRegistryRef = useRef<MediaObjectUrlRegistry | null>(null);
-  if (!objectUrlRegistryRef.current) {
-    objectUrlRegistryRef.current = new MediaObjectUrlRegistry();
+  // ==========================================================================
+  // MEDIA OBJECT URL REGISTRY
+  // ==========================================================================
+  const urlRegistryRef = useRef<MediaObjectUrlRegistry | null>(null);
+  if (!urlRegistryRef.current) {
+    urlRegistryRef.current = new MediaObjectUrlRegistry();
   }
 
-  // Release temporary Object URLs when unmounted (10.4)
   useEffect(() => {
-    const reg = objectUrlRegistryRef.current;
+    const registry = urlRegistryRef.current;
     return () => {
-      reg?.revokeAll();
+      registry?.revokeAll();
     };
   }, []);
 
-  // ---------------------------------------------------------------------------
-  // 10.5 - 10.7 Wishlist & Flat Categories State
-  // ---------------------------------------------------------------------------
-  const [wishlistCategoryFilter, setWishlistCategoryFilter] =
-    useState<WishlistCategoryFilter>(() =>
-      activeWishlistCategoryId ? activeWishlistCategoryId : 'all'
+  const mediaUrlById = useMemo(() => {
+    const registry = urlRegistryRef.current!;
+    const activeIds = new Set<string>();
+    const map = new Map<string, string>();
+
+    for (const meta of mediaMeta) {
+      const rawBytes = mediaBlobs.get(meta.id);
+      if (!rawBytes) continue;
+      activeIds.add(meta.id);
+      const bytes =
+        rawBytes instanceof Uint8Array
+          ? rawBytes
+          : new Uint8Array(
+              Object.values(rawBytes as unknown as Record<string, number>)
+            );
+      const url = registry.getOrCreateUrl(meta.id, bytes, meta.mimeType);
+      map.set(meta.id, url);
+    }
+
+    for (const meta of mediaMeta) {
+      if (!activeIds.has(meta.id)) {
+        registry.revokeMediaUrl(meta.id);
+      }
+    }
+
+    return map;
+  }, [mediaMeta, mediaBlobs]);
+
+  // ==========================================================================
+  // 1. INSPIRATION ("Моє бажане життя") STATE & HANDLERS
+  // ==========================================================================
+  const [inspCollectionFilter, setInspCollectionFilter] = useState<
+    'preferred_life' | 'saved'
+  >('preferred_life');
+  const [inspTypeFilter, setInspTypeFilter] =
+    useState<InspirationTypeFilter>('all');
+
+  const [isInspModalOpen, setIsInspModalOpen] = useState(false);
+  const [editingInspId, setEditingInspId] = useState<EntityId | null>(null);
+  const [inspModalCollection, setInspModalCollection] = useState<
+    'preferred_life' | 'saved'
+  >('preferred_life');
+  const [inspModalKind, setInspModalKind] = useState<InspirationKind>('text');
+  const [inspModalTitle, setInspModalTitle] = useState('');
+  const [inspModalText, setInspModalText] = useState('');
+  const [inspModalUrl, setInspModalUrl] = useState('');
+  const [inspModalProjectId, setInspModalProjectId] = useState<string>('');
+  const [inspModalLifeAreaId, setInspModalLifeAreaId] = useState<string>('');
+  const [inspModalGoalId, setInspModalGoalId] = useState<string>('');
+  const [inspModalFavorite, setInspModalFavorite] = useState(false);
+  const [inspModalPreparedMedia, setInspModalPreparedMedia] =
+    useState<ValidatedMediaPreparationResult | null>(null);
+  const [inspModalError, setInspModalError] = useState<string | null>(null);
+  const [isSavingInspiration, setIsSavingInspiration] = useState(false);
+  const inspFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const filteredInspirationItems = useMemo(() => {
+    return [...inspirationItems]
+      .filter((item) => {
+        if (
+          inspCollectionFilter === 'preferred_life'
+            ? item.collection === 'saved'
+            : item.collection !== 'saved'
+        ) {
+          return false;
+        }
+        if (inspTypeFilter === 'favorite') {
+          return item.isFavorite;
+        }
+        if (inspTypeFilter !== 'all' && item.kind !== inspTypeFilter) {
+          return false;
+        }
+        return true;
+      })
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }, [inspirationItems, inspCollectionFilter, inspTypeFilter]);
+
+  const openNewInspirationModal = () => {
+    setEditingInspId(null);
+    setInspModalCollection(inspCollectionFilter);
+    setInspModalKind('text');
+    setInspModalTitle('');
+    setInspModalText('');
+    setInspModalUrl('');
+    setInspModalProjectId('');
+    setInspModalLifeAreaId('');
+    setInspModalGoalId('');
+    setInspModalFavorite(false);
+    setInspModalPreparedMedia(null);
+    setInspModalError(null);
+    setIsInspModalOpen(true);
+  };
+
+  const openEditInspirationModal = (item: InspirationItem) => {
+    setEditingInspId(item.id);
+    setInspModalCollection(
+      item.collection === 'saved' ? 'saved' : 'preferred_life'
     );
+    setInspModalKind(item.kind);
+    setInspModalTitle(item.title ?? '');
+    setInspModalText(item.contentText ?? '');
+    setInspModalUrl(item.linkUrl ?? '');
+    setInspModalProjectId(item.projectId ?? '');
+    setInspModalLifeAreaId(item.lifeAreaId ?? '');
+    setInspModalGoalId(item.goalId ?? '');
+    setInspModalFavorite(item.isFavorite);
+    setInspModalPreparedMedia(null);
+    setInspModalError(null);
+    setIsInspModalOpen(true);
+  };
+
+  const handleInspirationFileChange = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setInspModalError(null);
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
+      const mediaId = `media-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2, 8)}`;
+      const prepared = await validateAndPrepareRasterMedia({
+        id: mediaId,
+        bytes,
+        declaredMimeType: file.type || undefined,
+        nowIso: new Date().toISOString(),
+      });
+      setInspModalPreparedMedia(prepared);
+      if (!inspModalTitle.trim()) {
+        const baseName = file.name.replace(/\.[^/.]+$/, '');
+        setInspModalTitle(baseName);
+      }
+    } catch (err) {
+      setInspModalPreparedMedia(null);
+      setInspModalError(getErrorMessageUk(err));
+    }
+  };
+
+  const handleSaveInspirationModal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setInspModalError(null);
+    setIsSavingInspiration(true);
+    try {
+      const nowIso = new Date().toISOString();
+      const existing = editingInspId
+        ? inspirationItems.find((i) => i.id === editingInspId)
+        : undefined;
+
+      if (existing) {
+        const trimmedTitle = inspModalTitle.trim() || null;
+        const trimmedText = inspModalText.trim() || null;
+        let nextLinkUrl: string | null = null;
+        if (inspModalKind === 'link' || inspModalUrl.trim()) {
+          nextLinkUrl = validateSafeHttpUrl(inspModalUrl);
+        } else if (inspModalKind === 'text' || inspModalKind === 'quote') {
+          if (!trimmedTitle && !trimmedText) {
+            throw new Error('Вкажіть заголовок або текст.');
+          }
+        }
+
+        const nextMediaId =
+          inspModalKind === 'image'
+            ? inspModalPreparedMedia?.meta.id ?? existing.mediaId
+            : null;
+        if (inspModalKind === 'image' && !nextMediaId) {
+          throw new Error('Оберіть зображення JPEG, PNG або WebP.');
+        }
+
+        const updated: InspirationItem = {
+          ...existing,
+          kind: inspModalKind,
+          collection: inspModalCollection,
+          lifeAreaId: inspModalLifeAreaId || null,
+          goalId: inspModalGoalId || null,
+          title: trimmedTitle,
+          contentText: trimmedText,
+          linkUrl: nextLinkUrl,
+          mediaId: nextMediaId,
+          isFavorite: inspModalFavorite,
+          projectId: inspModalProjectId || null,
+          updatedAt: nowIso,
+          revision: existing.revision + 1,
+        };
+
+        await repositories.saveInspirationWithMediaTransactionally(
+          updated,
+          inspModalPreparedMedia ?? undefined
+        );
+        setIsInspModalOpen(false);
+        await onDataChanged('Запис оновлено');
+      } else {
+        const id = `insp-${Date.now()}-${Math.random()
+          .toString(36)
+          .slice(2, 8)}`;
+        const built = buildInspirationItemRecord({
+          id,
+          kind: inspModalKind,
+          title: inspModalTitle,
+          contentText: inspModalText,
+          linkUrl: inspModalUrl,
+          mediaId:
+            inspModalKind === 'image'
+              ? inspModalPreparedMedia?.meta.id ?? null
+              : null,
+          isFavorite: inspModalFavorite,
+          projectId: inspModalProjectId || null,
+          nowIso,
+        });
+        const newItem: InspirationItem = {
+          ...built,
+          collection: inspModalCollection,
+          lifeAreaId: inspModalLifeAreaId || null,
+          goalId: inspModalGoalId || null,
+        };
+
+        await repositories.saveInspirationWithMediaTransactionally(
+          newItem,
+          inspModalKind === 'image' && inspModalPreparedMedia
+            ? inspModalPreparedMedia
+            : undefined
+        );
+        setIsInspModalOpen(false);
+        await onDataChanged('Запис додано');
+      }
+    } catch (err) {
+      setInspModalError(getErrorMessageUk(err));
+    } finally {
+      setIsSavingInspiration(false);
+    }
+  };
+
+  const handleToggleInspirationFavorite = async (item: InspirationItem) => {
+    try {
+      const nowIso = new Date().toISOString();
+      const updated: InspirationItem = {
+        ...item,
+        isFavorite: !item.isFavorite,
+        updatedAt: nowIso,
+        revision: item.revision + 1,
+      };
+      await repositories.saveInspirationWithMediaTransactionally(updated);
+      await onDataChanged();
+    } catch {
+      // Ignore
+    }
+  };
+
+  const handleDeleteInspirationItem = async (item: InspirationItem) => {
+    try {
+      const nowIso = new Date().toISOString();
+      let deleteMediaId: string | undefined;
+      if (item.mediaId) {
+        const stillReferenced = isMediaReferencedByLiveOrSnapshots(
+          item.mediaId,
+          inspirationItems,
+          recoverySnapshots,
+          item.id,
+          wishes
+        );
+        if (!stillReferenced) {
+          deleteMediaId = item.mediaId;
+        }
+      }
+      await repositories.deleteInspirationItemTransactionally(item.id, nowIso);
+      if (deleteMediaId) {
+        urlRegistryRef.current?.revokeMediaUrl(deleteMediaId);
+      }
+      setIsInspModalOpen(false);
+      await onDataChanged('Запис видалено');
+    } catch (err) {
+      setInspModalError(getErrorMessageUk(err));
+    }
+  };
+
+  // ==========================================================================
+  // 2. WISHLIST ("Список бажань") STATE & HANDLERS
+  // ==========================================================================
+  const [wishlistViewScope, setWishlistViewScope] =
+    useState<WishlistViewScope>('active');
+  const [wishlistCategoryFilter, setWishlistCategoryFilter] =
+    useState<WishlistCategoryFilter>(activeWishlistCategoryId ?? 'all');
   const [wishlistTimingFilter, setWishlistTimingFilter] =
     useState<WishlistTimingFilter>('all');
-  const [wishlistScope, setWishlistScope] =
-    useState<WishlistViewScope>('active');
 
-  // Inline fast wish creation with progressive disclosure (10.6)
-  const [quickWishExtras,setQuickWishExtras] = useState(emptyWishExtras);
-  const [editWishExtras,setEditWishExtras] = useState(emptyWishExtras);
-  const [confirmWishCurrency,setConfirmWishCurrency] = useState(false);
-  const [quickWishTitle, setQuickWishTitle] = useState<string>('');
-  const [showQuickWishDetails, setShowQuickWishDetails] =
-    useState<boolean>(false);
-  const [quickWishNote, setQuickWishNote] = useState<string>('');
-  const [quickWishTiming, setQuickWishTiming] =
-    useState<WishlistTimingGroup>('later');
-  const [quickWishCategoryId, setQuickWishCategoryId] = useState<string>('');
-  const [quickWishPriceInput, setQuickWishPriceInput] = useState<string>('');
-  const [quickWishCurrency, setQuickWishCurrency] = useState<
-    SupportedCurrencyCode | ''
-  >('');
-
-  // Wish Edit / Delete modals
-  const [editingWish, setEditingWish] = useState<WishItem | null>(null);
-  const [editWishTitle, setEditWishTitle] = useState<string>('');
-  const [editWishNote, setEditWishNote] = useState<string>('');
-  const [editWishTiming, setEditWishTiming] =
-    useState<WishlistTimingGroup>('later');
-  const [editWishCategoryId, setEditWishCategoryId] = useState<string>('');
-  const [editWishPriceInput, setEditWishPriceInput] = useState<string>('');
-  const [editWishCurrency, setEditWishCurrency] = useState<
-    SupportedCurrencyCode | ''
-  >('');
-  const [deletingWish, setDeletingWish] = useState<WishItem | null>(null);
-
-  // Category Manager modal
-  const [isCategoryManagerOpen, setIsCategoryManagerOpen] =
-    useState<boolean>(false);
-  const [newCategoryName, setNewCategoryName] = useState<string>('');
-  const [renamingCategoryId, setRenamingCategoryId] = useState<string | null>(
-    null
-  );
-  const [renamingCategoryText, setRenamingCategoryText] = useState<string>('');
-  const [deletingCategory, setDeletingCategory] =
-    useState<WishlistCategory | null>(null);
-
-
-  // Sync modal state upward so FloatingShell hides global button during sheet editing (C17)
-  useEffect(() => {
-    const anyModal =
-      Boolean(editingQuestion) ||
-      isInspModalOpen ||
-      Boolean(editingWish) ||
-      Boolean(deletingWish) ||
-      isCategoryManagerOpen;
-    onModalStateChange?.(anyModal);
-  }, [
-    editingQuestion,
-    isInspModalOpen,
-    editingWish,
-    deletingWish,
-    isCategoryManagerOpen,
-    onModalStateChange, onSettingsConfirmationChange,
-  ]);
-
-  // Keep category filter in sync with shell context
   useEffect(() => {
     if (
-      wishlistCategoryFilter !== 'all' &&
-      wishlistCategoryFilter !== 'uncategorized'
+      activeWishlistCategoryId !== undefined &&
+      activeWishlistCategoryId !== null
     ) {
-      if (activeWishlistCategoryId !== wishlistCategoryFilter) {
-        onChangeSubView(subView, wishlistCategoryFilter);
-      }
-      setQuickWishCategoryId(wishlistCategoryFilter);
-    } else if (activeWishlistCategoryId !== null) {
-      onChangeSubView(subView, null);
+      setWishlistCategoryFilter(activeWishlistCategoryId);
     }
-  }, [wishlistCategoryFilter]);
-
-  // Sorted records & categories
-  const sortedLifeQuestions = useMemo(
-    () => [...lifeAreaQuestions].sort((a, b) => a.order - b.order),
-    [lifeAreaQuestions]
-  );
-
-  const sortedAssessments = useMemo(
-    () =>
-      [...lifeAreaAssessments].sort((a, b) =>
-        b.createdAt.localeCompare(a.createdAt)
-      ),
-    [lifeAreaAssessments]
-  );
+  }, [activeWishlistCategoryId]);
 
   const sortedCategories = useMemo(
     () => sortWishlistCategories(wishlistCategories),
     [wishlistCategories]
   );
 
-  const categoryNameById = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const c of wishlistCategories) {
-      map.set(c.id, c.name);
+  const effectiveCategoryFilter: WishlistCategoryFilter = useMemo(() => {
+    if (
+      wishlistCategoryFilter === 'all' ||
+      wishlistCategoryFilter === 'uncategorized'
+    ) {
+      return wishlistCategoryFilter;
     }
-    return map;
-  }, [wishlistCategories]);
+    const exists = sortedCategories.some(
+      (c) => c.id === wishlistCategoryFilter
+    );
+    return exists ? wishlistCategoryFilter : 'all';
+  }, [wishlistCategoryFilter, sortedCategories]);
 
   const groupedWishes = useMemo(
     () =>
       filterAndGroupWishes({
         wishes,
-        categoryFilter: wishlistCategoryFilter,
+        viewScope: wishlistViewScope,
+        categoryFilter: effectiveCategoryFilter,
         timingFilter: wishlistTimingFilter,
-        viewScope: wishlistScope,
       }),
-    [wishes, wishlistCategoryFilter, wishlistTimingFilter, wishlistScope]
+    [wishes, wishlistViewScope, effectiveCategoryFilter, wishlistTimingFilter]
   );
 
-  const activeWishCount = useMemo(
-    () => wishes.filter((w) => !w.archived && getWishPurchaseStatus(w) === 'want').length,
-    [wishes]
+  // Add / Edit Wish Sheet state
+  const [isWishSheetOpen, setIsWishSheetOpen] = useState(false);
+  const [editingWishId, setEditingWishId] = useState<EntityId | null>(null);
+  const [wishTitleInput, setWishTitleInput] = useState('');
+  const [wishNoteInput, setWishNoteInput] = useState('');
+  const [wishTimingInput, setWishTimingInput] =
+    useState<WishlistTimingGroup>('later');
+  const [wishCategoryInput, setWishCategoryInput] = useState<string>('');
+  const [wishPriceInput, setWishPriceInput] = useState<string>('');
+  const [wishCurrencyInput, setWishCurrencyInput] = useState<string>(
+    settings.preferredWishlistCurrency ?? 'UAH'
   );
-  const fulfilledWishCount = useMemo(
-    () => wishes.filter((w) => !w.archived && getWishPurchaseStatus(w) === 'legacy_fulfilled').length,
-    [wishes]
+  const [wishLinkInput, setWishLinkInput] = useState<string>('');
+  const [wishProjectInput, setWishProjectInput] = useState<string>('');
+  const [wishMediaIdInput, setWishMediaIdInput] = useState<string | null>(null);
+  const [wishPreparedMedia, setWishPreparedMedia] =
+    useState<ValidatedMediaPreparationResult | null>(null);
+  const [wishStatusInput, setWishStatusInput] =
+    useState<WishPurchaseStatus>('want');
+  const [confirmWishCurrency, setConfirmWishCurrency] = useState(false);
+  const [activeWishChips, setActiveWishChips] = useState<Set<WishChipKey>>(
+    new Set()
   );
-  const archivedWishCount = useMemo(
-    () => wishes.filter((w) => w.archived).length,
-    [wishes]
+  const [quickNewCatName, setQuickNewCatName] = useState('');
+  const [wishFormError, setWishFormError] = useState<string | null>(null);
+  const [isSavingWish, setIsSavingWish] = useState(false);
+  const wishFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Category management Sheet state
+  const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [editingCategoryId, setEditingCategoryId] = useState<EntityId | null>(
+    null
   );
+  const [editingCategoryName, setEditingCategoryName] = useState('');
+  const [confirmDeleteCategoryId, setConfirmDeleteCategoryId] =
+    useState<EntityId | null>(null);
+  const [categoryError, setCategoryError] = useState<string | null>(null);
 
-  const filteredInspirationItems = useMemo(() => {
-    return [...inspirationItems]
-      .filter((item) => {
-        if ((item.collection ?? 'saved') !== inspCollection) return false;
-        if (inspFilterKind === 'favorites' && !item.isFavorite) return false;
-        if (
-          inspFilterKind !== 'all' &&
-          inspFilterKind !== 'favorites' &&
-          item.kind !== inspFilterKind
-        ) {
-          return false;
-        }
-        if (inspFilterProjectId && item.projectId !== inspFilterProjectId) {
-          return false;
-        }
-        return true;
-      })
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }, [inspirationItems, inspFilterKind, inspFilterProjectId, inspCollection]);
+  useEffect(() => {
+    const anyModal = Boolean(
+      isInspModalOpen ||
+        isWishSheetOpen ||
+        isCategoryManagerOpen ||
+        confirmDeleteCategoryId
+    );
+    onModalStateChange?.(anyModal);
+    return () => onModalStateChange?.(false);
+  }, [
+    isInspModalOpen,
+    isWishSheetOpen,
+    isCategoryManagerOpen,
+    confirmDeleteCategoryId,
+    onModalStateChange,
+  ]);
 
-  const mediaMetaById = useMemo(() => {
-    const map = new Map<string, MediaAssetMeta>();
-    for (const m of mediaMeta) {
-      map.set(m.id, m);
-    }
-    return map;
-  }, [mediaMeta]);
-
-  const currencySelectOptions = useMemo(
-    () =>
-      (Object.keys(SUPPORTED_CURRENCIES) as SupportedCurrencyCode[]).map(
-        (code) => ({
-          value: code,
-          label: SUPPORTED_CURRENCIES[code].labelUk,
-        })
-      ),
-    []
-  );
-
-  // ---------------------------------------------------------------------------
-  // Handlers: 10.2 Personal Records
-  // ---------------------------------------------------------------------------
-  // ---------------------------------------------------------------------------
-  // Handlers: 10.3 Life Areas
-  // ---------------------------------------------------------------------------
-  const handleSaveLifeAreaAssessment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLocalError(null);
-    try {
-      const nowIso = new Date().toISOString();
-      const id =
-        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-          ? crypto.randomUUID()
-          : `la-assess-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
-      const built = buildLifeAreaAssessmentSnapshot({
-        id,
-        periodStartLocalDate: periodStartDate,
-        periodEndLocalDate: periodEndDate,
-        questions: sortedLifeQuestions,
-        scoresByQuestionId: draftScores,
-        notesByQuestionId: draftNotes,
-        nowIso,
-      });
-
-      await repositories.saveLifeAreaAssessment(built);
-      setDraftScores({});
-      setDraftNotes({});
-      await onDataChanged('Оцінку сфер життя збережено.');
-    } catch (err) {
-      setLocalError(
-        err instanceof Error
-          ? err.message
-          : 'Не вдалося зберегти оцінку сфер життя.'
-      );
-    }
+  const handleSelectCategoryFilter = (next: WishlistCategoryFilter) => {
+    setWishlistCategoryFilter(next);
+    onChangeSubView(
+      'wishlist',
+      next === 'all' || next === 'uncategorized' ? null : next
+    );
   };
 
-  const handleSaveEditedQuestion = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingQuestion) return;
-    setLocalError(null);
-    try {
-      const nowIso = new Date().toISOString();
-      const updated = updateLifeAreaQuestionWording(
-        editingQuestion,
-        editingQuestionText,
-        nowIso
-      );
-      await repositories.saveLifeAreaQuestion(updated, editingQuestion.revision);
-      setEditingQuestion(null);
-      await onDataChanged(
-        'Формулювання запитання оновлено (попередні оцінки зберегли тогочасну версію).'
-      );
-    } catch (err) {
-      setLocalError(
-        err instanceof Error
-          ? err.message
-          : 'Не вдалося оновити формулювання запитання.'
-      );
-    }
-  };
-
-  // ---------------------------------------------------------------------------
-  // Handlers: 10.4 Inspiration & Media
-  // ---------------------------------------------------------------------------
-  const handleSelectInspirationImage = async (
-    e: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    const file = e.target.files?.[0];
-    if (!file) {
-      setInspImageCandidate(null);
-      return;
-    }
-    setLocalError(null);
-    try {
-      const rawBuffer = await file.arrayBuffer();
-      const rawBytes = new Uint8Array(rawBuffer);
-
-      // First validate actual binary magic bytes and header dimensions
-      const tempValidation = await validateAndPrepareRasterMedia({
-        id: 'temp-check',
-        bytes: rawBytes,
-        declaredMimeType: file.type,
-        nowIso: new Date().toISOString(),
-      });
-
-      // Optional canvas downscaling if dimensions exceed 1920px
-      let finalBytes = rawBytes;
-      let finalMime: string = tempValidation.meta.mimeType;
-      let wasOptimized = false;
-      const origW = tempValidation.meta.width;
-      const origH = tempValidation.meta.height;
-
-      if (
-        (origW > 1920 || origH > 1920) &&
-        typeof document !== 'undefined' &&
-        typeof createImageBitmap === 'function'
-      ) {
-        try {
-          const blob = new Blob([rawBytes as unknown as BlobPart], {
-            type: tempValidation.meta.mimeType,
-          });
-          const bitmap = await createImageBitmap(blob);
-          const scale = Math.min(
-            1920 / bitmap.width,
-            1920 / bitmap.height,
-            1
-          );
-          if (scale < 1) {
-            const targetW = Math.max(1, Math.round(bitmap.width * scale));
-            const targetH = Math.max(1, Math.round(bitmap.height * scale));
-            const canvas = document.createElement('canvas');
-            canvas.width = targetW;
-            canvas.height = targetH;
-            const ctx = canvas.getContext('2d');
-            if (ctx) {
-              ctx.drawImage(bitmap, 0, 0, targetW, targetH);
-              const outBlob = await new Promise<Blob | null>((resolve) =>
-                canvas.toBlob(resolve, 'image/webp', 0.86)
-              );
-              if (outBlob && outBlob.size < rawBytes.byteLength) {
-                const optBuf = await outBlob.arrayBuffer();
-                finalBytes = new Uint8Array(optBuf);
-                finalMime = 'image/webp';
-                wasOptimized = true;
-              }
-            }
-          }
-          bitmap.close();
-        } catch {
-          // Fallback to original validated raster bytes if canvas optimization is unavailable
-        }
+  const toggleWishChip = (chip: WishChipKey) => {
+    setActiveWishChips((prev) => {
+      const next = new Set(prev);
+      if (next.has(chip)) {
+        next.delete(chip);
+      } else {
+        next.add(chip);
       }
-
-      setInspImageCandidate({
-        bytes: finalBytes,
-        mimeType: finalMime,
-        wasOptimized,
-        originalWidth: origW,
-        originalHeight: origH,
-      });
-    } catch (err) {
-      setInspImageCandidate(null);
-      setLocalError(
-        err instanceof Error
-          ? err.message
-          : 'Не вдалося перевірити зображення.'
-      );
-    }
+      return next;
+    });
   };
 
-  const handleSaveInspiration = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLocalError(null);
-    try {
-      const nowIso = new Date().toISOString();
-      const id =
-        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-          ? crypto.randomUUID()
-          : `insp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
-      let preparedMedia:
-        | { meta: MediaAssetMeta; bytes: Uint8Array }
-        | undefined = undefined;
-      let optNotice = '';
-      if (inspKind === 'image') {
-        if (!inspImageCandidate) {
-          throw new Error(
-            'Оберіть растрове зображення (JPEG, PNG або WebP) для збереження.'
-          );
-        }
-        const mediaId =
-          typeof crypto !== 'undefined' &&
-          typeof crypto.randomUUID === 'function'
-            ? crypto.randomUUID()
-            : `media-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
-        const prepared = await validateAndPrepareRasterMedia({
-          id: mediaId,
-          bytes: inspImageCandidate.bytes,
-          declaredMimeType: inspImageCandidate.mimeType,
-          wasOptimized: inspImageCandidate.wasOptimized,
-          originalWidth: inspImageCandidate.originalWidth,
-          originalHeight: inspImageCandidate.originalHeight,
-          nowIso,
-        });
-
-        preparedMedia = prepared;
-        if (prepared.meta.optimizationNoteUk) {
-          optNotice = ` (${prepared.meta.optimizationNoteUk})`;
-        }
-      }
-
-      const item = buildInspirationItemRecord({
-        id,
-        kind: inspKind,
-        title: inspTitle,
-        contentText: inspText,
-        linkUrl: inspUrl,
-        mediaId: preparedMedia?.meta.id ?? null,
-        isFavorite: inspFavorite,
-        projectId: inspProjectId || null,
-        nowIso,
-      });
-
-      await repositories.saveInspirationWithMediaTransactionally(
-        { ...item, collection: inspCollection, lifeAreaId: inspArea || null, goalId: inspGoal || null },
-        preparedMedia
-      );
-      setIsInspModalOpen(false);
-      setInspTitle('');
-      setInspText('');
-      setInspUrl('');
-      setInspImageCandidate(null);
-      setInspFavorite(false);
-      await onDataChanged(`Елемент натхнення збережено${optNotice}.`);
-    } catch (err) {
-      setLocalError(
-        err instanceof Error
-          ? err.message
-          : 'Не вдалося зберегти елемент натхнення.'
-      );
-    }
-  };
-
-  const handleToggleInspirationFavorite = async (item: InspirationItem) => {
-    setLocalError(null);
-    try {
-      await repositories.saveInspirationWithMediaTransactionally(
-        {
-          ...item,
-          isFavorite: !item.isFavorite,
-          updatedAt: new Date().toISOString(),
-          revision: item.revision + 1,
-        },
-        undefined,
-        item.revision
-      );
-      await onDataChanged();
-    } catch (err) {
-      setLocalError(
-        err instanceof Error ? err.message : 'Не вдалося оновити елемент.'
-      );
-    }
-  };
-
-  const handleDeleteInspiration = async (item: InspirationItem) => {
-    setLocalError(null);
-    try {
-      await repositories.deleteInspirationItemTransactionally(
-        item.id,
-        new Date().toISOString()
-      );
-      if (item.mediaId) {
-        objectUrlRegistryRef.current?.revokeMediaUrl(item.mediaId);
-      }
-      await onDataChanged('Елемент натхнення видалено.');
-    } catch (err) {
-      setLocalError(
-        err instanceof Error
-          ? err.message
-          : 'Не вдалося видалити елемент натхнення.'
-      );
-    }
-  };
-
-  // ---------------------------------------------------------------------------
-  // Handlers: 10.5 - 10.7 Wishlist & Flat Categories
-  // ---------------------------------------------------------------------------
-  const handleQuickCreateWish = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLocalError(null);
-    try {
-      const nowIso = new Date().toISOString();
-      const id =
-        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-          ? crypto.randomUUID()
-          : `wish-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
-      const built = buildWishItemRecord({
-        id,
-        title: quickWishTitle,
-        ...resolveWishExtras(quickWishExtras),
-        note: quickWishNote,
-        categoryId: quickWishCategoryId || null,
-        timing: quickWishTiming,
-        rawPriceAmount: quickWishPriceInput,
-        currencyCode: quickWishCurrency ? quickWishCurrency : null,
-        preferredCurrency: settings.preferredWishlistCurrency,
-        nowIso,
-      });
-
-      await repositories.saveWishItem(built.wish,undefined,{media:quickWishExtras.preparedMedia??undefined});
-
-      // 10.7: Persist preferred currency when first chosen
-      if (
-        built.explicitCurrencySelected &&
-        !settings.preferredWishlistCurrency
-      ) {
-        const updatedSettings = await repositories.updateSettingsPatch({
-          preferredWishlistCurrency: built.explicitCurrencySelected,
-        });
-        onSettingsPatch(updatedSettings);
-      }
-
-      setQuickWishExtras(emptyWishExtras());
-      setQuickWishTitle('');
-      setQuickWishNote('');
-      setQuickWishPriceInput('');
-      setQuickWishCurrency('');
-      setQuickWishTiming('later');
-      setShowQuickWishDetails(false);
-      await onDataChanged(`Бажання «${built.wish.title}» додано.`);
-    } catch (err) {
-      // 10.8: Preserve entered text on validation or storage error
-      setLocalError(
-        err instanceof Error ? err.message : 'Не вдалося зберегти бажання.'
-      );
-    }
+  const openNewWishModal = () => {
+    setEditingWishId(null);
+    setWishTitleInput('');
+    setWishNoteInput('');
+    setWishTimingInput(
+      wishlistTimingFilter !== 'all' ? wishlistTimingFilter : 'later'
+    );
+    setWishCategoryInput(
+      effectiveCategoryFilter !== 'all' &&
+        effectiveCategoryFilter !== 'uncategorized'
+        ? effectiveCategoryFilter
+        : ''
+    );
+    setWishPriceInput('');
+    setWishCurrencyInput(settings.preferredWishlistCurrency ?? 'UAH');
+    setWishLinkInput('');
+    setWishProjectInput('');
+    setWishMediaIdInput(null);
+    setWishPreparedMedia(null);
+    setWishStatusInput('want');
+    setConfirmWishCurrency(false);
+    setQuickNewCatName('');
+    setActiveWishChips(new Set());
+    setWishFormError(null);
+    setIsWishSheetOpen(true);
   };
 
   const openEditWishModal = (wish: WishItem) => {
-    setLocalError(null);
-    setEditWishExtras({...emptyWishExtras(wish.projectId??''),linkUrl:wish.linkUrl??''}); setConfirmWishCurrency(false);
-    setEditingWish(wish);
-    setEditWishTitle(wish.title);
-    setEditWishNote(wish.note ?? '');
-    setEditWishTiming(wish.timing);
-    setEditWishCategoryId(wish.categoryId ?? '');
-    setEditWishPriceInput(
-      wish.estimatedPrice
-        ? wish.estimatedPrice.amountDecimal.replace('.', ',')
-        : ''
+    setEditingWishId(wish.id);
+    setWishTitleInput(wish.title);
+    setWishNoteInput(wish.note ?? '');
+    setWishTimingInput(wish.timing);
+    setWishCategoryInput(wish.categoryId ?? '');
+    setWishPriceInput(wish.estimatedPrice?.amountDecimal ?? '');
+    setWishCurrencyInput(
+      wish.estimatedPrice?.currency ??
+        settings.preferredWishlistCurrency ??
+        'UAH'
     );
-    setEditWishCurrency(
-      wish.estimatedPrice?.currency ?? settings.preferredWishlistCurrency ?? ''
+    setWishLinkInput(wish.linkUrl ?? '');
+    setWishProjectInput(wish.projectId ?? '');
+    setWishMediaIdInput(wish.mediaId ?? null);
+    setWishPreparedMedia(null);
+    const currentStatus = getWishPurchaseStatus(wish);
+    setWishStatusInput(
+      currentStatus === 'legacy_fulfilled' ? 'purchased' : currentStatus
     );
-    setLocalError(null);
+    setConfirmWishCurrency(false);
+    setQuickNewCatName('');
+    const initialChips = new Set<WishChipKey>();
+    if (wish.estimatedPrice) initialChips.add('price');
+    if (wish.linkUrl) initialChips.add('link');
+    if (wish.mediaId) initialChips.add('photo');
+    if (wish.projectId) initialChips.add('project');
+    if (wish.categoryId) initialChips.add('category');
+    initialChips.add('timing');
+    setActiveWishChips(initialChips);
+    setWishFormError(null);
+    setIsWishSheetOpen(true);
   };
 
-  const handleSaveEditedWish = async (e: React.FormEvent) => {
+  const handleWishPhotoChange = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setWishFormError(null);
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const id = `media-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2, 8)}`;
+      const media = await validateAndPrepareRasterMedia({
+        id,
+        bytes,
+        declaredMimeType: file.type || undefined,
+        nowIso: new Date().toISOString(),
+      });
+      setWishMediaIdInput(media.meta.id);
+      setWishPreparedMedia(media);
+    } catch (err) {
+      setWishFormError(getErrorMessageUk(err));
+    }
+  };
+
+  const handleSaveWishSheet = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingWish) return;
-    setLocalError(null);
+    setWishFormError(null);
+    setIsSavingWish(true);
     try {
       const nowIso = new Date().toISOString();
-      const built = buildWishItemRecord({
-        id: editingWish.id,
-        title: editWishTitle,
-        ...resolveWishExtras(editWishExtras,editingWish.mediaId),
-        confirmCurrencyChange:confirmWishCurrency,
-        note: editWishNote,
-        categoryId: editWishCategoryId || null,
-        timing: editWishTiming,
-        rawPriceAmount: editWishPriceInput,
-        currencyCode: editWishCurrency ? editWishCurrency : null,
-        preferredCurrency:
-          editingWish.estimatedPrice?.currency ??
-          settings.preferredWishlistCurrency,
-        nowIso,
-        existingWish: editingWish,
-      });
+      let resolvedCategoryId = wishCategoryInput || null;
 
-      await repositories.saveWishItem(built.wish, editingWish.revision,{media:editWishExtras.preparedMedia??undefined,confirmCurrencyChange:confirmWishCurrency});
-
-      if (
-        built.explicitCurrencySelected &&
-        !settings.preferredWishlistCurrency
-      ) {
-        const updatedSettings = await repositories.updateSettingsPatch({
-          preferredWishlistCurrency: built.explicitCurrencySelected,
+      // Support creating a custom category right from the wish sheet
+      if (quickNewCatName.trim()) {
+        const catId = `wcat-${Date.now()}-${Math.random()
+          .toString(36)
+          .slice(2, 7)}`;
+        const maxOrder = sortedCategories.reduce(
+          (max, c) => Math.max(max, c.order),
+          0
+        );
+        await repositories.saveWishlistCategory({
+          id: catId,
+          name: quickNewCatName.trim(),
+          order: maxOrder + 1,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+          revision: 1,
         });
-        onSettingsPatch(updatedSettings);
+        resolvedCategoryId = catId;
       }
 
-      setEditingWish(null);
-      await onDataChanged(`Бажання «${built.wish.title}» оновлено.`);
-    } catch (err) {
-      setLocalError(
-        err instanceof Error ? err.message : 'Не вдалося оновити бажання.'
+      const existing = editingWishId
+        ? wishes.find((w) => w.id === editingWishId)
+        : undefined;
+      const id =
+        existing?.id ??
+        `wish-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+      const { wish: builtWish, explicitCurrencySelected } = buildWishItemRecord(
+        {
+          id,
+          title: wishTitleInput,
+          note: wishNoteInput || null,
+          categoryId: resolvedCategoryId,
+          timing: wishTimingInput,
+          rawPriceAmount: wishPriceInput.trim() ? wishPriceInput : null,
+          currencyCode: wishPriceInput.trim() ? wishCurrencyInput : null,
+          preferredCurrency: settings.preferredWishlistCurrency,
+          nowIso,
+          existingWish: existing,
+          linkUrl: wishLinkInput.trim()
+            ? validateSafeHttpUrl(wishLinkInput)
+            : null,
+          mediaId: wishMediaIdInput,
+          projectId: wishProjectInput || null,
+          confirmCurrencyChange: confirmWishCurrency,
+        }
       );
+
+      const finalWish: WishItem = existing
+        ? {
+            ...builtWish,
+            purchaseStatus: wishStatusInput,
+            purchasedAt:
+              wishStatusInput === 'purchased'
+                ? existing.purchasedAt ?? nowIso
+                : existing.purchasedAt ?? null,
+          }
+        : {
+            ...builtWish,
+            purchaseStatus: 'want',
+            purchasedAt: null,
+          };
+
+      await repositories.saveWishItem(finalWish, existing?.revision, {
+        media: wishPreparedMedia ?? undefined,
+        confirmCurrencyChange: confirmWishCurrency,
+      });
+
+      if (
+        explicitCurrencySelected &&
+        explicitCurrencySelected !== settings.preferredWishlistCurrency
+      ) {
+        await repositories.updateSettingsPatch(
+          { preferredWishlistCurrency: explicitCurrencySelected },
+          nowIso
+        );
+        onSettingsPatch({
+          preferredWishlistCurrency: explicitCurrencySelected,
+        });
+      }
+
+      setIsWishSheetOpen(false);
+      await onDataChanged(existing ? 'Бажання оновлено' : 'Бажання додано');
+    } catch (err) {
+      setWishFormError(getErrorMessageUk(err));
+    } finally {
+      setIsSavingWish(false);
     }
   };
 
-  const handleWishPurchaseStatus = async (wish:WishItem,status:WishPurchaseStatus) => {
-    setLocalError(null);
-    try {await repositories.saveWishItem(setWishPurchaseStatus(wish,status,new Date().toISOString()),wish.revision);await onDataChanged();}
-    catch(err){setLocalError(err instanceof Error?err.message:'Не вдалося змінити статус бажання.');}
-  };
-
-  const handleToggleWishArchived = async (wish: WishItem) => {
-    setLocalError(null);
+  const handleSetWishStatus = async (
+    wish: WishItem,
+    status: WishPurchaseStatus
+  ) => {
     try {
       const nowIso = new Date().toISOString();
-      const next = setWishArchivedState(wish, !wish.archived, nowIso);
-      await repositories.saveWishItem(next, wish.revision);
-      await onDataChanged(
-        next.archived
-          ? `Бажання «${wish.title}» переміщено в архів.`
-          : `Бажання «${wish.title}» відновлено з архіву.`
-      );
+      const updated = setWishPurchaseStatus(wish, status, nowIso);
+      await repositories.saveWishItem(updated, wish.revision);
+      await onDataChanged();
     } catch (err) {
-      setLocalError(
-        err instanceof Error
-          ? err.message
-          : 'Не вдалося оновити архівний стан бажання.'
-      );
+      setWishFormError(getErrorMessageUk(err));
     }
   };
 
-  const handleConfirmDeleteWish = async () => {
-    if (!deletingWish) return;
-    setLocalError(null);
+  const handleToggleArchiveWish = async (wish: WishItem) => {
     try {
-      await repositories.deleteWishItemTransactionally(
-        deletingWish.id,
-        new Date().toISOString()
+      const nowIso = new Date().toISOString();
+      const updated = setWishArchivedState(wish, !wish.archived, nowIso);
+      await repositories.saveWishItem(updated, wish.revision);
+      await onDataChanged(
+        updated.archived ? 'Перенесено в архів' : 'Повернено з архіву'
       );
-      const deletedTitle = deletingWish.title;
-      setDeletingWish(null);
-      await onDataChanged(`Бажання «${deletedTitle}» видалено.`);
     } catch (err) {
-      setLocalError(
-        err instanceof Error ? err.message : 'Не вдалося видалити бажання.'
-      );
+      setWishFormError(getErrorMessageUk(err));
     }
   };
 
+  const handleDeleteWish = async (wishId: EntityId) => {
+    try {
+      const nowIso = new Date().toISOString();
+      await repositories.deleteWishItemTransactionally(wishId, nowIso);
+      setIsWishSheetOpen(false);
+      await onDataChanged('Бажання видалено');
+    } catch (err) {
+      setWishFormError(getErrorMessageUk(err));
+    }
+  };
+
+  // Category CRUD handlers
   const handleCreateCategory = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLocalError(null);
+    setCategoryError(null);
+    const trimmed = newCategoryName.trim();
+    if (!trimmed) {
+      setCategoryError('Введіть назву категорії.');
+      return;
+    }
     try {
       const nowIso = new Date().toISOString();
-      const id =
-        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-          ? crypto.randomUUID()
-          : `wcat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
-      await repositories.saveWishlistCategory({
+      const id = `wcat-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2, 7)}`;
+      const maxOrder = sortedCategories.reduce(
+        (max, c) => Math.max(max, c.order),
+        0
+      );
+      const cat: WishlistCategory = {
         id,
-        name: newCategoryName,
-        order: sortedCategories.length,
+        name: trimmed,
+        order: maxOrder + 1,
         createdAt: nowIso,
         updatedAt: nowIso,
         revision: 1,
-      });
+      };
+      await repositories.saveWishlistCategory(cat);
       setNewCategoryName('');
-      await onDataChanged('Категорію бажань створено.');
+      await onDataChanged('Категорію створено');
     } catch (err) {
-      setLocalError(
-        err instanceof Error ? err.message : 'Не вдалося створити категорію.'
-      );
+      setCategoryError(getErrorMessageUk(err));
     }
   };
 
-  const handleRenameCategory = async (cat: WishlistCategory) => {
-    setLocalError(null);
+  const handleSaveRenameCategory = async (cat: WishlistCategory) => {
+    setCategoryError(null);
+    const trimmed = editingCategoryName.trim();
+    if (!trimmed) {
+      setCategoryError('Назва категорії не може бути порожньою.');
+      return;
+    }
     try {
       const nowIso = new Date().toISOString();
       await repositories.saveWishlistCategory(
         {
           ...cat,
-          name: renamingCategoryText,
+          name: trimmed,
           updatedAt: nowIso,
           revision: cat.revision + 1,
         },
         cat.revision
       );
-      setRenamingCategoryId(null);
-      setRenamingCategoryText('');
-      await onDataChanged('Назву категорії оновлено.');
+      setEditingCategoryId(null);
+      setEditingCategoryName('');
+      await onDataChanged('Категорію перейменовано');
     } catch (err) {
-      setLocalError(
-        err instanceof Error
-          ? err.message
-          : 'Не вдалося перейменувати категорію.'
-      );
+      setCategoryError(getErrorMessageUk(err));
     }
   };
 
@@ -882,1134 +936,1077 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
   ) => {
     const targetIndex = index + direction;
     if (targetIndex < 0 || targetIndex >= sortedCategories.length) return;
-    const ids = sortedCategories.map((c) => c.id);
-    const temp = ids[index];
-    ids[index] = ids[targetIndex];
-    ids[targetIndex] = temp;
+    const current = sortedCategories[index];
+    const neighbor = sortedCategories[targetIndex];
     try {
-      await repositories.reorderWishlistCategoriesTransactionally(
-        ids,
-        new Date().toISOString()
+      const nowIso = new Date().toISOString();
+      await repositories.saveWishlistCategory(
+        {
+          ...current,
+          order: neighbor.order,
+          updatedAt: nowIso,
+          revision: current.revision + 1,
+        },
+        current.revision
+      );
+      await repositories.saveWishlistCategory(
+        {
+          ...neighbor,
+          order: current.order,
+          updatedAt: nowIso,
+          revision: neighbor.revision + 1,
+        },
+        neighbor.revision
       );
       await onDataChanged();
     } catch (err) {
-      setLocalError(
-        err instanceof Error
-          ? err.message
-          : 'Не вдалося змінити порядок категорій.'
-      );
+      setCategoryError(getErrorMessageUk(err));
     }
   };
 
-  const handleConfirmDeleteCategory = async () => {
-    if (!deletingCategory) return;
-    setLocalError(null);
+  const handleConfirmDeleteCategory = async (categoryId: EntityId) => {
+    setCategoryError(null);
     try {
-      const res = await repositories.deleteWishlistCategoryTransactionally(
-        deletingCategory.id,
-        new Date().toISOString()
+      const nowIso = new Date().toISOString();
+      await repositories.deleteWishlistCategoryTransactionally(
+        categoryId,
+        nowIso
       );
-      if (wishlistCategoryFilter === deletingCategory.id) {
-        setWishlistCategoryFilter('all');
+      setConfirmDeleteCategoryId(null);
+      if (wishlistCategoryFilter === categoryId) {
+        handleSelectCategoryFilter('all');
       }
-      setDeletingCategory(null);
-      await onDataChanged(
-        `Категорію видалено. Бажань переведено в «Без категорії»: ${res.reassignedWishesCount}.`
-      );
+      await onDataChanged('Категорію видалено');
     } catch (err) {
-      setLocalError(
-        err instanceof Error ? err.message : 'Не вдалося видалити категорію.'
-      );
+      setCategoryError(getErrorMessageUk(err));
     }
   };
 
-  // Scale options for 1-5 state inputs
-  const moodScaleOptions = [
-    { value: '', label: UK_STRINGS.creation.recordForm.notSelectedOption },
-    { value: '1', label: MOOD_SCALE_LABELS_UK[1] },
-    { value: '2', label: MOOD_SCALE_LABELS_UK[2] },
-    { value: '3', label: MOOD_SCALE_LABELS_UK[3] },
-    { value: '4', label: MOOD_SCALE_LABELS_UK[4] },
-    { value: '5', label: MOOD_SCALE_LABELS_UK[5] },
-  ];
-
-  const energyScaleOptions = [
-    { value: '', label: UK_STRINGS.creation.recordForm.notSelectedOption },
-    { value: '1', label: ENERGY_SCALE_LABELS_UK[1] },
-    { value: '2', label: ENERGY_SCALE_LABELS_UK[2] },
-    { value: '3', label: ENERGY_SCALE_LABELS_UK[3] },
-    { value: '4', label: ENERGY_SCALE_LABELS_UK[4] },
-    { value: '5', label: ENERGY_SCALE_LABELS_UK[5] },
-  ];
-
-  const stressScaleOptions = [
-    { value: '', label: UK_STRINGS.creation.recordForm.notSelectedOption },
-    { value: '1', label: STRESS_SCALE_LABELS_UK[1] },
-    { value: '2', label: STRESS_SCALE_LABELS_UK[2] },
-    { value: '3', label: STRESS_SCALE_LABELS_UK[3] },
-    { value: '4', label: STRESS_SCALE_LABELS_UK[4] },
-    { value: '5', label: STRESS_SCALE_LABELS_UK[5] },
-  ];
+  // ==========================================================================
+  // RENDER
+  // ==========================================================================
+  const editingInspItem = editingInspId
+    ? inspirationItems.find((i) => i.id === editingInspId) ?? null
+    : null;
+  const editingWishItem = editingWishId
+    ? wishes.find((w) => w.id === editingWishId) ?? null
+    : null;
 
   return (
-    <div className="space-y-5" data-ui="content-start" data-testid="destination-view-me">
-      {subView === 'overview' ? <PageHeader title="Я" /> : <SubHeader title={initialPlanningReview && subView === 'life_areas' ? 'Короткий огляд планування' : ({records:'Стан',life_areas:'Сфери життя',inspiration:'Моє бажане життя',wishlist:'Список бажань',settings:'Налаштування'}[subView])} onBack={() => { setInitialPlanningReview(false); onChangeSubView('overview',null); }} />}
-      {weeklyHub && <WeeklyReviewSheet snapshot={snapshot} today={actualTodayDate} repositories={repositories} onClose={()=>setWeeklyHub(false)} onOpenPlan={onOpenPlan} onPause={p=>onOpenPlan('project',p.id)} onInspectEvent={onInspectCalendarEvent} onChanged={()=>onDataChanged()} />}
-
-      {localError && (
-        <FeedbackBanner
-          tone="error"
-          message={localError}
-          onDismiss={() => setLocalError(null)}
+    <div className="space-y-4 pb-8" data-testid="destination-view-me">
+      {effectiveSubView === 'overview' ? (
+        <PageHeader title={UK_STRINGS.nav.me} />
+      ) : (
+        <SubHeader
+          title={
+            effectiveSubView === 'records'
+              ? 'Стан'
+              : effectiveSubView === 'life_areas'
+              ? 'Сфери життя'
+              : effectiveSubView === 'inspiration'
+              ? 'Моє бажане життя'
+              : effectiveSubView === 'wishlist'
+              ? 'Список бажань'
+              : 'Налаштування'
+          }
+          onBack={() => handleSubViewChange('overview')}
+          actions={
+            effectiveSubView === 'inspiration' ? (
+              <div className="flex items-center gap-2">
+                <InfoSheet title="Моє бажане життя">
+                  <p>
+                    Простір для описів, фото й орієнтирів без зобов’язань.
+                    Необов’язкові питання для роздумів:
+                  </p>
+                  <ul className="list-disc pl-5 space-y-1.5 mt-2">
+                    <li>Який вигляд має мій звичайний бажаний день?</li>
+                    <li>Які люди й стосунки мене оточують?</li>
+                    <li>Як я працюю і як відпочиваю?</li>
+                    <li>Яке місце займає творчість або розвиток?</li>
+                    <li>Чого я хочу більше, а чого — менше?</li>
+                  </ul>
+                </InfoSheet>
+                <RoundButton
+                  aria-label="Додати"
+                  data-testid="open-inspiration-modal-button"
+                  onClick={openNewInspirationModal}
+                >
+                  +
+                </RoundButton>
+              </div>
+            ) : effectiveSubView === 'wishlist' ? (
+              <div className="flex items-center gap-2">
+                <RoundButton
+                  aria-label="Додати бажання"
+                  data-testid="open-add-wish-button"
+                  onClick={openNewWishModal}
+                >
+                  +
+                </RoundButton>
+                <ActionMenu
+                  label="Дії списку бажань"
+                  testId="wishlist-header-menu"
+                  items={[
+                    {
+                      label: 'Керувати категоріями',
+                      onSelect: () => setIsCategoryManagerOpen(true),
+                    },
+                  ]}
+                />
+              </div>
+            ) : undefined
+          }
         />
       )}
 
-      {/* =====================================================================
-          10.1 ME OVERVIEW: Quiet drill-down rows/cards
-         ===================================================================== */}
-      {subView === 'overview' && <div data-testid="me-overview-drilldown-list" className="space-y-5">
-        <Section title="Огляд">
-          <button className="ui-disclosure" onClick={()=>setWeeklyHub(true)}><Row title="Щотижневий огляд" leading={<Compass size={20}/>} trailing={<ChevronRight size={18}/>} /></button>
-          <button className="ui-disclosure" onClick={()=>{setInitialPlanningReview(true);onChangeSubView('life_areas');}}><Row title="Короткий огляд планування" leading={<Star size={20}/>} trailing={<ChevronRight size={18}/>} /></button>
-        </Section>
-        <Section title="Особисте">
-          {([{key:'life_areas',title:'Сфери життя',icon:Compass,enabled:true,test:'life-areas'}, {key:'records',title:'Стан',icon:HeartHandshake,enabled:settings.modules?.stateCheckInsEnabled,test:'records'}, {key:'inspiration',title:'Моє бажане життя',icon:Sparkles,enabled:settings.modules?.desiredLifeEnabled,test:'inspiration'}, {key:'wishlist',title:'Список бажань',icon:Gift,enabled:settings.modules?.wishlistEnabled ?? true,test:'wishlist'}] as const).filter(r=>r.enabled).map((r,i)=><button key={r.key} className="ui-disclosure" data-testid={`me-drilldown-${r.test}`} onClick={()=>{setInitialPlanningReview(false);onChangeSubView(r.key);}} style={{'--item-hue':['#c27b55','#ab759c','#6b9d8c','#7c8fba'][i]} as React.CSSProperties}><Row title={r.title} leading={<r.icon size={20}/>} trailing={<ChevronRight size={18}/>} /></button>)}
-        </Section>
-        <Section title="Налаштування"><button className="ui-disclosure" data-testid="me-drilldown-settings" onClick={()=>onChangeSubView('settings')}><Row title="Налаштування" leading={<Settings size={20}/>} trailing={<ChevronRight size={18}/>} /></button></Section>
-      </div>}
-
-      {/* =====================================================================
-          10.2 PERSONAL RECORDS SUBVIEW
-         ===================================================================== */}
-      {subView === 'records' && <StateCheckInsView events={snapshot.events} records={personalRecords} today={actualTodayDate} zone={activeZone} enabled={(settings.modules?.stateCheckInsEnabled ?? false)} repositories={repositories} onChanged={() => onDataChanged()} />}
-
-      {/* =====================================================================
-          10.3 LIFE AREAS SUBVIEW
-         ===================================================================== */}
-      {subView === 'life_areas' && <LifeAreasReviewView snapshot={snapshot} zone={activeZone} today={actualTodayDate} repositories={repositories} onChanged={() => onDataChanged()} onOpenPlan={onOpenPlan} onInspectEvent={onInspectCalendarEvent} onModalStateChange={onModalStateChange} initialPlanningReview={initialPlanningReview} />}
-
-      {/* =====================================================================
-          10.4 INSPIRATION & LOCAL MEDIA SUBVIEW
-         ===================================================================== */}
-      {subView === 'inspiration' && (
-        <div className="space-y-4" data-testid="me-inspiration-subview">
-          <h2>Моє бажане життя</h2><p>Як я бачу своє ідеальне життя</p>
-          <p>За бажанням: мій звичайний день; люди та стосунки; робота й відпочинок; творчість; чого хочеться більше або менше.</p>
-          <SegmentedControl ariaLabel="Колекція матеріалів" value={inspCollection} onChange={setInspCollection} options={[{value: 'preferred_life', label: 'Моє бажане життя'}, {value: 'saved', label: 'Збережене натхнення'}]} />
-          <div className="flex flex-wrap items-center justify-between gap-2.5">
-            <SegmentedControl<'all' | InspirationItemKind | 'favorites'>
-              ariaLabel="Фільтр елементів натхнення"
-              value={inspFilterKind}
-              onChange={setInspFilterKind}
-              options={[
-                { value: 'all', label: 'Усі' },
-                { value: 'favorites', label: 'Вибрані' },
-                { value: 'text', label: 'Нотатки' },
-                { value: 'quote', label: 'Цитати' },
-                { value: 'link', label: 'Посилання' },
-                { value: 'image', label: 'Зображення' },
-              ]}
+      {/* SUBVIEW: OVERVIEW ("Я" Hub) */}
+      {effectiveSubView === 'overview' && (
+        <div
+          className="space-y-4"
+          data-testid="me-subview-overview"
+          data-ui="content-start"
+        >
+          <Section>
+            <div data-testid="me-overview-drilldown-list">
+              {(
+                [
+                  ['records', 'Стан'],
+                  ['life_areas', 'Сфери життя'],
+                  ['inspiration', 'Моє бажане життя'],
+                  ['wishlist', 'Список бажань'],
+                  ['settings', 'Налаштування'],
+                ] as const
+              )
+                .filter(
+                  ([id]) =>
+                    (id !== 'records' ||
+                      (settings.modules?.stateCheckInsEnabled ?? false)) &&
+                    (id !== 'inspiration' ||
+                      (settings.modules?.desiredLifeEnabled ?? false)) &&
+                    (id !== 'wishlist' ||
+                      (settings.modules?.wishlistEnabled ?? false))
+                )
+                .map(([id, title]) => (
+                  <Disclosure
+                    key={id}
+                    title={title}
+                    testId={`me-drilldown-${id.replace('_', '-')}`}
+                    onClick={() => handleSubViewChange(id)}
+                  />
+                ))}
+            </div>
+          </Section>
+          <Section>
+            <Disclosure
+              title="Щотижневий огляд"
+              onClick={() => setWeeklyOpen(true)}
             />
-
-            <Button
-              variant="primary"
-              size="sm"
+            <Disclosure
+              title="Короткий огляд планування"
+              testId="me-planning-review"
               onClick={() => {
-                setLocalError(null);
-                setIsInspModalOpen(true);
+                setPlanningReviewOpen(true);
+                handleSubViewChange('life_areas', undefined, true);
               }}
-              data-testid="open-inspiration-modal-button"
-            >
-              <Plus className="w-4 h-4" aria-hidden="true" />
-              <span>Додати натхнення</span>
-            </Button>
-          </div>
-
-          {projects.length > 0 && (
-            <div className="sm:w-72">
-              <SelectField
-                label="Фільтр за пов’язаним проєктом"
-                value={inspFilterProjectId}
-                onChange={(e) => setInspFilterProjectId(e.target.value)}
-                options={[
-                  { value: '', label: 'Усі проєкти та без прив’язки' },
-                  ...projects.map((p) => ({ value: p.id, label: p.title })),
-                ]}
-                data-testid="inspiration-project-filter-select"
-              />
-            </div>
-          )}
-
-          {filteredInspirationItems.length === 0 ? (
-            <EmptyStateCard
-              icon={<Sparkles className="w-5 h-5" />}
-              title="Ще немає збережених елементів натхнення"
-              description="Зберігайте думки, цитати, безпечні HTTP/HTTPS посилання або локальні зображення (JPEG, PNG, WebP) без автоматичних прев’ю."
-              actionLabel="Додати натхнення"
-              onAction={() => setIsInspModalOpen(true)}
             />
-          ) : (
-            <div
-              className="grid grid-cols-1 sm:grid-cols-2 gap-3.5"
-              data-testid="inspiration-items-grid" style={{gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))'}}
-            >
-              {filteredInspirationItems.map((item) => {
-                const linkedProject = item.projectId
-                  ? projects.find((p) => p.id === item.projectId)
-                  : null;
-                const meta = item.mediaId
-                  ? mediaMetaById.get(item.mediaId)
-                  : undefined;
-                const rawBytes = item.mediaId
-                  ? mediaBlobs.get(item.mediaId)
-                  : undefined;
-                const objectUrl =
-                  meta && rawBytes && objectUrlRegistryRef.current
-                    ? objectUrlRegistryRef.current.getOrCreateUrl(
-                        meta.id,
-                        rawBytes,
-                        meta.mimeType
-                      )
-                    : null;
-
-                return (
-                  <div
-                    key={item.id}
-                    data-testid={`inspiration-card-${item.id}`}
-                    className="p-4 rounded-2xl space-y-2.5 flex flex-col justify-between"
-                    style={{
-                      backgroundColor: 'var(--bg-surface)',
-                      border: '1px solid var(--border-subtle)',
-                    }}
-                  >
-                    <div className="space-y-2">
-                      {item.goalId && <Button onClick={()=>onOpenPlan('goal',item.goalId!)}>Ціль: {snapshot.goals.find(goal=>goal.id===item.goalId)?.title??'Відкрити'}</Button>}
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-center gap-1.5 text-[12px] font-medium">
-                          {item.kind === 'quote' ? (
-                            <Quote className="w-3.5 h-3.5" aria-hidden="true" />
-                          ) : item.kind === 'link' ? (
-                            <Link2 className="w-3.5 h-3.5" aria-hidden="true" />
-                          ) : item.kind === 'image' ? (
-                            <ImageIcon
-                              className="w-3.5 h-3.5"
-                              aria-hidden="true"
-                            />
-                          ) : (
-                            <Sparkles
-                              className="w-3.5 h-3.5"
-                              aria-hidden="true"
-                            />
-                          )}
-                          <span style={{ color: 'var(--text-secondary)' }}>
-                            {item.kind === 'quote'
-                              ? 'Цитата'
-                              : item.kind === 'link'
-                              ? 'Безпечне посилання'
-                              : item.kind === 'image'
-                              ? 'Локальне зображення'
-                              : 'Нотатка'}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleToggleInspirationFavorite(item)
-                            }
-                            aria-label={
-                              item.isFavorite
-                                ? 'Прибрати з вибраного'
-                                : 'Додати до вибраного'
-                            }
-                            data-testid={`toggle-favorite-inspiration-${item.id}`}
-                            className="p-1.5 rounded-lg cursor-pointer"
-                            style={{
-                              color: item.isFavorite
-                                ? 'var(--color-brand-text)'
-                                : 'var(--text-secondary)',
-                            }}
-                          >
-                            <Star
-                              className="w-4 h-4"
-                              fill={item.isFavorite ? 'currentColor' : 'none'}
-                              aria-hidden="true"
-                            />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteInspiration(item)}
-                            aria-label="Видалити елемент натхнення"
-                            data-testid={`delete-inspiration-${item.id}`}
-                            className="p-1.5 rounded-lg cursor-pointer"
-                            style={{ color: 'var(--text-secondary)' }}
-                          >
-                            <Trash2 className="w-4 h-4" aria-hidden="true" />
-                          </button>
-                        </div>
-                      </div>
-
-                      {item.title && (
-                        <h3 className="text-[16px] font-semibold m-0">
-                          {item.title}
-                        </h3>
-                      )}
-
-                      {item.kind === 'image' && (
-                        <div className="space-y-1.5">
-                          {objectUrl ? (
-                            <img
-                              src={objectUrl}
-                              alt={item.title ?? 'Зображення натхнення'}
-                              className="w-full max-h-60 object-contain rounded-xl"
-                              style={{ backgroundColor: 'var(--bg-elevated)' }}
-                            />
-                          ) : (
-                            <div
-                              className="p-3 rounded-xl text-[13px]"
-                              style={{
-                                backgroundColor: 'var(--bg-elevated)',
-                                color: 'var(--text-secondary)',
-                              }}
-                            >
-                              Локальне растрове медіа ({meta?.mimeType ?? 'image'})
-                            </div>
-                          )}
-                          {meta && (
-                            <div
-                              className="text-[11px]"
-                              style={{ color: 'var(--text-secondary)' }}
-                            >
-                              {meta.mimeType} • {meta.width}×{meta.height} px •{' '}
-                              {Math.ceil(meta.byteSize / 1024)} КБ
-                              {meta.wasOptimized ? ' • Оптимізовано' : ''}
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {item.contentText && (
-                        <p
-                          className={`text-[14px] m-0 leading-relaxed whitespace-pre-wrap ${
-                            item.kind === 'quote' ? 'italic pl-3 border-l-2' : ''
-                          }`}
-                          style={{
-                            borderColor:
-                              item.kind === 'quote'
-                                ? 'var(--color-work)'
-                                : undefined,
-                          }}
-                        >
-                          {item.contentText}
-                        </p>
-                      )}
-
-                      {item.linkUrl && (
-                        <a
-                          href={item.linkUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 text-[13px] font-medium underline break-all"
-                          style={{ color: 'var(--color-personal)' }}
-                        >
-                          <ExternalLink
-                            className="w-3.5 h-3.5 shrink-0"
-                            aria-hidden="true"
-                          />
-                          <span>{item.linkUrl}</span>
-                        </a>
-                      )}
-                    </div>
-
-                    {item.lifeAreaId && <p>Сфера: {snapshot.lifeAreaQuestions.find(a => a.id === item.lifeAreaId)?.questionTextUk}</p>}
-                    {item.goalId && <p>Ціль: {snapshot.goals.find(g => g.id === item.goalId)?.title}</p>}
-                    {linkedProject && (
-                      <div className="pt-2">
-                        <span
-                          className="inline-block px-2.5 py-0.5 rounded-md text-[12px]"
-                          style={{
-                            backgroundColor: 'var(--bg-elevated)',
-                            color: 'var(--text-secondary)',
-                          }}
-                        >
-                          Проєкт: {linkedProject.title}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+          </Section>
+          {weeklyOpen && (
+            <WeeklyReviewSheet
+              snapshot={snapshot}
+              today={actualTodayDate}
+              repositories={repositories}
+              onClose={() => setWeeklyOpen(false)}
+              onOpenPlan={onOpenPlan}
+              onPause={(p) => {
+                void repositories
+                  .saveProject(
+                    {
+                      ...p,
+                      state: 'paused',
+                      updatedAt: new Date().toISOString(),
+                    },
+                    p.revision
+                  )
+                  .then(() => onDataChanged());
+              }}
+              onInspectEvent={onInspectCalendarEvent}
+              onChanged={onDataChanged}
+            />
           )}
         </div>
       )}
 
-      {/* =====================================================================
-          10.5 - 10.7 WISHLIST, FLAT CATEGORIES, AND EXACT PRICE SUBVIEW
-         ===================================================================== */}
-      {subView === 'wishlist' && (
-        <div className="space-y-4" data-testid="me-wishlist-subview">
-          {/* Fast Title-Only Creation with Progressive Disclosure (10.6) */}
-          <Card
-            title="Додати бажання"
-            subtitle="Для створення потрібна лише назва. Бажання не займають час у календарі та не стають справами автоматично."
-          >
-            <form
-              onSubmit={handleQuickCreateWish}
-              className="space-y-3"
-              data-testid="wishlist-quick-create-form"
-            >
-              <div className="flex flex-col sm:flex-row gap-2.5">
-                <div className="flex-1">
-                  <InputField
-                    label="Назва бажання"
-                    placeholder="Наприклад: Навушники для студії або Поїздка в Карпати"
-                    value={quickWishTitle}
-                    onChange={(e) => setQuickWishTitle(e.target.value)}
-                    data-testid="wishlist-quick-title-input"
-                    required
-                  />
-                </div>
-                <div className="flex items-end gap-2">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => setShowQuickWishDetails((prev) => !prev)}
-                    data-testid="wishlist-toggle-progressive-disclosure"
-                  >
-                    {showQuickWishDetails ? 'Згорнути деталі' : 'Додаткові відомості'}
-                  </Button>
-                  <Button
-                    type="submit"
-                    variant="primary"
-                    data-testid="wishlist-quick-submit-button"
-                  >
-                    Додати
-                  </Button>
-                </div>
-              </div>
-
-              {showQuickWishDetails && <>
-              {/* Visibly editable default timing ("Пізніше") and category */}
-              <div className="flex flex-wrap items-center justify-between gap-2 text-[13px]">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span style={{ color: 'var(--text-secondary)' }}>
-                    Часовий намір:
-                  </span>
-                  <SegmentedControl<WishlistTimingGroup>
-                    ariaLabel="Часова група нового бажання"
-                    value={quickWishTiming}
-                    onChange={setQuickWishTiming}
-                    options={[
-                      { value: 'now', label: WISHLIST_TIMING_LABELS_UK.now },
-                      {
-                        value: 'later',
-                        label: WISHLIST_TIMING_LABELS_UK.later,
-                      },
-                      {
-                        value: 'someday',
-                        label: WISHLIST_TIMING_LABELS_UK.someday,
-                      },
-                    ]}
-                  />
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <label
-                    htmlFor="quick-wish-category-select"
-                    className="text-[13px]"
-                    style={{ color: 'var(--text-secondary)' }}
-                  >
-                    Категорія:
-                  </label>
-                  <select
-                    id="quick-wish-category-select"
-                    data-testid="wishlist-quick-category-select"
-                    value={quickWishCategoryId}
-                    onChange={(e) => setQuickWishCategoryId(e.target.value)}
-                    className="min-h-[38px] px-2.5 py-1 rounded-xl text-[14px]"
-                    style={{
-                      backgroundColor: 'var(--bg-elevated)',
-                      color: 'var(--text-primary)',
-                      border: '1px solid var(--border-subtle)',
-                    }}
-                  >
-                    <option value="">Без категорії</option>
-                    {sortedCategories.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              </>}
-
-              {showQuickWishDetails && (
-                <div
-                  className="pt-3 border-t space-y-3"
-                  style={{ borderColor: 'var(--border-subtle)' }}
-                  data-testid="wishlist-quick-progressive-fields"
-                >
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <InputField
-                      label="Орієнтовна вартість (необов’язково)"
-                      placeholder="Наприклад: 1 250,50 або 0"
-                      inputMode="decimal"
-                      value={quickWishPriceInput}
-                      onChange={(e) => setQuickWishPriceInput(e.target.value)}
-                      data-testid="wishlist-quick-price-input"
-                    />
-                    <SelectField
-                      label={
-                        settings.preferredWishlistCurrency
-                          ? `Валюта (за замовчуванням ${settings.preferredWishlistCurrency})`
-                          : 'Валюта (обов’язково для першої ціни)'
-                      }
-                      value={quickWishCurrency}
-                      onChange={(e) =>
-                        setQuickWishCurrency(
-                          e.target.value as SupportedCurrencyCode | ''
-                        )
-                      }
-                      options={[
-                        {
-                          value: '',
-                          label: settings.preferredWishlistCurrency
-                            ? `Використати ${settings.preferredWishlistCurrency}`
-                            : '— Оберіть валюту —',
-                        },
-                        ...currencySelectOptions,
-                      ]}
-                      data-testid="wishlist-quick-currency-select"
-                    />
-                  </div>
-                  <WishExtrasFields value={quickWishExtras} onChange={setQuickWishExtras} projects={projects} onError={setLocalError}/>
-                  <TextAreaField
-                    label="Нотатка (необов’язково)"
-                    placeholder="Посилання, характеристики або нотатки..."
-                    value={quickWishNote}
-                    onChange={(e) => setQuickWishNote(e.target.value)}
-                    data-testid="wishlist-quick-note-input"
-                  />
-                </div>
-              )}
-            </form>
-          </Card>
-
-          {/* Compact Category Selector, Timing Filter, and Scope Selector (10.5 / 10.6) */}
-          <div
-            className="p-3.5 rounded-2xl space-y-3"
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              border: '1px solid var(--border-subtle)',
-            }}
-          >
-            <div className="flex flex-wrap items-center justify-between gap-2.5">
-              <div className="flex flex-wrap items-center gap-2">
-                <label
-                  htmlFor="wishlist-category-filter-select"
-                  className="text-[13px] font-medium"
-                  style={{ color: 'var(--text-secondary)' }}
-                >
-                  Категорія:
-                </label>
-                <select
-                  id="wishlist-category-filter-select"
-                  data-testid="wishlist-category-filter-select"
-                  value={wishlistCategoryFilter}
-                  onChange={(e) =>
-                    setWishlistCategoryFilter(
-                      e.target.value as WishlistCategoryFilter
-                    )
-                  }
-                  className="min-h-[40px] px-3 py-1.5 rounded-xl text-[14px] font-medium"
-                  style={{
-                    backgroundColor: 'var(--bg-elevated)',
-                    color: 'var(--text-primary)',
-                    border: '1px solid var(--border-subtle)',
-                  }}
-                >
-                  <option value="all">Усі категорії</option>
-                  <option value="uncategorized">Без категорії</option>
-                  {sortedCategories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    setLocalError(null);
-                    setIsCategoryManagerOpen(true);
-                  }}
-                  data-testid="open-wishlist-category-manager-button"
-                >
-                  <Tag className="w-3.5 h-3.5" aria-hidden="true" />
-                  <span>Керувати категоріями ({sortedCategories.length})</span>
-                </Button>
-              </div>
-
-              <SegmentedControl<WishlistViewScope>
-                ariaLabel="Статус бажань"
-                value={wishlistScope}
-                onChange={setWishlistScope}
-                options={[
-                  {
-                    value: 'active',
-                    label: `Хочу (${activeWishCount})`,
-                  },
-                  {value:'purchased',label:`Куплено (${wishes.filter(w=>!w.archived&&getWishPurchaseStatus(w)==='purchased').length})`},
-                  {value:'not_relevant',label:`Більше не актуально (${wishes.filter(w=>!w.archived&&getWishPurchaseStatus(w)==='not_relevant').length})`},
-                  {
-                    value: 'fulfilled',
-                    label: `Здійснено раніше (${fulfilledWishCount})`,
-                  },
-                  {
-                    value: 'archived',
-                    label: `Архів (${archivedWishCount})`,
-                  },
-                ]}
-              />
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <span
-                className="text-[13px] font-medium"
-                style={{ color: 'var(--text-secondary)' }}
-              >
-                Група наміру:
-              </span>
-              <SegmentedControl<WishlistTimingFilter>
-                ariaLabel="Фільтр часових груп бажань"
-                value={wishlistTimingFilter}
-                onChange={setWishlistTimingFilter}
-                options={[
-                  { value: 'all', label: 'Усі групи' },
-                  { value: 'now', label: WISHLIST_TIMING_LABELS_UK.now },
-                  { value: 'later', label: WISHLIST_TIMING_LABELS_UK.later },
-                  {
-                    value: 'someday',
-                    label: WISHLIST_TIMING_LABELS_UK.someday,
-                  },
-                ]}
-              />
-            </div>
-          </div>
-
-          {/* Grouped Wishes Rendering */}
-          {groupedWishes.totalMatchingCount === 0 ? (
-            <EmptyStateCard
-              icon={<Gift className="w-5 h-5" />}
-              title={
-                wishlistScope === 'active'
-                  ? UK_STRINGS.destinations.me.wishlistEmptyTitle
-                  : wishlistScope === 'fulfilled'
-                  ? 'Немає виконаних бажань у вибраному фільтрі'
-                  : 'Архів бажань порожній'
-              }
-              description={UK_STRINGS.destinations.me.wishlistEmptyDescription}
-            />
-          ) : (
-            <div className="space-y-4" data-testid="wishlist-groups-container">
-              {WISHLIST_TIMING_ORDER.map((timingKey) => {
-                const groupItems = groupedWishes.byTiming[timingKey];
-                if (groupItems.length === 0) return null;
-
-                return (
-                  <Card
-                    key={timingKey}
-                    title={`${WISHLIST_TIMING_LABELS_UK[timingKey]} (${groupItems.length})`}
-                  >
-                    <ul
-                      className="space-y-2.5 m-0 p-0 list-none"
-                      data-testid={`wishlist-group-${timingKey}`}
-                    >
-                      {groupItems.map((wish) => {
-                        const catName = wish.categoryId
-                          ? categoryNameById.get(wish.categoryId) ??
-                            'Без категорії'
-                          : 'Без категорії';
-                        const formattedPrice = formatExactPriceUk(
-                          wish.estimatedPrice
-                        );
-
-                        return (
-                          <li
-                            key={wish.id}
-                            data-testid={`wish-item-card-${wish.id}`}
-                            className="p-3.5 rounded-2xl space-y-2"
-                            style={{
-                              backgroundColor: 'var(--bg-elevated)',
-                              border: '1px solid var(--border-subtle)',
-                            }}
-                          >
-                            <div className="flex flex-wrap items-start justify-between gap-2">
-                              <div className="space-y-1 min-w-0">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <span className="text-[16px] font-semibold">
-                                    {wish.title}
-                                  </span>
-                                  <span
-                                    className="px-2 py-0.5 rounded-md text-[12px]"
-                                    style={{
-                                      backgroundColor: 'var(--bg-surface)',
-                                      color: 'var(--text-secondary)',
-                                    }}
-                                  >
-                                    {catName}
-                                  </span>
-                                  <span
-                                    className="px-2 py-0.5 rounded-md text-[12px]"
-                                    style={{
-                                      backgroundColor: 'var(--bg-surface)',
-                                      color: 'var(--text-secondary)',
-                                    }}
-                                  >
-                                    {WISHLIST_TIMING_LABELS_UK[wish.timing]}
-                                  </span>
-                                </div>
-
-                                {formattedPrice !== null && (
-                                  <div
-                                    className="text-[14px] font-medium"
-                                    data-testid={`wish-item-price-${wish.id}`}
-                                  >
-                                    Орієнтовна вартість:{' '}
-                                    <strong>{formattedPrice}</strong>
-                                  </div>
-                                )}
-
-                                <p>{WISH_STATUS_LABELS_UK[getWishPurchaseStatus(wish)]}</p>
-                                {wish.linkUrl&&<a href={wish.linkUrl} target="_blank" rel="noopener noreferrer" className="underline break-all">Відкрити посилання</a>}
-                                {wish.projectId&&<p>Проєкт: {projects.find(p=>p.id===wish.projectId)?.title}</p>}
-                                {wish.mediaId&&<WishLocalImage meta={mediaMetaById.get(wish.mediaId)} bytes={mediaBlobs.get(wish.mediaId)} title={wish.title}/>}
-                                {wish.purchasedAt&&<p>Позначено купівлю: {formatInstant(wish.purchasedAt,activeZone,{dateStyle:'long',timeStyle:'short'})}</p>}
-                                {wish.note && (
-                                  <p
-                                    className="text-[14px] m-0 leading-relaxed whitespace-pre-wrap"
-                                    style={{ color: 'var(--text-secondary)' }}
-                                  >
-                                    {wish.note}
-                                  </p>
-                                )}
-
-                                {wish.state === 'fulfilled' &&
-                                  wish.fulfilledAt && (
-                                    <div
-                                      className="text-[12px]"
-                                      style={{ color: 'var(--color-day-off)' }}
-                                    >
-                                      Здійснено раніше: {formatInstant(wish.fulfilledAt,activeZone)}{' '}
-                                      (орієнтовна ціна збережена як довідкова)
-                                    </div>
-                                  )}
-                              </div>
-
-                              <div className="flex flex-wrap items-center gap-1.5">
-                                <SelectField label="Статус бажання" value={getWishPurchaseStatus(wish)} onChange={e=>void handleWishPurchaseStatus(wish,e.target.value as WishPurchaseStatus)} options={[...(getWishPurchaseStatus(wish)==='legacy_fulfilled'?[{value:'legacy_fulfilled',label:'Здійснено раніше'}]:[]),{value:'want',label:'Хочу'},{value:'purchased',label:'Куплено'},{value:'not_relevant',label:'Більше не актуально'}]}/>
-                                <Button
-                                  variant="subtle"
-                                  size="sm"
-                                  onClick={() => openEditWishModal(wish)}
-                                  data-testid={`edit-wish-button-${wish.id}`}
-                                >
-                                  <Edit3
-                                    className="w-3.5 h-3.5"
-                                    aria-hidden="true"
-                                  />
-                                  <span>Змінити</span>
-                                </Button>
-
-                                <Button
-                                  variant="subtle"
-                                  size="sm"
-                                  onClick={() => handleToggleWishArchived(wish)}
-                                  data-testid={`archive-wish-button-${wish.id}`}
-                                  aria-label={
-                                    wish.archived
-                                      ? 'Розархівувати бажання'
-                                      : 'Архівувати бажання'
-                                  }
-                                >
-                                  <Archive
-                                    className="w-3.5 h-3.5"
-                                    aria-hidden="true"
-                                  />
-                                  <span>
-                                    {wish.archived ? 'З архіву' : 'В архів'}
-                                  </span>
-                                </Button>
-
-                                <Button
-                                  variant="subtle"
-                                  size="sm"
-                                  onClick={() => setDeletingWish(wish)}
-                                  data-testid={`delete-wish-button-${wish.id}`}
-                                  aria-label="Видалити бажання"
-                                >
-                                  <Trash2
-                                    className="w-3.5 h-3.5"
-                                    aria-hidden="true"
-                                  />
-                                </Button>
-                              </div>
-                            </div>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </Card>
-                );
-              })}
-            </div>
-          )}
+      {/* SUBVIEW: RECORDS ("Стан") */}
+      {effectiveSubView === 'records' && (
+        <div data-testid="me-subview-records" data-ui="content-start">
+          <StateCheckInsView
+            events={snapshot.events}
+            records={personalRecords}
+            today={actualTodayDate}
+            zone={activeZone}
+            enabled={settings.modules?.stateCheckInsEnabled ?? false}
+            repositories={repositories}
+            onChanged={() => onDataChanged()}
+          />
         </div>
       )}
 
-      {/* =====================================================================
-          10.1 / C15 SETTINGS SUBVIEW
-         ===================================================================== */}
-      {subView === 'settings' && (
-        <BasicSettingsView
-          settings={settings}
+      {/* SUBVIEW: LIFE AREAS ("Сфери життя") */}
+      {effectiveSubView === 'life_areas' && (
+        <LifeAreasReviewView
+          key={planningReviewOpen ? 'planning' : 'areas'}
+          initialPlanningReview={planningReviewOpen}
           snapshot={snapshot}
-          recoverySnapshots={recoverySnapshots}
+          zone={activeZone}
+          today={actualTodayDate}
           repositories={repositories}
-          onSettingsPatch={onSettingsPatch}
-          onDataReplaced={() => onDataChanged()}
-          onOpenWorkRoster={onNavigateToWorkRoster}
-          onOpenHabits={onNavigateToHabits}
-          onOpenWishlistCategories={() => {
-            onChangeSubView('wishlist');
-            setIsCategoryManagerOpen(true);
-          }}
-          onLocalModalOpenChange={onSettingsConfirmationChange}
+          onChanged={() => onDataChanged()}
+          onOpenPlan={onOpenPlan}
+          onInspectEvent={onInspectCalendarEvent}
+          onModalStateChange={onModalStateChange}
         />
       )}
 
-      {/* =====================================================================
-          MODALS & SHEETS FOR STAGE 10
-         ===================================================================== */}
-
-      {/* 2. Edit Life Area Question Wording Sheet (10.3) */}
-      <ModalSheet
-        isOpen={Boolean(editingQuestion)}
-        title="Редагування запитання сфери життя"
-        subtitle="Зміна тексту підвищує версію запитання для майбутніх оцінок. Минулі оцінки зберігають формулювання, яке діяло під час їх запису."
-        onClose={() => setEditingQuestion(null)}
-      >
-        <form
-          onSubmit={handleSaveEditedQuestion}
-          className="space-y-3.5"
-          data-testid="edit-life-question-form"
+      {/* SUBVIEW: INSPIRATION ("Моє бажане життя") */}
+      {effectiveSubView === 'inspiration' && (
+        <div
+          className="space-y-4"
+          data-testid="me-subview-inspiration"
+          data-ui="content-start"
         >
-          <TextAreaField
-            label="Формулювання запитання українською"
-            value={editingQuestionText}
-            onChange={(e) => setEditingQuestionText(e.target.value)}
-            data-testid="edit-life-question-textarea"
-            required
-          />
-          <div className="flex justify-end gap-2 pt-2">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => setEditingQuestion(null)}
-            >
-              Скасувати
-            </Button>
-            <Button
-              type="submit"
-              variant="primary"
-              data-testid="confirm-save-life-question-button"
-            >
-              Оновити формулювання
-            </Button>
-          </div>
-        </form>
-      </ModalSheet>
-
-      {/* 3. Create Inspiration Item Sheet (10.4) */}
-      <ModalSheet
-        isOpen={isInspModalOpen}
-        title={inspCollection === 'preferred_life' ? 'Додати фрагмент бажаного життя' : 'Додати натхнення'}
-        subtitle="Підтримуються нотатки, цитати, безпечні HTTP/HTTPS посилання та локальні растрові зображення (JPEG, PNG, WebP)."
-        onClose={() => setIsInspModalOpen(false)}
-      >
-        <form
-          onSubmit={handleSaveInspiration}
-          className="space-y-3.5"
-          data-testid="inspiration-modal-form"
-        >
-          <SegmentedControl<InspirationItemKind>
-            ariaLabel="Тип натхнення"
-            value={inspKind}
-            onChange={setInspKind}
+          <Segmented<'preferred_life' | 'saved'>
+            label="Колекція"
+            value={inspCollectionFilter}
+            onChange={setInspCollectionFilter}
             options={[
-              { value: 'text', label: 'Нотатка' },
-              { value: 'quote', label: 'Цитата' },
+              { value: 'preferred_life', label: 'Моє бажане життя' },
+              { value: 'saved', label: 'Збережене' },
+            ]}
+          />
+
+          <PillRow<InspirationTypeFilter>
+            label="Тип матеріалу"
+            value={inspTypeFilter}
+            onChange={setInspTypeFilter}
+            options={[
+              { value: 'all', label: 'Усі' },
+              { value: 'favorite', label: 'Вибрані' },
+              { value: 'text', label: 'Нотатки' },
+              { value: 'quote', label: 'Цитати' },
               { value: 'link', label: 'Посилання' },
               { value: 'image', label: 'Зображення' },
             ]}
           />
 
+          {filteredInspirationItems.length === 0 ? (
+            <Section>
+              <EmptyState
+                text="Ще немає записів"
+                action="Додати"
+                onAction={openNewInspirationModal}
+              />
+            </Section>
+          ) : (
+            <div
+              className="grid grid-cols-2 gap-3"
+              data-testid="inspiration-items-grid"
+            >
+              {filteredInspirationItems.map((item) => {
+                const imgUrl = item.mediaId
+                  ? mediaUrlById.get(item.mediaId)
+                  : undefined;
+                const linkedGoal = item.goalId
+                  ? snapshot.goals.find((g) => g.id === item.goalId)
+                  : undefined;
+                const linkedArea = item.lifeAreaId
+                  ? lifeAreaQuestions.find((a) => a.id === item.lifeAreaId)
+                  : undefined;
+
+                return (
+                  <article
+                    key={item.id}
+                    className="rounded-[20px] bg-[var(--bg-surface)] border border-[var(--border-subtle)] p-3 flex flex-col justify-between gap-2 min-w-0"
+                    data-testid={`inspiration-item-card-${item.id}`}
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-[11px] font-medium text-[var(--text-secondary)] truncate">
+                        {INSPIRATION_KIND_LABELS_UK[item.kind]}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => void handleToggleInspirationFavorite(item)}
+                        aria-label={
+                          item.isFavorite
+                            ? 'Прибрати з вибраного'
+                            : 'Додати у вибране'
+                        }
+                        aria-pressed={item.isFavorite}
+                        data-testid={`toggle-favorite-inspiration-${item.id}`}
+                        className={`w-11 h-11 -mr-2 -mt-2 inline-flex items-center justify-center rounded-full shrink-0 text-sm ${
+                          item.isFavorite
+                            ? 'text-amber-400'
+                            : 'text-[var(--text-secondary)]'
+                        }`}
+                      >
+                        <span aria-hidden="true">
+                          {item.isFavorite ? '★' : '☆'}
+                        </span>
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => openEditInspirationModal(item)}
+                      data-testid={`open-inspiration-detail-${item.id}`}
+                      className="text-left flex-1 flex flex-col gap-1.5 min-h-[48px] min-w-0"
+                    >
+                      {item.kind === 'image' && imgUrl && (
+                        <div className="w-full h-24 rounded-[12px] overflow-hidden bg-[var(--bg-elevated)] border border-[var(--border-subtle)]">
+                          <img
+                            src={imgUrl}
+                            alt={item.title ?? 'Зображення'}
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                            data-testid={`inspiration-image-preview-${item.id}`}
+                          />
+                        </div>
+                      )}
+
+                      {item.title && (
+                        <h3 className="text-sm font-semibold text-[var(--text-primary)] leading-snug line-clamp-2 break-words">
+                          {item.title}
+                        </h3>
+                      )}
+
+                      {item.contentText && (
+                        <p
+                          className={`text-xs text-[var(--text-secondary)] line-clamp-3 break-words ${
+                            item.kind === 'quote' ? 'italic' : ''
+                          }`}
+                        >
+                          {item.contentText.length > 90
+                            ? `${item.contentText.slice(0, 88)}…`
+                            : item.contentText}
+                        </p>
+                      )}
+
+                      {item.kind === 'link' && item.linkUrl && (
+                        <span className="text-xs text-[var(--color-brand-text)] truncate block">
+                          {safeHostname(item.linkUrl)}
+                        </span>
+                      )}
+
+                      {linkedArea && !linkedGoal && (
+                        <span className="text-[11px] text-[var(--text-secondary)] truncate block mt-auto pt-1">
+                          {linkedArea.questionTextUk}
+                        </span>
+                      )}
+                    </button>
+
+                    {linkedGoal && (
+                      <button
+                        type="button"
+                        onClick={() => onOpenPlan('goal', linkedGoal.id)}
+                        className="min-h-[44px] px-2.5 rounded-xl bg-[var(--bg-elevated)] border border-[var(--border-subtle)] text-left text-xs font-medium text-[var(--text-secondary)] truncate w-full"
+                      >
+                        {`Ціль: ${linkedGoal.title}`}
+                      </button>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* SUBVIEW: WISHLIST ("Список бажань") */}
+      {effectiveSubView === 'wishlist' && (
+        <div
+          className="space-y-3"
+          data-testid="me-subview-wishlist"
+          data-ui="content-start"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex-1 min-w-0">
+              <PillRow<WishlistTimingFilter>
+                label="Група наміру"
+                value={wishlistTimingFilter}
+                onChange={setWishlistTimingFilter}
+                options={[
+                  { value: 'all', label: 'Усі' },
+                  { value: 'now', label: 'Зараз' },
+                  { value: 'later', label: 'Пізніше' },
+                  { value: 'someday', label: 'Колись' },
+                ]}
+              />
+            </div>
+
+            <ActionMenu
+              label="Статус бажань"
+              testId="wishlist-status-menu"
+              items={(
+                [
+                  'active',
+                  'purchased',
+                  'not_relevant',
+                  'fulfilled',
+                  'archived',
+                ] as const
+              ).map((scope) => ({
+                label: WISH_SCOPE_LABELS_UK[scope],
+                onSelect: () => setWishlistViewScope(scope),
+              }))}
+            >
+              <span className="ui-pill px-3 py-2 inline-flex items-center gap-1 text-xs font-medium bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-full whitespace-nowrap">
+                {WISH_SCOPE_LABELS_UK[wishlistViewScope]} ⌄
+              </span>
+            </ActionMenu>
+          </div>
+
+          {sortedCategories.length > 0 && (
+            <PillRow<WishlistCategoryFilter>
+              label="Категорії бажань"
+              value={effectiveCategoryFilter}
+              onChange={handleSelectCategoryFilter}
+              options={[
+                { value: 'all', label: 'Усі категорії' },
+                { value: 'uncategorized', label: 'Без категорії' },
+                ...sortedCategories.map((cat) => ({
+                  value: cat.id,
+                  label: cat.name,
+                })),
+              ]}
+            />
+          )}
+
+          {groupedWishes.totalMatchingCount === 0 ? (
+            <Section>
+              <EmptyState
+                text="Список бажань порожній"
+                action="Додати"
+                actionTestId="empty-add-wish-button"
+                onAction={openNewWishModal}
+              />
+            </Section>
+          ) : (
+            <Section>
+              {groupedWishes.wishes.map((wish) => {
+                const approxPrice = formatWishApproximatePriceUk(
+                  wish.estimatedPrice
+                );
+                const cat = wish.categoryId
+                  ? sortedCategories.find((c) => c.id === wish.categoryId)
+                  : undefined;
+                const linkedProject = wish.projectId
+                  ? projects.find((p) => p.id === wish.projectId)
+                  : undefined;
+                const wishImgUrl = wish.mediaId
+                  ? mediaUrlById.get(wish.mediaId)
+                  : undefined;
+                const secondaryParts = [
+                  approxPrice,
+                  WISHLIST_TIMING_LABELS_UK[wish.timing],
+                  linkedProject ? linkedProject.title : null,
+                ].filter(Boolean);
+
+                return (
+                  <div
+                    key={wish.id}
+                    className="ui-row border-b last:border-b-0 border-[var(--border-subtle)] px-3 py-2 flex items-center gap-3"
+                    data-testid={`wish-item-card-${wish.id}`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => openEditWishModal(wish)}
+                      data-testid={`edit-wish-button-${wish.id}`}
+                      className="flex items-center gap-3 flex-1 min-w-0 min-h-[48px] text-left"
+                    >
+                      <span
+                        className="ui-icon-tile shrink-0 overflow-hidden"
+                        aria-hidden="true"
+                      >
+                        {wishImgUrl ? (
+                          <img
+                            src={wishImgUrl}
+                            alt=""
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <Gift className="w-4 h-4 text-[var(--color-brand-text)]" />
+                        )}
+                      </span>
+                      <span className="ui-row-text">
+                        <span>{wish.title}</span>
+                        {secondaryParts.length > 0 && (
+                          <small data-testid={`wish-price-${wish.id}`}>
+                            {secondaryParts.join(' · ')}
+                          </small>
+                        )}
+                      </span>
+                    </button>
+
+                    <span className="ui-row-trailing">
+                      {cat && (
+                        <span className="px-2.5 py-1 rounded-full text-xs bg-[var(--bg-pressed)] text-[var(--text-secondary)] truncate max-w-[100px]">
+                          {cat.name}
+                        </span>
+                      )}
+                      <ActionMenu
+                        label={`Дії: ${wish.title}`}
+                        testId={`wish-actions-${wish.id}`}
+                        items={[
+                          ...(getWishPurchaseStatus(wish) !== 'purchased'
+                            ? [
+                                {
+                                  label: 'Куплено',
+                                  onSelect: () =>
+                                    void handleSetWishStatus(wish, 'purchased'),
+                                },
+                              ]
+                            : []),
+                          ...(getWishPurchaseStatus(wish) !== 'not_relevant'
+                            ? [
+                                {
+                                  label: 'Більше не актуально',
+                                  onSelect: () =>
+                                    void handleSetWishStatus(
+                                      wish,
+                                      'not_relevant'
+                                    ),
+                                },
+                              ]
+                            : []),
+                          ...(getWishPurchaseStatus(wish) !== 'want'
+                            ? [
+                                {
+                                  label: 'Хочу',
+                                  onSelect: () =>
+                                    void handleSetWishStatus(wish, 'want'),
+                                },
+                              ]
+                            : []),
+                          {
+                            label: wish.archived ? 'З архіву' : 'В архів',
+                            onSelect: () => void handleToggleArchiveWish(wish),
+                          },
+                          ...(linkedProject
+                            ? [
+                                {
+                                  label: `Проєкт: ${linkedProject.title}`,
+                                  onSelect: () =>
+                                    onOpenPlan('project', linkedProject.id),
+                                },
+                              ]
+                            : []),
+                          {
+                            label: 'Редагувати',
+                            onSelect: () => openEditWishModal(wish),
+                          },
+                          {
+                            label: 'Видалити',
+                            onSelect: () => void handleDeleteWish(wish.id),
+                          },
+                        ]}
+                      />
+                    </span>
+                  </div>
+                );
+              })}
+            </Section>
+          )}
+        </div>
+      )}
+
+      {/* SUBVIEW: SETTINGS ("Налаштування") */}
+      {effectiveSubView === 'settings' && (
+        <BasicSettingsView
+          onConfirmationStateChange={onSettingsConfirmationChange}
+          settings={settings}
+          activeZone={activeZone}
+          snapshot={snapshot}
+          recoverySnapshots={recoverySnapshots}
+          repositories={repositories}
+          onSettingsUpdated={onSettingsPatch}
+          onDataReplacedOrReset={onDataChanged}
+          onOpenWorkRoster={onNavigateToWorkRoster}
+          onOpenHabits={onNavigateToHabits}
+          onOpenWishlistCategories={() => {
+            handleSubViewChange('wishlist');
+            setIsCategoryManagerOpen(true);
+          }}
+          pwaState={pwaState}
+        />
+      )}
+
+      {/* ====================================================================
+          SHEET 1: INSPIRATION ADD / DETAIL SHEET
+          ==================================================================== */}
+      <Sheet
+        isOpen={isInspModalOpen}
+        onClose={() => setIsInspModalOpen(false)}
+        title={editingInspItem ? 'Деталі запису' : 'Додати натхнення'}
+      >
+        <form onSubmit={handleSaveInspirationModal} className="space-y-3.5">
+          {inspModalError && (
+            <div
+              role="alert"
+              className="p-3 rounded-xl bg-[var(--color-danger)]/10 border border-[var(--color-danger)]/30 text-xs text-[var(--color-danger)]"
+            >
+              {inspModalError}
+            </div>
+          )}
+
+          <Segmented<'preferred_life' | 'saved'>
+            label="Колекція запису"
+            value={inspModalCollection}
+            onChange={setInspModalCollection}
+            options={[
+              { value: 'preferred_life', label: 'Моє бажане життя' },
+              { value: 'saved', label: 'Збережене' },
+            ]}
+          />
+
+          <Segmented<InspirationKind>
+            label="Тип запису"
+            value={inspModalKind}
+            onChange={setInspModalKind}
+            options={[
+              { value: 'text', label: 'Нотатка' },
+              { value: 'quote', label: 'Цитата' },
+              { value: 'link', label: 'Посилання' },
+              { value: 'image', label: 'Фото' },
+            ]}
+          />
+
           <InputField
-            label="Заголовок або автор (необов’язково)"
-            value={inspTitle}
-            onChange={(e) => setInspTitle(e.target.value)}
+            label="Заголовок"
+            value={inspModalTitle}
+            onChange={(e) => setInspModalTitle(e.target.value)}
+            placeholder="Коротка назва або орієнтир"
             data-testid="insp-modal-title-input"
           />
 
-          {(inspKind === 'text' || inspKind === 'quote') && (
-            <TextAreaField
-              label={inspKind === 'quote' ? 'Текст цитати' : 'Текст нотатки'}
-              value={inspText}
-              onChange={(e) => setInspText(e.target.value)}
-              data-testid="insp-modal-text-input"
-            />
-          )}
-
-          {true && (
-            <div className="space-y-2.5">
-              <InputField
-                label="Безпечна адреса (HTTP або HTTPS)"
-                placeholder="https://example.com"
-                value={inspUrl}
-                onChange={(e) => setInspUrl(e.target.value)}
-                data-testid="insp-modal-url-input"
-              />
-              <TextAreaField
-                label="Коментар (необов’язково)"
-                value={inspText}
-                onChange={(e) => setInspText(e.target.value)}
-              />
-            </div>
-          )}
-
-          {inspKind === 'image' && (
-            <div className="space-y-2.5">
-              <label className="block space-y-1.5">
-                <span className="text-[14px] font-medium block">
-                  Оберіть растровий файл (JPEG, PNG або WebP)
-                </span>
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  onChange={handleSelectInspirationImage}
-                  data-testid="insp-modal-file-input"
-                  className="w-full text-[14px]"
-                />
-              </label>
-              {inspImageCandidate?.wasOptimized && (
-                <p
-                  className="text-[12px] m-0"
-                  style={{ color: 'var(--color-day-off)' }}
-                >
-                  Зображення буде оптимізовано локально для економії сховища.
-                </p>
-              )}
-              <TextAreaField
-                label="Підпис до зображення (необов’язково)"
-                value={inspText}
-                onChange={(e) => setInspText(e.target.value)}
-              />
-            </div>
-          )}
-
-          <SelectField label="Сфера життя (необов’язково)" value={inspArea} onChange={e => setInspArea(e.target.value)} options={[{value: '', label: 'Без зв’язку'}, ...snapshot.lifeAreaQuestions.map(a => ({value: a.id, label: a.questionTextUk}))]} />
-          <SelectField label="Ціль (необов’язково)" value={inspGoal} onChange={e => setInspGoal(e.target.value)} options={[{value: '', label: 'Без зв’язку'}, ...snapshot.goals.map(g => ({value: g.id, label: g.title}))]} />
-          <SelectField
-            label="Пов’язаний проєкт (необов’язково)"
-            value={inspProjectId}
-            onChange={(e) => setInspProjectId(e.target.value)}
-            options={[
-              { value: '', label: 'Без прив’язки до проєкту' },
-              ...projects.map((p) => ({ value: p.id, label: p.title })),
-            ]}
-          />
-
-          <label className="flex items-center gap-2 text-[14px] cursor-pointer">
-            <input
-              type="checkbox"
-              checked={inspFavorite}
-              onChange={(e) => setInspFavorite(e.target.checked)}
-              className="w-4 h-4 accent-[#B93E4B]"
-            />
-            <span>Позначити як вибране</span>
-          </label>
-
-          <div className="flex justify-end gap-2 pt-2">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => setIsInspModalOpen(false)}
-            >
-              Скасувати
-            </Button>
-            <Button
-              type="submit"
-              variant="primary"
-              data-testid="insp-modal-submit-button"
-            >
-              Зберегти
-            </Button>
-          </div>
-        </form>
-      </ModalSheet>
-
-      {/* 4. Edit Wish Sheet (10.5 - 10.7) */}
-      <ModalSheet
-        isOpen={Boolean(editingWish)}
-        title="Редагування бажання"
-        subtitle="Зміна часової групи, категорії або орієнтовної вартості."
-        onClose={() => setEditingWish(null)}
-      >
-        <form
-          onSubmit={handleSaveEditedWish}
-          className="space-y-3.5"
-          data-testid="edit-wish-modal-form"
-        >
-          {localError&&<p role="alert">{localError}</p>}
-          <InputField
-            label="Назва бажання"
-            value={editWishTitle}
-            onChange={(e) => setEditWishTitle(e.target.value)}
-            data-testid="edit-wish-title-input"
-            required
-          />
-
-          <div className="space-y-1.5">
-            <span className="text-[14px] font-medium block">
-              Група наміру
-            </span>
-            <SegmentedControl<WishlistTimingGroup>
-              ariaLabel="Група наміру бажання"
-              value={editWishTiming}
-              onChange={setEditWishTiming}
-              options={[
-                { value: 'now', label: WISHLIST_TIMING_LABELS_UK.now },
-                { value: 'later', label: WISHLIST_TIMING_LABELS_UK.later },
-                { value: 'someday', label: WISHLIST_TIMING_LABELS_UK.someday },
-              ]}
-            />
-          </div>
-
-          <SelectField
-            label="Категорія"
-            value={editWishCategoryId}
-            onChange={(e) => setEditWishCategoryId(e.target.value)}
-            options={[
-              { value: '', label: 'Без категорії' },
-              ...sortedCategories.map((c) => ({ value: c.id, label: c.name })),
-            ]}
-            data-testid="edit-wish-category-select"
-          />
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {inspModalKind === 'link' && (
             <InputField
-              label="Орієнтовна вартість (залиште порожнім, якщо без ціни)"
-              placeholder="Наприклад: 1250,50 або 0"
-              inputMode="decimal"
-              value={editWishPriceInput}
-              onChange={(e) => setEditWishPriceInput(e.target.value)}
-              data-testid="edit-wish-price-input"
+              label="Посилання (http/https)"
+              type="url"
+              value={inspModalUrl}
+              onChange={(e) => setInspModalUrl(e.target.value)}
+              placeholder="https://example.com"
+              data-testid="insp-modal-url-input"
+            />
+          )}
+
+          {inspModalKind === 'image' && (
+            <div className="space-y-2">
+              <input
+                ref={inspFileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                onChange={handleInspirationFileChange}
+                className="hidden"
+                data-testid="insp-modal-file-input"
+              />
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => inspFileInputRef.current?.click()}
+                  className="min-h-[44px] px-4 rounded-xl bg-[var(--bg-elevated)] border border-[var(--border-subtle)] text-xs font-medium text-[var(--text-primary)]"
+                >
+                  {inspModalPreparedMedia || editingInspItem?.mediaId
+                    ? 'Змінити фото'
+                    : 'Обрати фото'}
+                </button>
+                {inspModalPreparedMedia && (
+                  <span className="text-xs text-emerald-500">
+                    {inspModalPreparedMedia.meta.width}×
+                    {inspModalPreparedMedia.meta.height} px
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
+          <TextAreaField
+            label={inspModalKind === 'quote' ? 'Текст цитати' : 'Опис або думка'}
+            value={inspModalText}
+            onChange={(e) => setInspModalText(e.target.value)}
+            rows={3}
+            placeholder="Запишіть думку, опис бажаного дня або деталі…"
+            data-testid="insp-modal-text-input"
+          />
+
+          <Section title="Пов’язати як орієнтир">
+            <SelectField
+              label="Сфера життя (необов’язково)"
+              value={inspModalLifeAreaId}
+              onChange={(e) => setInspModalLifeAreaId(e.target.value)}
+              options={[
+                { value: '', label: 'Без сфери' },
+                ...lifeAreaQuestions
+                  .filter((a) => !a.archived && !a.mergedIntoId)
+                  .map((a) => ({ value: a.id, label: a.questionTextUk })),
+              ]}
             />
             <SelectField
-              label="Валюта"
-              value={editWishCurrency}
-              onChange={(e) => {
-                setConfirmWishCurrency(false);
-                setEditWishCurrency(e.target.value as SupportedCurrencyCode | '');
-              }}
+              label="Ціль (необов’язково)"
+              value={inspModalGoalId}
+              onChange={(e) => setInspModalGoalId(e.target.value)}
               options={[
-                {
-                  value: '',
-                  label: editingWish?.estimatedPrice
-                    ? `Зберегти ${editingWish.estimatedPrice.currency}`
-                    : settings.preferredWishlistCurrency ? `Використати ${settings.preferredWishlistCurrency}` : '— Оберіть валюту —',
-                },
-                ...currencySelectOptions,
+                { value: '', label: 'Без цілі' },
+                ...snapshot.goals
+                  .filter((g) => !g.archived)
+                  .map((g) => ({ value: g.id, label: g.title })),
               ]}
-              data-testid="edit-wish-currency-select"
             />
-          </div>
+            <SelectField
+              label="Проєкт (необов’язково)"
+              value={inspModalProjectId}
+              onChange={(e) => setInspModalProjectId(e.target.value)}
+              data-testid="insp-modal-project-select"
+              options={[
+                { value: '', label: 'Без проєкту' },
+                ...projects
+                  .filter((p) => !p.archived || p.id === inspModalProjectId)
+                  .map((p) => ({ value: p.id, label: p.title })),
+              ]}
+            />
+            <Row
+              title="У вибраному ★"
+              trailing={
+                <Toggle
+                  label="У вибраному"
+                  checked={inspModalFavorite}
+                  onChange={setInspModalFavorite}
+                  testId="insp-modal-favorite-checkbox"
+                />
+              }
+            />
+          </Section>
 
-          <WishExtrasFields value={editWishExtras} onChange={setEditWishExtras} existingMediaId={editingWish?.mediaId} projects={projects} onError={setLocalError}/>
-          {editingWish?.estimatedPrice && editWishPriceInput.trim() && editWishCurrency && editWishCurrency!==editingWish.estimatedPrice.currency && <label><input type="checkbox" checked={confirmWishCurrency} onChange={e=>setConfirmWishCurrency(e.target.checked)}/> Підтверджую зміну валюти: введене число стане ціною в новій валюті. Конвертація не виконується.</label>}
-          <TextAreaField
-            label="Нотатка"
-            value={editWishNote}
-            onChange={(e) => setEditWishNote(e.target.value)}
-            data-testid="edit-wish-note-input"
-          />
+          <p className="text-xs text-[var(--text-secondary)]">
+            Підтримуються нотатки, цитати, посилання та фото JPEG, PNG, WebP.
+          </p>
 
-          <div className="flex justify-end gap-2 pt-2">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => setEditingWish(null)}
-            >
-              Скасувати
-            </Button>
-            <Button
+          <div className="flex flex-col gap-2 pt-1">
+            <button
               type="submit"
-              variant="primary"
-              data-testid="confirm-save-wish-button"
+              disabled={isSavingInspiration}
+              data-testid="save-inspiration-modal-button"
+              className="ui-primary w-full font-semibold"
             >
               Зберегти
-            </Button>
+            </button>
+
+            {editingInspItem && (
+              <div className="flex items-center justify-between gap-2">
+                {editingInspItem.linkUrl && (
+                  <a
+                    href={editingInspItem.linkUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    data-testid={`inspiration-external-link-${editingInspItem.id}`}
+                    className="min-h-[44px] px-4 inline-flex items-center rounded-full bg-[var(--bg-elevated)] border border-[var(--border-subtle)] text-xs font-medium text-[var(--color-brand-text)]"
+                  >
+                    Відкрити посилання
+                  </a>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void handleDeleteInspirationItem(editingInspItem)}
+                  data-testid={`delete-inspiration-${editingInspItem.id}`}
+                  className="min-h-[44px] px-4 rounded-full text-xs font-medium text-[var(--color-danger)] ml-auto"
+                >
+                  Видалити
+                </button>
+              </div>
+            )}
           </div>
         </form>
-      </ModalSheet>
+      </Sheet>
 
-      {/* 5. Confirmed Wish Deletion Sheet (10.5) */}
-      <ModalSheet
-        isOpen={Boolean(deletingWish)}
-        title="Видалити бажання?"
-        subtitle={
-          deletingWish
-            ? `Ви дійсно хочете остаточно видалити бажання «${deletingWish.title}»?`
-            : ''
-        }
-        onClose={() => setDeletingWish(null)}
+      {/* ====================================================================
+          SHEET 2: WISHLIST ADD / EDIT SHEET
+          ==================================================================== */}
+      <Sheet
+        isOpen={isWishSheetOpen}
+        onClose={() => setIsWishSheetOpen(false)}
+        title={editingWishItem ? 'Редагувати бажання' : 'Додати бажання'}
       >
-        <div className="flex justify-end gap-2 pt-2">
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => setDeletingWish(null)}
-          >
-            Скасувати
-          </Button>
-          <Button
-            type="button"
-            variant="danger"
-            onClick={handleConfirmDeleteWish}
-            data-testid="confirm-delete-wish-button"
-          >
-            Видалити остаточно
-          </Button>
-        </div>
-      </ModalSheet>
+        <form onSubmit={handleSaveWishSheet} className="space-y-3.5">
+          {wishFormError && (
+            <div
+              role="alert"
+              className="p-3 rounded-xl bg-[var(--color-danger)]/10 border border-[var(--color-danger)]/30 text-xs text-[var(--color-danger)]"
+            >
+              {wishFormError}
+            </div>
+          )}
 
-      {/* 6. Flat Wishlist Category Manager Sheet (10.6) */}
-      <ModalSheet
+          <InputField
+            label="Назва бажання"
+            value={wishTitleInput}
+            onChange={(e) => setWishTitleInput(e.target.value)}
+            placeholder="Що ви хочете придбати або спробувати?"
+            data-testid={
+              editingWishItem
+                ? 'edit-wish-title-input'
+                : 'wishlist-quick-title-input'
+            }
+          />
+
+          {/* Optional property chips */}
+          <div
+            className="ui-pill-row"
+            data-ui="pill-row"
+            role="group"
+            aria-label="Додаткові поля бажання"
+          >
+            {(
+              [
+                ['price', 'Ціна + валюта'],
+                ['link', 'Посилання'],
+                ['photo', 'Фото'],
+                ['project', 'Проєкт'],
+                ['category', 'Власна категорія'],
+                ['timing', 'Група наміру'],
+              ] as const
+            ).map(([chipKey, label]) => (
+              <button
+                key={chipKey}
+                type="button"
+                className="ui-pill"
+                aria-pressed={activeWishChips.has(chipKey)}
+                onClick={() => toggleWishChip(chipKey)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {activeWishChips.has('price') && (
+            <div className="space-y-2.5 p-3 rounded-2xl bg-[var(--bg-elevated)] border border-[var(--border-subtle)]">
+              <InputField
+                label="Орієнтовна сума"
+                value={wishPriceInput}
+                onChange={(e) => setWishPriceInput(e.target.value)}
+                placeholder="Наприклад: 3500"
+                inputMode="decimal"
+                data-testid={
+                  editingWishItem
+                    ? 'edit-wish-price-input'
+                    : 'wishlist-quick-price-input'
+                }
+              />
+              <SelectField
+                label="Валюта"
+                value={wishCurrencyInput}
+                onChange={(e) => setWishCurrencyInput(e.target.value)}
+                data-testid={
+                  editingWishItem
+                    ? 'edit-wish-currency-select'
+                    : 'wishlist-quick-currency-select'
+                }
+                options={Object.values(SUPPORTED_CURRENCIES).map((spec) => ({
+                  value: spec.code,
+                  label: spec.labelUk,
+                }))}
+              />
+              {editingWishItem?.estimatedPrice &&
+                editingWishItem.estimatedPrice.currency !==
+                  wishCurrencyInput && (
+                  <Row
+                    title={`Змінити валюту з ${editingWishItem.estimatedPrice.currency} на ${wishCurrencyInput}`}
+                    trailing={
+                      <Toggle
+                        label="Підтвердити зміну валюти"
+                        checked={confirmWishCurrency}
+                        onChange={setConfirmWishCurrency}
+                        testId="confirm-wish-currency-toggle"
+                      />
+                    }
+                  />
+                )}
+            </div>
+          )}
+
+          {activeWishChips.has('link') && (
+            <InputField
+              label="Посилання (http/https)"
+              type="url"
+              value={wishLinkInput}
+              onChange={(e) => setWishLinkInput(e.target.value)}
+              placeholder="https://example.com"
+            />
+          )}
+
+          {activeWishChips.has('photo') && (
+            <div className="flex items-center gap-2">
+              <input
+                ref={wishFileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                onChange={handleWishPhotoChange}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => wishFileInputRef.current?.click()}
+                className="min-h-[44px] px-4 rounded-xl bg-[var(--bg-elevated)] border border-[var(--border-subtle)] text-xs font-medium text-[var(--text-primary)]"
+              >
+                {wishMediaIdInput ? 'Змінити фото' : 'Обрати фото'}
+              </button>
+              {wishMediaIdInput && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWishMediaIdInput(null);
+                    setWishPreparedMedia(null);
+                  }}
+                  className="min-h-[44px] px-3 rounded-xl text-xs font-medium text-[var(--color-danger)]"
+                >
+                  Прибрати
+                </button>
+              )}
+            </div>
+          )}
+
+          {activeWishChips.has('project') && (
+            <Section>
+              <SelectField
+                label="Проєкт (лише зв’язок)"
+                value={wishProjectInput}
+                onChange={(e) => setWishProjectInput(e.target.value)}
+                data-testid="wish-project-select"
+                options={[
+                  { value: '', label: 'Без проєкту' },
+                  ...projects
+                    .filter((p) => !p.archived || p.id === wishProjectInput)
+                    .map((p) => ({ value: p.id, label: p.title })),
+                ]}
+              />
+            </Section>
+          )}
+
+          {activeWishChips.has('category') && (
+            <div className="space-y-2">
+              {sortedCategories.length > 0 && (
+                <Section>
+                  <SelectField
+                    label="Категорія"
+                    value={wishCategoryInput}
+                    onChange={(e) => setWishCategoryInput(e.target.value)}
+                    data-testid={
+                      editingWishItem
+                        ? 'edit-wish-category-select'
+                        : 'wishlist-quick-category-select'
+                    }
+                    options={[
+                      { value: '', label: 'Без категорії' },
+                      ...sortedCategories.map((c) => ({
+                        value: c.id,
+                        label: c.name,
+                      })),
+                    ]}
+                  />
+                </Section>
+              )}
+              <InputField
+                label="Нова власна категорія"
+                value={quickNewCatName}
+                onChange={(e) => setQuickNewCatName(e.target.value)}
+                placeholder="Наприклад: Для музики"
+              />
+            </div>
+          )}
+
+          {activeWishChips.has('timing') && (
+            <Segmented<WishlistTimingGroup>
+              label="Група наміру"
+              value={wishTimingInput}
+              onChange={setWishTimingInput}
+              options={[
+                { value: 'now', label: 'Зараз' },
+                { value: 'later', label: 'Пізніше' },
+                { value: 'someday', label: 'Колись' },
+              ]}
+            />
+          )}
+
+          {editingWishItem && (
+            <>
+              <TextAreaField
+                label="Нотатка"
+                value={wishNoteInput}
+                onChange={(e) => setWishNoteInput(e.target.value)}
+                rows={2}
+                data-testid="edit-wish-note-input"
+              />
+              <Segmented<WishPurchaseStatus>
+                label="Статус бажання"
+                value={wishStatusInput}
+                onChange={setWishStatusInput}
+                options={[
+                  { value: 'want', label: 'Хочу' },
+                  { value: 'purchased', label: 'Куплено' },
+                  { value: 'not_relevant', label: 'Не актуально' },
+                ]}
+              />
+            </>
+          )}
+
+          <div className="flex flex-col gap-2 pt-1">
+            <button
+              type="submit"
+              disabled={isSavingWish}
+              data-testid={
+                editingWishItem
+                  ? 'confirm-save-wish-button'
+                  : 'wishlist-quick-submit-button'
+              }
+              className="ui-primary w-full font-semibold"
+            >
+              {editingWishItem ? 'Зберегти зміни' : 'Додати бажання'}
+            </button>
+
+            {editingWishItem && (
+              <button
+                type="button"
+                onClick={() => void handleDeleteWish(editingWishItem.id)}
+                data-testid={`delete-wish-button-${editingWishItem.id}`}
+                className="min-h-[44px] px-4 rounded-full text-xs font-medium text-[var(--color-danger)] self-end"
+              >
+                Видалити бажання
+              </button>
+            )}
+          </div>
+        </form>
+      </Sheet>
+
+      {/* ====================================================================
+          SHEET 3: WISHLIST CATEGORY MANAGER SHEET
+          ==================================================================== */}
+      <Sheet
         isOpen={isCategoryManagerOpen}
-        title="Категорії списку бажань"
-        subtitle="Один плоский рівень категорій. Видалення категорії залишає її бажання в розділі «Без категорії» і ніколи не видаляє самі бажання."
         onClose={() => {
           setIsCategoryManagerOpen(false);
-          setDeletingCategory(null);
-          setRenamingCategoryId(null);
+          setEditingCategoryId(null);
+          setConfirmDeleteCategoryId(null);
+          setCategoryError(null);
         }}
+        title="Категорії бажань"
       >
-        <div className="space-y-4" data-testid="wishlist-category-manager">
+        <div className="space-y-4">
+          {categoryError && (
+            <div
+              role="alert"
+              className="p-3 rounded-xl bg-[var(--color-danger)]/10 border border-[var(--color-danger)]/30 text-xs text-[var(--color-danger)]"
+            >
+              {categoryError}
+            </div>
+          )}
+
           <form
             onSubmit={handleCreateCategory}
             className="flex items-end gap-2"
@@ -2017,194 +2014,153 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
             <div className="flex-1">
               <InputField
                 label="Нова категорія"
-                placeholder="Наприклад: Книги, Музика, Подорожі"
                 value={newCategoryName}
                 onChange={(e) => setNewCategoryName(e.target.value)}
+                placeholder="Наприклад: Книги, Дім, Хобі"
                 data-testid="new-wishlist-category-input"
-                required
               />
             </div>
-            <Button
+            <button
               type="submit"
-              variant="primary"
-              data-testid="add-wishlist-category-button"
+              data-testid="create-wishlist-category-button"
+              className="ui-primary text-xs px-4 py-2.5 shrink-0"
             >
-              Створити
-            </Button>
+              Додати
+            </button>
           </form>
 
           {sortedCategories.length === 0 ? (
-            <p
-              className="text-[14px] m-0"
-              style={{ color: 'var(--text-secondary)' }}
-            >
-              Ще немає користувацьких категорій. Доступні віртуальні подання
-              «Усі категорії» та «Без категорії».
-            </p>
+            <Section>
+              <Row title="Категорій поки немає" />
+            </Section>
           ) : (
-            <ul
-              className="space-y-2 m-0 p-0 list-none"
-              data-testid="wishlist-categories-list"
-            >
+            <Section title="Ваші категорії">
               {sortedCategories.map((cat, idx) => {
+                const isRenaming = editingCategoryId === cat.id;
+                const isConfirmingDelete = confirmDeleteCategoryId === cat.id;
                 const impact = computeWishlistCategoryDeleteImpact(
                   cat.id,
                   wishes
                 );
-                const isRenaming = renamingCategoryId === cat.id;
 
                 return (
-                  <li
+                  <div
                     key={cat.id}
+                    className="p-3 border-b last:border-b-0 border-[var(--border-subtle)] space-y-2"
                     data-testid={`wishlist-category-row-${cat.id}`}
-                    className="p-3 rounded-xl space-y-2"
-                    style={{
-                      backgroundColor: 'var(--bg-elevated)',
-                      border: '1px solid var(--border-subtle)',
-                    }}
                   >
                     {isRenaming ? (
                       <div className="flex items-center gap-2">
                         <input
                           type="text"
-                          value={renamingCategoryText}
+                          value={editingCategoryName}
                           onChange={(e) =>
-                            setRenamingCategoryText(e.target.value)
+                            setEditingCategoryName(e.target.value)
                           }
-                          data-testid={`rename-wishlist-category-input-${cat.id}`}
-                          className="flex-1 min-h-[38px] px-3 py-1 rounded-xl text-[15px]"
-                          style={{
-                            backgroundColor: 'var(--bg-surface)',
-                            color: 'var(--text-primary)',
-                            border: '1px solid var(--border-subtle)',
-                          }}
+                          className="flex-1 px-3 py-2 min-h-[44px] rounded-xl bg-[var(--bg-surface)] border border-[var(--border-strong)] text-sm text-[var(--text-primary)]"
+                          data-testid={`rename-category-input-${cat.id}`}
                         />
-                        <Button
-                          size="sm"
-                          variant="primary"
-                          onClick={() => handleRenameCategory(cat)}
-                          data-testid={`save-rename-wishlist-category-${cat.id}`}
+                        <button
+                          type="button"
+                          onClick={() => void handleSaveRenameCategory(cat)}
+                          data-testid={`save-rename-category-${cat.id}`}
+                          className="ui-primary text-xs px-3 py-2"
                         >
                           Зберегти
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => setRenamingCategoryId(null)}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingCategoryId(null)}
+                          className="min-h-[44px] px-3 rounded-xl text-xs"
                         >
                           Скасувати
-                        </Button>
+                        </button>
                       </div>
                     ) : (
-                      <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center justify-between gap-2">
                         <div>
-                          <span className="text-[15px] font-semibold">
+                          <p className="text-sm font-medium text-[var(--text-primary)]">
                             {cat.name}
-                          </span>
-                          <span
-                            className="text-[12px] ml-2"
-                            style={{ color: 'var(--text-secondary)' }}
-                          >
+                          </p>
+                          <p className="text-xs text-[var(--text-secondary)]">
                             Бажань: {impact.affectedWishesCount}
-                          </span>
+                          </p>
                         </div>
+                        <ActionMenu
+                          label={`Дії категорії: ${cat.name}`}
+                          items={[
+                            ...(idx > 0
+                              ? [
+                                  {
+                                    label: 'Вище',
+                                    onSelect: () =>
+                                      void handleMoveCategoryOrder(idx, -1),
+                                  },
+                                ]
+                              : []),
+                            ...(idx < sortedCategories.length - 1
+                              ? [
+                                  {
+                                    label: 'Нижче',
+                                    onSelect: () =>
+                                      void handleMoveCategoryOrder(idx, 1),
+                                  },
+                                ]
+                              : []),
+                            {
+                              label: 'Перейменувати',
+                              onSelect: () => {
+                                setEditingCategoryId(cat.id);
+                                setEditingCategoryName(cat.name);
+                              },
+                            },
+                            {
+                              label: 'Видалити',
+                              onSelect: () =>
+                                setConfirmDeleteCategoryId(cat.id),
+                            },
+                          ]}
+                        />
+                      </div>
+                    )}
 
-                        <div className="flex items-center gap-1">
-                          <Button
-                            variant="subtle"
-                            size="sm"
-                            disabled={idx === 0}
-                            onClick={() => handleMoveCategoryOrder(idx, -1)}
-                            aria-label="Перемістити категорію вище"
-                            data-testid={`move-cat-up-${cat.id}`}
-                          >
-                            <ArrowUp className="w-3.5 h-3.5" />
-                          </Button>
-                          <Button
-                            variant="subtle"
-                            size="sm"
-                            disabled={idx === sortedCategories.length - 1}
-                            onClick={() => handleMoveCategoryOrder(idx, 1)}
-                            aria-label="Перемістити категорію нижче"
-                            data-testid={`move-cat-down-${cat.id}`}
-                          >
-                            <ArrowDown className="w-3.5 h-3.5" />
-                          </Button>
-                          <Button
-                            variant="subtle"
-                            size="sm"
-                            onClick={() => {
-                              setRenamingCategoryId(cat.id);
-                              setRenamingCategoryText(cat.name);
-                            }}
-                            data-testid={`start-rename-cat-${cat.id}`}
-                          >
-                            Перейменувати
-                          </Button>
-                          <Button
-                            variant="subtle"
-                            size="sm"
-                            onClick={() => setDeletingCategory(cat)}
-                            data-testid={`delete-cat-button-${cat.id}`}
+                    {isConfirmingDelete && (
+                      <div
+                        className="p-2.5 rounded-xl bg-[var(--color-danger)]/10 border border-[var(--color-danger)]/30 space-y-2"
+                        data-testid={`confirm-delete-category-box-${cat.id}`}
+                      >
+                        <p className="text-xs text-[var(--color-danger)]">
+                          Категорію буде видалено, а бажання залишаться без
+                          категорії.
+                        </p>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void handleConfirmDeleteCategory(cat.id)
+                            }
+                            data-testid={`confirm-delete-category-btn-${cat.id}`}
+                            className="min-h-[44px] px-3 rounded-xl bg-[var(--color-danger)] text-white text-xs font-medium"
                           >
                             Видалити
-                          </Button>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteCategoryId(null)}
+                            className="min-h-[44px] px-3 rounded-xl text-xs"
+                          >
+                            Скасувати
+                          </button>
                         </div>
                       </div>
                     )}
-                  </li>
+                  </div>
                 );
               })}
-            </ul>
-          )}
-
-          {deletingCategory && (
-            <div
-              className="p-3.5 rounded-xl space-y-2.5 border"
-              style={{
-                backgroundColor: 'var(--bg-elevated)',
-                borderColor: 'var(--color-brand)',
-              }}
-              data-testid="confirm-delete-wishlist-category-box"
-            >
-              <div className="text-[14px] font-semibold">
-                Видалити категорію «{deletingCategory.name}»?
-              </div>
-              <p
-                className="text-[13px] m-0"
-                style={{ color: 'var(--text-secondary)' }}
-              >
-                Пов’язані бажання (
-                {
-                  computeWishlistCategoryDeleteImpact(
-                    deletingCategory.id,
-                    wishes
-                  ).affectedWishesCount
-                }
-                ) не будуть видалені — вони автоматично перейдуть у «Без
-                категорії».
-              </p>
-              <div className="flex justify-end gap-2">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => setDeletingCategory(null)}
-                >
-                  Скасувати
-                </Button>
-                <Button
-                  size="sm"
-                  variant="danger"
-                  onClick={handleConfirmDeleteCategory}
-                  data-testid="confirm-delete-wishlist-category-button"
-                >
-                  Підтвердити видалення категорії
-                </Button>
-              </div>
-            </div>
+            </Section>
           )}
         </div>
-      </ModalSheet>
+      </Sheet>
     </div>
   );
 };

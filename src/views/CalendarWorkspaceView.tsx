@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  Calendar as CalendarIcon,
   ChevronLeft,
   ChevronRight,
   Stamp,
@@ -297,7 +296,7 @@ export function CalendarWorkspaceView(props: CalendarWorkspaceViewProps) {
                 key={item.itemKey}
                 hue={
                   item.sourceKind === "work_shift"
-                    ? "#dbad66"
+                    ? "var(--color-work)"
                     : hue(item.taskId)
                 }
                 className="calendar-agenda-item"

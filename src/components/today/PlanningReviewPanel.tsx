@@ -1,13 +1,11 @@
 import {PillRow, Section, Row, DateField, Disclosure, ActionMenu, EmptyState} from '../../ui';
 import {formatDate,formatInstant} from '../../lib/format';
-import { formatDuration } from '../../lib/format';
 import { projectPlanningReview } from '../../domain/lifeAreas';
 import React, { useState } from 'react';
 import { PlanuiDomainSnapshot, Project } from '../../domain/types';
-import { addDaysToLocalDate, formatInstantInZone, formatUkrainianDateHeading } from '../../domain/temporal';
-import { Button, Card, InputField } from '../ui/primitives';
+import { addDaysToLocalDate } from '../../domain/temporal';
 
-export function PlanningReviewPanel({ snapshot, zone, today, initiallyOpen, onOpenPlan, onPause, onInspectEvent, onPlanTask }: { snapshot: PlanuiDomainSnapshot; zone: string; today: string; initiallyOpen?: boolean; onOpenPlan: (kind: 'goal' | 'project', id: string) => void; onPause: (project: Project) => void; onInspectEvent: (id: string) => void; onPlanTask: (id: string, reservationId?: string) => void }) {
+export function PlanningReviewPanel({ snapshot, zone, today, onOpenPlan, onPause, onInspectEvent, onPlanTask }: { snapshot: PlanuiDomainSnapshot; zone: string; today: string; initiallyOpen?: boolean; onOpenPlan: (kind: 'goal' | 'project', id: string) => void; onPause: (project: Project) => void; onInspectEvent: (id: string) => void; onPlanTask: (id: string, reservationId?: string) => void }) {
   const [start, setStart] = useState(today), [end, setEnd] = useState(addDaysToLocalDate(today, 13));
   let projection: ReturnType<typeof projectPlanningReview> | null = null;
   try { projection = projectPlanningReview(snapshot, start, end, zone); } catch { /* Invalid period is never swapped. */ }

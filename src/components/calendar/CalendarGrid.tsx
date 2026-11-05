@@ -22,7 +22,7 @@ export function CalendarGrid({
   onPaint,
   markedDates = [],
   roadmapCount = () => 0,
-  hueForTask = () => "#8aa6df",
+  hueForTask = () => "var(--color-personal)",
   compact = false,
 }: Props) {
   const ignoreClick = useRef(false);

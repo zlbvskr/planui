@@ -1,4 +1,4 @@
-import { Surface, Sheet } from '../ui/design';
+import { Sheet } from '../ui/design';
 import React, { useState } from 'react';
 import { DailyPlan, Task, TaskReservation } from '../../domain/types';
 import { suggestFocusTasks } from '../../domain/today';

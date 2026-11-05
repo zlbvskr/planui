@@ -1,5 +1,5 @@
 import {SleepReminderNote} from '../habits/SleepReminderNote';
-import { Sheet, Section, Row, PillRow, ActionMenu, DurationField, Toggle, Slider, DateField, TimeField } from '../../ui';
+import { Sheet, Section, Row, PillRow, ActionMenu, DurationField, Toggle, Slider, DateField, TimeField, SelectField as ContractSelectField } from '../../ui';
 import { formatDuration, formatDate } from '../../lib/format';
 import { PillMenu as SelectField } from '../ui/design';
 import { WishExtrasFields, emptyWishExtras, resolveWishExtras } from '../wishlist/WishExtrasFields';
@@ -9,7 +9,6 @@ import {
   FolderPlus,
   HeartPulse,
   Calendar as CalendarIcon,
-  Folder as FolderIcon,
   Briefcase,
   Layers,
   Clock,
@@ -79,17 +78,12 @@ import {
 import { PlanuiRepositories } from '../../storage/repositories';
 import {
   Button,
-  InputField as LegacyInputField,
+  InputField,
   ModalSheet,
   SegmentedControl,
   TextAreaField,
   FeedbackBanner,
 } from '../ui/primitives';
-
-function InputField(props: React.ComponentProps<typeof LegacyInputField>) {
-  if(props.type==='date' || props.type==='time') { const {type,hint,error,...field}=props; const Field=type==='date'?DateField:TimeField; return <Field {...field} value={String(props.value??'')}/>; }
-  return <LegacyInputField {...props}/>;
-}
 
 export interface SharedEditorHostProps {
   isOpen: boolean;
@@ -128,7 +122,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
   contexts,
   initialContext,
   initialActionKind,
-  activeZone = 'Europe/Kyiv',
+  activeZone = '',
   folders,
   goals = [],
   projects = [],
@@ -315,7 +309,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
       setQuickAdvanced(false); setQuickPanel(null); setQuickShiftDays([]);setQuickShiftDay('');quickSavedShiftDays.current.clear();setQuickBatchConflict(false);
       const contextualDefault =
         initialActionKind ??
-        (getContextualCreationActions(activeDestination, contexts)[0]
+        (getContextualCreationActions(activeDestination, contexts, enabledModules)[0]
           ?.kind as ImplementedCreationActionKind) ??
         'task';
       setSelectedAction(contextualDefault);
@@ -2153,10 +2147,9 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
                     </div>
                   ) : (
                     <div className="flex items-center gap-2">
-                      <input
+                      <DateField
                         id="creation-context-date"
-                        type="date"
-                        lang="uk"
+                        label={UK_STRINGS.creation.fieldTargetDate}
                         data-testid="creation-context-date-input"
                         value={editableContext.targetDate}
                         onChange={(e) => {
@@ -2170,12 +2163,6 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
                           } else {
                             setTaskPlanningMode('unplanned');
                           }
-                        }}
-                        className="flex-1 min-h-[42px] px-3 py-1.5 rounded-xl text-[16px]"
-                        style={{
-                          backgroundColor: 'var(--bg-surface)',
-                          color: 'var(--text-primary)',
-                          border: '1px solid var(--border-subtle)',
                         }}
                       />
                       <Button
@@ -2198,16 +2185,9 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
 
                 {/* Project selector (or Standalone) */}
                 <div className="space-y-1.5">
-                  <label
-                    htmlFor="creation-context-project"
-                    className="text-[13px] font-medium flex items-center gap-1.5"
-                    style={{ color: 'var(--text-primary)' }}
-                  >
-                    <Briefcase className="w-3.5 h-3.5" aria-hidden="true" />
-                    <span>{UK_STRINGS.creation.fieldProjectContext}</span>
-                  </label>
-                  <select
+                  <ContractSelectField
                     id="creation-context-project"
+                    label={UK_STRINGS.creation.fieldProjectContext}
                     data-testid="creation-context-project-select"
                     value={editableContext.projectId ?? ''}
                     onChange={(e) => {
@@ -2221,44 +2201,29 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
                         folderId: nextProjectId ? null : prev.folderId,
                       }));
                     }}
-                    className="w-full min-h-[42px] px-3 py-1.5 rounded-xl text-[16px]"
-                    style={{
-                      backgroundColor: 'var(--bg-surface)',
-                      color: 'var(--text-primary)',
-                      border: '1px solid var(--border-subtle)',
-                    }}
-                  >
-                    {projectOptions.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
+                    options={projectOptions}
+                  />
                 </div>
               </div>
 
               {taskPlanningMode === 'timed' && (
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
-                  <InputField
+                  <TimeField
                     label={
                       UK_STRINGS.creation.taskForm.reservationStartTimeLabel
                     }
-                    type="time"
                     value={taskResStartTime}
                     onChange={(e) => setTaskResStartTime(e.target.value)}
                     data-testid="create-task-res-start-time"
                   />
-                  <InputField
+                  <TimeField
                     label={UK_STRINGS.creation.taskForm.reservationEndTimeLabel}
-                    type="time"
                     value={taskResEndTime}
                     onChange={(e) => setTaskResEndTime(e.target.value)}
                     data-testid="create-task-res-end-time"
                   />
-                  <InputField
+                  <DateField
                     label={UK_STRINGS.creation.taskForm.reservationEndDateLabel}
-                    type="date"
-                    lang="uk"
                     value={
                       taskResEndDate ||
                       editableContext.targetDate ||
@@ -2273,16 +2238,9 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
               {/* Either Standalone Folder OR Project Stage */}
               {editableContext.projectId ? (
                 <div className="space-y-1.5">
-                  <label
-                    htmlFor="creation-context-stage"
-                    className="text-[13px] font-medium flex items-center gap-1.5"
-                    style={{ color: 'var(--text-primary)' }}
-                  >
-                    <Layers className="w-3.5 h-3.5" aria-hidden="true" />
-                    <span>{UK_STRINGS.creation.fieldStageContext}</span>
-                  </label>
-                  <select
+                  <ContractSelectField
                     id="creation-context-stage"
+                    label={UK_STRINGS.creation.fieldStageContext}
                     data-testid="creation-context-stage-select"
                     value={editableContext.stageId ?? ''}
                     onChange={(e) =>
@@ -2291,33 +2249,15 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
                         stageId: e.target.value ? e.target.value : null,
                       }))
                     }
-                    className="w-full min-h-[42px] px-3 py-1.5 rounded-xl text-[16px]"
-                    style={{
-                      backgroundColor: 'var(--bg-surface)',
-                      color: 'var(--text-primary)',
-                      border: '1px solid var(--border-subtle)',
-                    }}
-                  >
-                    {stageOptions.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
+                    options={stageOptions}
+                  />
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <label
-                      htmlFor="creation-context-goal"
-                      className="text-[13px] font-medium flex items-center gap-1.5"
-                      style={{ color: 'var(--text-primary)' }}
-                    >
-                      <Target className="w-3.5 h-3.5" aria-hidden="true" />
-                      <span>Ціль</span>
-                    </label>
-                    <select
+                    <ContractSelectField
                       id="creation-context-goal"
+                      label="Ціль"
                       data-testid="creation-context-goal-select"
                       value={editableContext.goalId ?? ''}
                       onChange={(e) => {
@@ -2332,32 +2272,14 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
                               : prev.folderId,
                         }));
                       }}
-                      className="w-full min-h-[42px] px-3 py-1.5 rounded-xl text-[16px]"
-                      style={{
-                        backgroundColor: 'var(--bg-surface)',
-                        color: 'var(--text-primary)',
-                        border: '1px solid var(--border-subtle)',
-                      }}
-                    >
-                      {goalOptions.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
+                      options={goalOptions}
+                    />
                   </div>
 
                   <div className="space-y-1.5">
-                    <label
-                      htmlFor="creation-context-folder"
-                      className="text-[13px] font-medium flex items-center gap-1.5"
-                      style={{ color: 'var(--text-primary)' }}
-                    >
-                      <FolderIcon className="w-3.5 h-3.5" aria-hidden="true" />
-                      <span>{UK_STRINGS.creation.fieldFolderContext}</span>
-                    </label>
-                    <select
+                    <ContractSelectField
                       id="creation-context-folder"
+                      label={UK_STRINGS.creation.fieldFolderContext}
                       data-testid="creation-context-folder-select"
                       value={editableContext.folderId ?? ''}
                       onChange={(e) =>
@@ -2366,19 +2288,8 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
                           folderId: e.target.value ? e.target.value : null,
                         }))
                       }
-                      className="w-full min-h-[42px] px-3 py-1.5 rounded-xl text-[16px]"
-                      style={{
-                        backgroundColor: 'var(--bg-surface)',
-                        color: 'var(--text-primary)',
-                        border: '1px solid var(--border-subtle)',
-                      }}
-                    >
-                      {folderOptions.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
+                      options={folderOptions}
+                    />
                   </div>
                 </div>
               )}
@@ -2597,10 +2508,8 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
             </div>
 
             {taskDeadlineKind === 'date_only' && (
-              <InputField
+              <DateField
                 label={UK_STRINGS.creation.taskForm.deadlineDateLabel}
-                type="date"
-                lang="uk"
                 value={taskDeadlineDate}
                 onChange={(e) => setTaskDeadlineDate(e.target.value)}
                 data-testid="create-task-deadline-date-input"
@@ -2796,10 +2705,8 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
             {eventScheduleKind === 'timed' ? (
               <div className="space-y-3">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <InputField
+                  <DateField
                     label={UK_STRINGS.creation.eventForm.startDateLabel}
-                    type="date"
-                    lang="uk"
                     value={eventStartDate}
                     onChange={(e) => {
                       const nextStart = e.target.value;
@@ -2811,9 +2718,8 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
                     data-testid="create-event-start-date-input"
                     required
                   />
-                  <InputField
+                  <TimeField
                     label={UK_STRINGS.creation.eventForm.startTimeLabel}
-                    type="time"
                     value={eventStartTime}
                     onChange={(e) => setEventStartTime(e.target.value)}
                     data-testid="create-event-start-time-input"
@@ -2822,18 +2728,15 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <InputField
+                  <DateField
                     label={UK_STRINGS.creation.eventForm.endDateLabel}
-                    type="date"
-                    lang="uk"
                     value={eventEndDate}
                     onChange={(e) => setEventEndDate(e.target.value)}
                     data-testid="create-event-end-date-input"
                     required
                   />
-                  <InputField
+                  <TimeField
                     label={UK_STRINGS.creation.eventForm.endTimeLabel}
-                    type="time"
                     value={eventEndTime}
                     onChange={(e) => {
                       const nextEnd = e.target.value;
@@ -2867,7 +2770,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
                     >
                       <span>
                         Час завершення раніше за початок — можливо, це нічний
-                        перехід на {eventClockHint.suggestedEndLocalDate}?
+                        перехід на {formatDate(eventClockHint.suggestedEndLocalDate)}?
                       </span>
                       <Button
                         variant="secondary"
@@ -2897,7 +2800,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
                     <Clock className="w-4 h-4 shrink-0" aria-hidden="true" />
                     <span>
                       {UK_STRINGS.creation.eventForm.overnightSuggestedBadge}:{' '}
-                      {eventStartDate} {eventStartTime} → {eventEndDate}{' '}
+                      {formatDate(eventStartDate)} {eventStartTime} → {formatDate(eventEndDate)}{' '}
                       {eventEndTime}
                     </span>
                   </div>
@@ -2913,25 +2816,22 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <InputField
+                <DateField
                   label={UK_STRINGS.creation.eventForm.startDateLabel}
-                  type="date"
-                  lang="uk"
                   value={eventStartDate}
                   onChange={(e) => {
-                    setEventStartDate(e.target.value);
-                    if (eventEndDate < e.target.value) {
-                      setEventEndDate(e.target.value);
+                    const nextStart = e.target.value;
+                    setEventStartDate(nextStart);
+                    if (eventEndDate < nextStart) {
+                      setEventEndDate(nextStart);
                     }
                   }}
                   required
                 />
-                <InputField
+                <DateField
                   label={
                     UK_STRINGS.creation.eventForm.allDayEndInclusiveLabel
                   }
-                  type="date"
-                  lang="uk"
                   value={eventEndDate}
                   onChange={(e) => setEventEndDate(e.target.value)}
                   required
@@ -2940,26 +2840,18 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
             )}
 
             {selectedAction === 'event' && eventType !== 'work_shift' && (
-              <label className="flex items-start justify-between gap-3 p-3 rounded-xl cursor-pointer" style={{ backgroundColor: 'var(--bg-elevated)' }}>
-                <div className="space-y-0.5">
-                  <div className="text-[14px] font-medium">
-                    {UK_STRINGS.creation.eventForm.blockingLabel}
-                  </div>
-                  <div
-                    className="text-[12px]"
-                    style={{ color: 'var(--text-secondary)' }}
-                  >
-                    {UK_STRINGS.creation.eventForm.blockingDescription}
-                  </div>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={eventIsBlocking}
-                  onChange={(e) => setEventIsBlocking(e.target.checked)}
-                  className="w-5 h-5 mt-0.5 accent-[#B93E4B] cursor-pointer"
-                  data-testid="create-event-blocking-checkbox"
-                />
-              </label>
+              <Row
+                title={UK_STRINGS.creation.eventForm.blockingLabel}
+                secondary={UK_STRINGS.creation.eventForm.blockingDescription}
+                trailing={
+                  <Toggle
+                    label={UK_STRINGS.creation.eventForm.blockingLabel}
+                    checked={eventIsBlocking}
+                    onChange={setEventIsBlocking}
+                    data-testid="create-event-blocking-checkbox"
+                  />
+                }
+              />
             )}
 
             <TextAreaField
@@ -2976,10 +2868,8 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
         {selectedAction === 'day_off' && (
           <div className="space-y-3.5" data-testid="create-day-off-form">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <InputField
+              <DateField
                 label="Дата вихідного дня"
-                type="date"
-                lang="uk"
                 value={dayOffDate}
                 onChange={(e) => setDayOffDate(e.target.value)}
                 data-testid="create-day-off-date-input"
@@ -3022,18 +2912,17 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
               />
               <span>{conflictPreview.warningMessageUk}</span>
             </div>
-            <label className="flex items-center gap-2.5 text-[13px] font-medium cursor-pointer pt-1">
-              <input
-                type="checkbox"
-                checked={confirmConsciousOverlap}
-                onChange={(e) => setConfirmConsciousOverlap(e.target.checked)}
-                className="w-4 h-4 accent-[#B93E4B] cursor-pointer"
-                data-testid="confirm-conscious-overlap-checkbox"
-              />
-              <span>
-                {UK_STRINGS.creation.eventForm.confirmConsciousOverlapLabel}
-              </span>
-            </label>
+            <Row
+              title={UK_STRINGS.creation.eventForm.confirmConsciousOverlapLabel}
+              trailing={
+                <Toggle
+                  label={UK_STRINGS.creation.eventForm.confirmConsciousOverlapLabel}
+                  checked={confirmConsciousOverlap}
+                  onChange={setConfirmConsciousOverlap}
+                  data-testid="confirm-conscious-overlap-checkbox"
+                />
+              }
+            />
           </div>
         )}
 
@@ -3104,10 +2993,8 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
               />
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <InputField
+              <DateField
                 label={UK_STRINGS.creation.goalForm.targetDateLabel}
-                type="date"
-                lang="uk"
                 value={goalTargetDate ?? ''}
                 onChange={(e) => setGoalTargetDate(e.target.value || null)}
                 data-testid="create-goal-target-date-input"
@@ -3181,22 +3068,13 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
                   </Button>
                 ) : (
                   <div className="flex items-center gap-2">
-                    <input
-                      type="date"
-                      lang="uk"
+                    <DateField
+                      label={UK_STRINGS.creation.projectForm.targetDateLabel}
                       value={projectTargetDate}
                       onChange={(e) =>
-                        setProjectTargetDate(
-                          e.target.value ? e.target.value : null
-                        )
+                        setProjectTargetDate(e.target.value ? e.target.value : null)
                       }
                       data-testid="create-project-target-date-input"
-                      className="flex-1 min-h-[42px] px-3 py-1.5 rounded-xl text-[16px]"
-                      style={{
-                        backgroundColor: 'var(--bg-surface)',
-                        color: 'var(--text-primary)',
-                        border: '1px solid var(--border-subtle)',
-                      }}
                     />
                     <Button
                       variant="secondary"
@@ -3259,21 +3137,12 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
                 </Button>
               ) : (
                 <div className="flex items-center gap-2">
-                  <input
-                    type="date"
-                    lang="uk"
+                  <DateField
+                    label={UK_STRINGS.creation.stageForm.targetDateLabel}
                     value={stageTargetDate}
                     onChange={(e) =>
-                      setStageTargetDate(
-                        e.target.value ? e.target.value : null
-                      )
+                      setStageTargetDate(e.target.value ? e.target.value : null)
                     }
-                    className="flex-1 min-h-[42px] px-3 py-1.5 rounded-xl text-[16px]"
-                    style={{
-                      backgroundColor: 'var(--bg-surface)',
-                      color: 'var(--text-primary)',
-                      border: '1px solid var(--border-subtle)',
-                    }}
                   />
                   <Button
                     variant="secondary"
@@ -3421,7 +3290,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
                             backgroundColor: selected
                               ? 'var(--color-brand)'
                               : 'var(--bg-elevated)',
-                            color: selected ? '#FFFFFF' : 'var(--text-primary)',
+                            color: selected ? 'var(--btn-primary-fg)' : 'var(--text-primary)',
                             border: '1px solid var(--border-subtle)',
                           }}
                         >
@@ -3490,10 +3359,8 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
               )}
             </div>
 
-            <InputField
+            <DateField
               label="Правило діє з дати"
-              type="date"
-              lang="uk"
               value={habitEffectiveFromDate}
               onChange={(e) => setHabitEffectiveFromDate(e.target.value)}
               data-testid="create-habit-effective-date-input"
@@ -3655,16 +3522,17 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
               </div>
             )}
 
-            <label className="flex items-center gap-2.5 cursor-pointer text-[14px]">
-              <input
-                type="checkbox"
-                checked={inspirationIsFavorite}
-                onChange={(e) => setInspirationIsFavorite(e.target.checked)}
-                data-testid="create-inspiration-favorite-checkbox"
-                className="w-4 h-4 accent-[#B93E4B]"
-              />
-              <span>Позначити як вибране</span>
-            </label>
+            <Row
+              title="Позначити як вибране"
+              trailing={
+                <Toggle
+                  label="Позначити як вибране"
+                  checked={inspirationIsFavorite}
+                  onChange={setInspirationIsFavorite}
+                  data-testid="create-inspiration-favorite-checkbox"
+                />
+              }
+            />
           </div>
         )}
 

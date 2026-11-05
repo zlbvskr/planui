@@ -7,8 +7,10 @@ import { UI_CLOCK, UI_ZONE, type UiFixtureVariant } from '../src/test/ui-fixture
 export async function startUiRuntime() {
   const port=process.env.UI_TEST_PORT??'3030';
   const url=process.env.UI_TEST_URL??`http://127.0.0.1:${port}`;
-  const server=process.env.UI_TEST_URL?null:spawn(process.execPath,['node_modules/vite/bin/vite.js','--host','127.0.0.1','--port',port,'--strictPort'],{env:{...process.env,DISABLE_HMR:'true'},stdio:['ignore','pipe','pipe']});
-  let log='';let started=false;server?.stdout?.on('data',v=>{log+=v;if(String(v).includes('Local:'))started=true;});server?.stderr?.on('data',v=>{log+=v;});
+  let alreadyUp=false;try{alreadyUp=(await fetch(url)).ok;}catch{}
+  const server=process.env.UI_TEST_URL||alreadyUp?null:spawn(process.execPath,['node_modules/vite/bin/vite.js','--host','127.0.0.1','--port',port,'--strictPort'],{env:{...process.env,DISABLE_HMR:'true'},stdio:['ignore','pipe','pipe']});
+  if(server)process.once('exit',()=>server.kill());
+  let log='';let started=alreadyUp;server?.stdout?.on('data',v=>{log+=v;if(String(v).includes('Local:'))started=true;});server?.stderr?.on('data',v=>{log+=v;});
   try {
     for(let attempt=0;attempt<100;attempt++) { try{if((!server||started)&&(await fetch(url)).ok){await new Promise(r=>setTimeout(r,50));if(server?.exitCode!==null&&server?.exitCode!==undefined)throw new Error(log);break;}}catch{} if(server?.exitCode!==null&&server?.exitCode!==undefined)throw new Error(log);if(attempt===99)throw new Error(`Vite did not start: ${log}`);await new Promise(r=>setTimeout(r,100)); }
     const browser=await webkit.launch();

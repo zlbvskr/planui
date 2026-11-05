@@ -80,7 +80,6 @@ export const UK_STRINGS = {
       weekUnionOccupiedLabel: 'Зайнято за тиждень (без подвоєння перетинів)',
       weekWorkTotalLabel: 'Робочі зміни за тиждень',
       dayOccupiedPrefix: 'Зайнято за записами',
-      dayUnoccupiedPrefix: 'Незайнято',
       overnightStartPrevDayNote: (originRange: string) =>
         `Початок попередньої доби (повна зміна: ${originRange})`,
       overnightContinuesNextDayNote: (originRange: string) =>
@@ -166,7 +165,7 @@ export const UK_STRINGS = {
       olderUnresolvedPlansSubtitle:
         'Справи з минулими запланованими датами або сесіями не переносяться на сьогодні автоматично. Ви можете перенести обрані або зняти застаріле планування.',
       overdueDeadlinesToggle: (count: number) =>
-        `Окремо: прострочені дедлайни (${count})`,
+        `Окремо: минулі дедлайни (${count})`,
       overdueDeadlinesSubtitle:
         'Справи, у яких настав термін дедлайну. Відображаються окремо від звичайного планування.',
       rescheduleToSelectedDateButton: 'На обрану дату',
@@ -619,7 +618,7 @@ export const UK_STRINGS = {
     checklistPromotedFeedback: 'Крок чеклісту перетворено на окрему справу.',
     taskUpdatedFeedback: 'Справу оновлено.',
     taskDeletedFeedback: 'Справу видалено.',
-    temporalNoticeOverdueDeadline: 'Прострочений дедлайн',
+    temporalNoticeOverdueDeadline: 'Минулий дедлайн',
     temporalNoticePastPlannedDate: 'Минула запланована дата (без дедлайну)',
     temporalNoticeElapsedReservation: 'Минулий запланований час',
     deadlineBadgePrefix: 'Дедлайн',

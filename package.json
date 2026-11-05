@@ -20,7 +20,8 @@
     "test:stage2": "node --import tsx tests/stage2.spec.ts",
     "test:stage3": "node --import tsx tests/stage3.spec.ts",
     "test:stage4": "node --import tsx tests/stage4.spec.ts",
-    "test:stage5": "node --import tsx tests/stage5.spec.ts"
+    "test:stage5": "node --import tsx tests/stage5.spec.ts",
+    "test:stage6": "node --import tsx tests/stage6.spec.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
@@ -35,7 +36,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "esbuild": "^0.28.0",
-    "playwright": "^1.64.1",
+    "playwright": "1.64.1",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.21.0",
     "typescript": "^7.0.2"

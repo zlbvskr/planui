@@ -1,10 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { SharedEditorHost } from './components/editors/SharedEditorHost';
 import { HabitSessionSheet } from './components/habits/HabitSessionSheet';
-import {
-  PwaStatusBanner,
-  PwaInstallAndOfflineCard,
-} from './components/pwa/PwaStatusAndInstallCard';
+import { PwaStatusBanner } from './components/pwa/PwaStatusAndInstallCard';
 import { FloatingShell } from './components/shell/FloatingShell';
 import { transitionCreation } from './components/shell/creationTransition';
 import { EventDetailSheet } from './components/timeline/EventDetailSheet';
@@ -256,6 +253,10 @@ export function App() {
           const currentScroll = window.scrollY;
           setContexts((oldMap) =>
             updateDestinationContext(oldMap, prev, { scrollTop: currentScroll })
+          );
+        } else if (nextDest === 'me' && hash === '#/me' && !subView) {
+          setContexts((oldMap) =>
+            updateDestinationContext(oldMap, 'me', { subView: 'overview' })
           );
         }
         return nextDest;
@@ -658,7 +659,7 @@ export function App() {
               snapshot={snapshot}
               recoverySnapshots={recoverySnapshots}
               repositories={repositories}
-              onChangeSubView={(subView, activeWishlistCategoryId) =>
+              onChangeSubView={(subView, activeWishlistCategoryId) => {
                 setContexts((prev) =>
                   updateDestinationContext(prev, 'me', {
                     subView,
@@ -666,8 +667,12 @@ export function App() {
                       ? { activeWishlistCategoryId }
                       : {}),
                   })
-                )
-              }
+                );
+                const targetHash = subView === 'overview' ? '#/me' : `#/${subView}`;
+                if (window.location.hash !== targetHash) {
+                  window.history.replaceState(null, '', targetHash);
+                }
+              }}
               onOpenGlobalCreation={openGlobalCreation}
               onSettingsPatch={(patch) => {
                 setSnapshot((prev) => {
@@ -698,9 +703,9 @@ export function App() {
                 handleSelectDestination('today');
               }}
               onModalStateChange={setIsLocalModalOpen}
+              pwaState={pwaState}
             />
           )}
-          {activeDestination === 'me' && contexts.me.subView === 'settings' && <PwaInstallAndOfflineCard pwaState={pwaState} />}
         </div>
       </FloatingShell>
 

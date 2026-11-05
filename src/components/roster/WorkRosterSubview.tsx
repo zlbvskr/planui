@@ -17,17 +17,6 @@ import {
   formatTimeRange,
   sentenceCase,
 } from "../../lib/format";
-import {
-  Check,
-  Clock,
-  Edit3,
-  FileText,
-  Plus,
-  RotateCcw,
-  Sparkles,
-  Sun,
-  Trash2,
-} from "lucide-react";
 import React, { useMemo, useState, useEffect } from "react";
 import { formatMinutesCompactUk } from "../../domain/formatting";
 import {
@@ -36,7 +25,6 @@ import {
   RosterBatchPreview,
   calculateMonthWorkSummary,
   generateFinitePeriodRosterPreview,
-  instantiateWorkShiftFromTemplate,
   parseDeterministicRosterText,
   prepareMultiDateRosterBatch,
 } from "../../domain/roster";
@@ -46,7 +34,6 @@ import {
   projectScheduleForDate,
 } from "../../domain/scheduling";
 import {
-  formatUkrainianDateHeading,
   parseLocalDateParts,
   addMonthsToLocalDate,
 } from "../../domain/temporal";
@@ -67,39 +54,11 @@ import {
 } from "../../storage/repositories";
 import {
   Button,
-  Card,
   FeedbackBanner,
-  InputField as LegacyInputField,
-  ModalSheet,
-  SegmentedControl,
+  InputField,
   TextAreaField,
 } from "../ui/primitives";
 
-function InputField(props: React.ComponentProps<typeof LegacyInputField>) {
-  if (props.type === "date" || props.type === "time") {
-    const { type, hint, error, ...field } = props;
-    const Field = type === "date" ? DateField : TimeField;
-    return <Field {...field} value={String(props.value ?? "")} />;
-  }
-  return <LegacyInputField {...props} />;
-}
-function BooleanControl({
-  checked,
-  onChange,
-  ...props
-}: React.InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <Toggle
-      label={props["aria-label"] ?? "Підтвердити вибір"}
-      checked={Boolean(checked)}
-      onChange={(value) =>
-        onChange?.({
-          target: { checked: value },
-        } as React.ChangeEvent<HTMLInputElement>)
-      }
-    />
-  );
-}
 export interface WorkRosterSubviewProps {
   stampMode?: boolean;
   initialTool?: "period" | "text" | null;
@@ -272,7 +231,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
   const [periodTemplateId, setPeriodTemplateId] = useState<string>("");
   const [periodCustomTitle, setPeriodCustomTitle] =
     useState<string>("Зміна за періодом");
-  const [periodCustomCode, setPeriodCustomCode] = useState<string>("ЗП");
+  const periodCustomCode = "ЗП";
   const [periodCustomStart, setPeriodCustomStart] = useState<string>("09:00");
   const [periodCustomEnd, setPeriodCustomEnd] = useState<string>("21:00");
   const [periodCustomOffset, setPeriodCustomOffset] = useState<0 | 1>(0);
@@ -1549,17 +1508,15 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
           </div>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <InputField
+            <TimeField
               label="Час початку"
-              type="time"
               value={tplStart}
               onChange={(e) => setTplStart(e.target.value)}
               data-testid="template-start-input"
               required
             />
-            <InputField
+            <TimeField
               label="Час завершення"
-              type="time"
               value={tplEnd}
               onChange={(e) => {
                 const nextEnd = e.target.value;
@@ -1624,17 +1581,15 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
       >
         <div className="space-y-4" data-testid="roster-period-generator-modal">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <InputField
+            <DateField
               label="Початок періоду"
-              type="date"
               lang="uk"
               value={periodStart}
               onChange={(e) => setPeriodStart(e.target.value)}
               data-testid="period-start-date-input"
             />
-            <InputField
+            <DateField
               label="Кінець періоду (включно)"
-              type="date"
               lang="uk"
               value={periodEnd}
               onChange={(e) => setPeriodEnd(e.target.value)}
@@ -1662,12 +1617,12 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                       )
                     }
                     data-testid={`period-weekday-toggle-${w.index0To6 + 1}`}
-                    className="min-h-[40px] min-w-[44px] rounded-xl px-3 py-1.5 text-xs font-bold transition-colors"
+                    className="min-h-[44px] min-w-[44px] rounded-xl px-3 py-1.5 text-xs font-bold transition-colors"
                     style={
                       active
                         ? {
                             backgroundColor: "var(--color-work)",
-                            color: "#FFFFFF",
+                            color: "var(--btn-primary-fg)",
                           }
                         : {
                             backgroundColor: "var(--bg-elevated)",
@@ -1743,16 +1698,14 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                 onChange={(e) => setPeriodCustomTitle(e.target.value)}
                 data-testid="period-custom-title"
               />
-              <InputField
+              <TimeField
                 label="Початок"
-                type="time"
                 value={periodCustomStart}
                 onChange={(e) => setPeriodCustomStart(e.target.value)}
                 data-testid="period-custom-start"
               />
-              <InputField
+              <TimeField
                 label="Завершення"
-                type="time"
                 value={periodCustomEnd}
                 onChange={(e) => setPeriodCustomEnd(e.target.value)}
                 data-testid="period-custom-end"
@@ -1799,8 +1752,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                 <div className="flex items-center justify-between font-semibold">
                   <span>
                     Попередній перегляд (
-                    {periodPreviewState.preview.activeItems.length} дат у поясі{" "}
-                    {periodPreviewState.preview.lockedZoneId}):
+                    {periodPreviewState.preview.activeItems.length} дат):
                   </span>
                 </div>
                 <div className="max-h-40 space-y-1 overflow-y-auto pr-1">
@@ -1811,7 +1763,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                       style={{ backgroundColor: "var(--bg-surface)" }}
                     >
                       <span>
-                        {item.localDate}: {formatProposedItemSummaryUk(item)}
+                        {formatDate(item.localDate)}: {formatProposedItemSummaryUk(item)}
                       </span>
                       {item.hasConflictWarning && (
                         <span style={{ color: "var(--color-brand-text)" }}>
@@ -1825,16 +1777,17 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
             ) : null}
 
             {periodPreviewState.preview?.requiresConflictConfirmation && (
-              <label className="flex items-center gap-2 pt-1 font-medium cursor-pointer">
-                <BooleanControl
-                  type="checkbox"
-                  checked={periodConfirmConflicts}
-                  onChange={(e) => setPeriodConfirmConflicts(e.target.checked)}
-                  className="h-4 w-4 accent-[#B93E4B]"
-                  data-testid="period-confirm-conflicts-checkbox"
-                />
-                <span>Я підтверджую свідоме створення змін попри перетини</span>
-              </label>
+              <Row
+                title="Я підтверджую свідоме створення змін попри перетини"
+                trailing={
+                  <Toggle
+                    label="Я підтверджую свідоме створення змін попри перетини"
+                    checked={periodConfirmConflicts}
+                    onChange={setPeriodConfirmConflicts}
+                    testId="period-confirm-conflicts-checkbox"
+                  />
+                }
+              />
             )}
           </div>
 
@@ -1863,9 +1816,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
       <Sheet
         isOpen={isTextParserModalOpen}
         title="Детерміноване текстове внесення графіка"
-        subtitle={`Цільовий місяць: ${monthGrid.monthHeadingUk} (${activeYear}-${String(
-          activeMonth,
-        ).padStart(2, "0")}) • Часовий пояс: ${displayZone}`}
+        subtitle={`Цільовий місяць: ${monthGrid.monthHeadingUk}`}
         isDirty={rawRosterText.trim().length > 0}
         onClose={() => {
           setIsTextParserModalOpen(false);
@@ -2021,7 +1972,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                               className="font-semibold"
                               style={{ color: "var(--text-primary)" }}
                             >
-                              {row.localDate}:{" "}
+                              {row.localDate ? formatDate(row.localDate) : ""}:{" "}
                               {formatProposedItemSummaryUk(row)}
                             </span>
                           ) : (
@@ -2034,22 +1985,21 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                           )}
                         </div>
 
-                        <label className="flex items-center gap-1.5 text-[11px] cursor-pointer">
-                          <BooleanControl
-                            type="checkbox"
+                        <div className="flex items-center gap-1.5 text-[11px]">
+                          <Toggle
+                            label="Пропустити рядок"
                             checked={isExcluded}
-                            onChange={(e) => {
-                              const checked = e.target.checked;
+                            onChange={(checked) => {
                               setExcludedLineNumbers((prev) =>
                                 checked
                                   ? [...prev, lineNum]
                                   : prev.filter((n) => n !== lineNum),
                               );
                             }}
-                            data-testid={`text-parser-exclude-row-${lineNum}`}
+                            testId={`text-parser-exclude-row-${lineNum}`}
                           />
                           <span>Пропустити рядок</span>
-                        </label>
+                        </div>
                       </div>
 
                       {row.isAutoNextDaySuggested && (
@@ -2098,20 +2048,17 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
               </div>
 
               {textParserPreview.requiresConflictConfirmation && (
-                <label className="flex items-center gap-2 pt-1 font-medium cursor-pointer">
-                  <BooleanControl
-                    type="checkbox"
-                    checked={parserConfirmConflicts}
-                    onChange={(e) =>
-                      setParserConfirmConflicts(e.target.checked)
-                    }
-                    className="h-4 w-4 accent-[#B93E4B]"
-                    data-testid="text-parser-confirm-conflicts-checkbox"
-                  />
-                  <span>
-                    Я підтверджую свідоме збереження попри перетини в розкладі
-                  </span>
-                </label>
+                <Row
+                  title="Я підтверджую свідоме збереження попри перетини в розкладі"
+                  trailing={
+                    <Toggle
+                      label="Я підтверджую свідоме збереження попри перетини в розкладі"
+                      checked={parserConfirmConflicts}
+                      onChange={setParserConfirmConflicts}
+                      testId="text-parser-confirm-conflicts-checkbox"
+                    />
+                  }
+                />
               )}
             </div>
           )}

@@ -77,7 +77,7 @@ export interface HabitsWorkspaceViewProps {
 export function HabitsWorkspaceView({
   selectedDate,
   events = [],
-  zone = "Europe/Kyiv",
+  zone = "",
   onHistoryChange,
   nightShiftAlternative = false,
   actualTodayDate,
@@ -441,9 +441,12 @@ export function HabitsWorkspaceView({
                 {
                   "--habit-hue":
                     presentation[habit.id]?.hue ??
-                    ["#79cfcc", "#a6b4ff", "#8ed4a6", "#e4b86d"][
-                      habits.findIndex((h) => h.id === habit.id) % 4
-                    ],
+                    [
+                      "var(--hue-english)",
+                      "var(--hue-university)",
+                      "var(--hue-relationships)",
+                      "var(--hue-work)",
+                    ][habits.findIndex((h) => h.id === habit.id) % 4],
                 } as React.CSSProperties
               }
               className="habit-row"

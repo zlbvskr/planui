@@ -584,7 +584,11 @@ export function applyThemeAndAccessibilityToDocument(
 
   const metaTheme = document.getElementById('planui-theme-color');
   if (metaTheme) {
-    metaTheme.setAttribute('content', effective === 'dark' ? '#000000' : '#F5F5F7');
+    const bgCanvas =
+      typeof window.getComputedStyle === 'function'
+        ? window.getComputedStyle(root).getPropertyValue('--bg-canvas').trim()
+        : '';
+    metaTheme.setAttribute('content', bgCanvas);
   }
 
   try {

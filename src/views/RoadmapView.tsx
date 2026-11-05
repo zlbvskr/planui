@@ -32,7 +32,7 @@ import {
 } from "../domain/roadmap";
 import { addDaysToLocalDate } from "../domain/temporal";
 import { PlanuiRepositories } from "../storage/repositories";
-import { Button, Card, InputField } from "../components/ui/primitives";
+import { Button, InputField } from "../components/ui/primitives";
 
 const stateLabels: Record<PlanningEntityState, string> = {
   active: "Активні",

@@ -1,13 +1,12 @@
 import {Section, Row, Slider, DateField, DurationField, Sheet, Toggle, Disclosure, ActionMenu, InfoSheet} from '../ui';
 import { formatDate, formatInstant, formatDuration } from '../lib/format';
 import { StateHistoryChart } from '../components/today/StateHistoryChart';
-import type { CalendarEvent } from '../domain/types';
-import { OptionalSlider } from '../components/ui/OptionalSlider';
+import type { CalendarEvent, PersonalRecord, Scale1To5 } from '../domain/types';
 import React, { useState } from 'react';
-import type { PersonalRecord, Scale1To5 } from '../domain/types';
-import { STATE_SCALE_V1, isCheckIn, downloadPersonalRecordsCsv, printPersonalRecords, downloadPersonalRecords } from '../domain/stateCheckIns';
+import { isCheckIn, downloadPersonalRecordsCsv, printPersonalRecords, downloadPersonalRecords } from '../domain/stateCheckIns';
 import type { PlanuiRepositories } from '../storage/repositories';
-import { Button, Card, InputField, SelectField } from '../components/ui/primitives';
+import { Button } from '../components/ui/primitives';
+
 export function StateCheckInsView({ records, events = [], today, zone, enabled, repositories, onChanged }: { records: PersonalRecord[]; events?: CalendarEvent[]; today: string; zone: string; enabled: boolean; repositories: PlanuiRepositories; onChanged: () => Promise<unknown> }) {
   const [archive, setArchive] = useState(false), [editing, setEditing] = useState<PersonalRecord | null>(null);
   const [date, setDate] = useState(today), [mood, setMood] = useState(''), [energy, setEnergy] = useState(''), [stress, setStress] = useState(''), [sleep, setSleep] = useState(''), [quality, setQuality] = useState('');
@@ -16,7 +15,6 @@ export function StateCheckInsView({ records, events = [], today, zone, enabled, 
   const [selected, setSelected] = useState<string[]>([]), [error, setError] = useState('');
   const reset = () => { setEditing(null); setMood(''); setEnergy(''); setStress(''); setSleep(''); setQuality(''); setDate(today); };
   const scale = (s: string) => s === '' ? null : Number(s) as Scale1To5;
-  const options = (labels: Record<number, string>) => [{ value: '', label: 'Не вказано' }, ...Object.entries(labels).map(([value, label]) => ({value, label}))];
   const save = async (e: React.FormEvent) => { e.preventDefault(); setError(''); try {
     const now = new Date().toISOString();
     await repositories.savePersonalRecord({ ...(editing ?? { id: crypto.randomUUID(), recordedAt: now, zoneId: zone, text: null, tags: [], createdAt: now, revision: 1 }), localDate: date, mood: scale(mood), energy: scale(energy), stress: scale(stress), sleepMinutes: sleep === '' ? null : Number(sleep), sleepQuality: scale(quality), scaleVersion: 1, updatedAt: now }, editing?.revision);
@@ -37,13 +35,12 @@ export function StateCheckInsView({ records, events = [], today, zone, enabled, 
     <Section><Disclosure title={archive?'Історія стану':'Архів щоденника'} onClick={()=>setArchive(!archive)}/></Section>
     <Section>{[...records].filter(r=>archive?Boolean(r.text):isCheckIn(r)).sort((a,b)=>b.localDate.localeCompare(a.localDate)||b.recordedAt.localeCompare(a.recordedAt)).map(r=><Disclosure key={r.id} title={formatDate(r.localDate)} secondary={r.text?'Нотатка':[['Настрій',r.mood],['Енергія',r.energy],['Напруга',r.stress]].filter(([,v])=>v!=null).map(([k,v])=>`${k} ${v}`).join(' · ')} onClick={()=>setRecordOpen(r.id)}/>)}</Section>
     <Sheet isOpen={recordOpen!==null} title="Відмітка" onClose={()=>setRecordOpen(null)}>
-    {[...records].filter(r => r.id===recordOpen).sort((a,b) => b.localDate.localeCompare(a.localDate) || b.recordedAt.localeCompare(a.recordedAt)).map(r => <Card key={r.id} title={`${formatDate(r.localDate,{dateStyle:'long'})} · ${formatInstant(r.recordedAt,r.zoneId,{timeStyle:'short'})}`}>
-
+    {[...records].filter(r => r.id===recordOpen).sort((a,b) => b.localDate.localeCompare(a.localDate) || b.recordedAt.localeCompare(a.recordedAt)).map(r => <Section key={r.id} title={`${formatDate(r.localDate,{dateStyle:'long'})} · ${formatInstant(r.recordedAt,r.zoneId,{timeStyle:'short'})}`}><div className="p-4 space-y-3">
       {r.text && <><p className="whitespace-pre-wrap">{r.text}</p><Button onClick={async () => { try { await navigator.clipboard.writeText(r.text!); } catch { setError('Копіювання недоступне. Виділіть текст вручну.'); } }}>Копіювати текст</Button></>}
       <p>{[['Настрій',r.mood],['Енергія',r.energy],['Напруга',r.stress],['Сон',r.sleepMinutes==null?null:formatDuration(r.sleepMinutes)],['Якість сну',r.sleepQuality]].filter(([,v]) => v != null).map(([k,v]) => `${k}: ${v}`).join(' · ')}</p>
       {!archive && <Button onClick={() => { setRecordOpen(null); setEditing(r); setDate(r.localDate); setMood(r.mood == null ? '' : String(r.mood)); setEnergy(r.energy == null ? '' : String(r.energy)); setStress(r.stress == null ? '' : String(r.stress)); setSleep(r.sleepMinutes == null ? '' : String(r.sleepMinutes)); setQuality(r.sleepQuality == null ? '' : String(r.sleepQuality)); }}>Редагувати</Button>}
       <Button onClick={async () => { if (!window.confirm('Остаточно видалити цей запис разом із текстом та оцінками?')) return; try { await repositories.deletePersonalRecordTransactionally(r.id); if (editing?.id === r.id) reset(); await onChanged(); } catch { setError('Не вдалося видалити запис. Оновіть дані та повторіть.'); } }}>Видалити</Button>
-    </Card>)}
+    </div></Section>)}
     </Sheet>
   </div>;
 }

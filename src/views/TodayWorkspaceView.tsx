@@ -1,7 +1,7 @@
 import {minimumDayTasks} from '../components/today/minimumDayPresentation';
 import {DeferredTasks} from '../components/today/DeferredTasks';
 import { DateField, Row, Section } from '../ui';
-import { formatSubtitle, formatDuration, formatTimeRange } from "../lib/format";
+import { formatDate, formatSubtitle, formatDuration, formatTimeRange } from "../lib/format";
 import { evaluateHabitOnDate } from "../domain/habits";
 import { DayCanvas } from "../components/today/DayCanvas";
 import { Leaf } from "lucide-react";
@@ -10,7 +10,6 @@ import {
   ActionMenu,
   RoundButton,
   WeekStrip,
-  Pill,
   Segmented,
 } from "../components/ui/design";
 import { selectTaskReviewState } from "../domain/projections";
@@ -37,10 +36,7 @@ import {
   Task,
   TaskReservation,
 } from "../domain/types";
-import {
-  addDaysToLocalDate,
-  formatUkrainianDateHeading,
-} from "../domain/temporal";
+import { addDaysToLocalDate } from "../domain/temporal";
 import {
   UnoccupiedTimeGap,
   projectScheduleForDate,
@@ -51,7 +47,7 @@ import {
 } from "../storage/repositories";
 import { ImplementedCreationActionKind } from "../state/shellStore";
 import { UK_STRINGS } from "../i18n/uk";
-import { Button, Card } from "../components/ui/primitives";
+import { Button } from "../components/ui/primitives";
 
 export interface TodayWorkspaceViewProps {
   habitHistory?: boolean;
@@ -318,7 +314,7 @@ export function TodayWorkspaceView({
         )}
       /></div>
 
-      {effectiveMode!=='habits'&&!triageDismissed&&triageTasks.length>0&&<div data-ui="content-start"><Section><Row title="Переглянути попередні плани" trailing={<><Button onClick={()=>{setTriageIndex(0);setReviewOpen(true);}}>Переглянути</Button><RoundButton aria-label="Приховати пропозицію" onClick={()=>setTriageDismissed(true)}>×</RoundButton></>}/></Section></div>}
+      {effectiveMode!=='habits'&&!triageDismissed&&triageTasks.length>0&&<div data-ui="content-start"><Section><Row title={<button type="button" className="text-left w-full" onClick={()=>{setTriageIndex(0);setReviewOpen(true);}}>Переглянути попередні плани</button>} trailing={<RoundButton aria-label="Приховати пропозицію" onClick={()=>setTriageDismissed(true)}>×</RoundButton>}/></Section></div>}
       <Sheet title="Попередні плани" isOpen={reviewOpen} onClose={()=>setReviewOpen(false)}>
         {triageTask?<div className="space-y-4"><div className="review-dots" role="group" aria-label={`${triageIndex+1} з ${triageTasks.length}`}>{triageTasks.map((task,i)=><span key={task.id} data-active={i===triageIndex}/>)}<small>{triageIndex+1} з {triageTasks.length}</small></div><h2>{triageTask.title}</h2><p>{triageTask.estimatedDurationMinutes?formatDuration(triageTask.estimatedDurationMinutes):"Без оцінки тривалості"}</p><div className="flex flex-wrap gap-2">{['Перенести','Зменшити обсяг','Розділити','Поставити на паузу','Відмовитися'].map(action=><button type="button" className="ui-pill" key={action} onClick={()=>action==='Перенести'?setRescheduleOpen(!rescheduleOpen):setPlanningTask({task:triageTask,reviewAction:action})}>{action}</button>)}</div>{rescheduleOpen&&<Section>{['Сьогодні ввечері','Завтра'].map(label=><Row key={label} title={label} trailing={<Button onClick={()=>{setRescheduleOpen(false);setPlanningTask({task:triageTask,reviewAction:'Перенести',initialDate:label==='Завтра'?addDaysToLocalDate(actualTodayDate,1):actualTodayDate,initialTime:label==='Сьогодні ввечері'?'18:00':undefined});}}>Обрати</Button>}/>)}<DateField label="Інша дата" value={triageDate} onChange={e=>{setTriageDate(e.target.value);setPlanningTask({task:triageTask,reviewAction:'Перенести',initialDate:e.target.value});}}/></Section>}<button type="button" className="triage-keep" onClick={()=>{setRescheduleOpen(false);if(triageIndex+1<triageTasks.length)setTriageIndex(triageIndex+1);else setReviewOpen(false);}}>Залишити як є</button></div>:<p>Усе переглянуто</p>}
       </Sheet>
@@ -365,7 +361,7 @@ export function TodayWorkspaceView({
         >
           <span className="text-[13px] font-medium">
             {UK_STRINGS.destinations.today.midnightRolloverNotice(
-              formatUkrainianDateHeading(midnightRolloverDate),
+              formatDate(midnightRolloverDate),
             )}
           </span>
           <div className="flex items-center gap-2">

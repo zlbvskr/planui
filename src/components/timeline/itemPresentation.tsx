@@ -18,7 +18,13 @@ export function directionFor(
   );
   return {
     name: folders.find((f) => f.id === folderId)?.name ?? "Без напряму",
-    hue: ["#79cfcc", "#e898b1", "#a6b4ff", "#8ed4a6", "#e4b86d"][index % 5],
+    hue: [
+      "var(--hue-english)",
+      "var(--hue-creative)",
+      "var(--hue-university)",
+      "var(--hue-relationships)",
+      "var(--hue-work)",
+    ][index % 5],
   };
 }
 export const effortDots = (effort: Task["effort"]) =>

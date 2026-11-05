@@ -26,6 +26,7 @@ export function PlanDetail({
   tasks,
   reservations,
   repositories,
+  zone = "",
   onChanged,
   onTask,
   onAdd,
@@ -35,6 +36,7 @@ export function PlanDetail({
   tasks: Task[];
   reservations: TaskReservation[];
   repositories: PlanuiRepositories;
+  zone?: string;
   onChanged: () => Promise<void>;
   onTask: (t: Task) => void;
   onAdd: () => void;
@@ -176,7 +178,10 @@ export function PlanDetail({
                     {t.deadline?.kind === "date_only"
                       ? formatDayMonth(t.deadline.localDate)
                       : t.deadline?.kind === "exact_instant"
-                        ? formatInstant(t.deadline.instant, "Europe/Kyiv")
+                        ? formatInstant(
+                            t.deadline.instant,
+                            t.deadline.zoneId || zone,
+                          )
                         : ""}
                   </span>
                 }

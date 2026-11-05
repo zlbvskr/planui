@@ -142,10 +142,10 @@ const TimelineItem = memo(function TimelineItem({
   const hue = task
     ? dir.hue
     : ev?.type === "work_shift"
-      ? "#e4b86d"
+      ? "var(--hue-work)"
       : ev?.type === "sleep"
-        ? "#8aabdb"
-        : "#8ed4a6";
+        ? "var(--color-personal)"
+        : "var(--hue-relationships)";
   const inspect = () => {
     const current = shared.current;
     if (task) current.onInspectTask?.(task, item.sourceId);

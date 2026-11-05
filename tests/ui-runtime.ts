@@ -28,8 +28,11 @@ export async function installUiFixture(page:Page,variant:UiFixtureVariant,theme:
     source=source.replace(needle,'return globalThis.__planuiUiFixtureEngine ??= new InMemoryTransactionalEngine("planui-ui-fixture");');
     await route.fulfill({body:source,contentType:'application/javascript'});
   });
+  await page.route(/\/src\/ui-fixture-app\.tsx(?:\?.*)?$/,async route=>{
+    await route.fulfill({contentType:'application/javascript',body:`import React from '/node_modules/.vite/deps/react.js';import App from '/src/App.tsx';import {HabitPresentationContext} from '/src/components/habits/presentation.ts';import {createUiFixture} from '/src/test/ui-fixture.ts';const fixture=createUiFixture(${JSON.stringify(variant)},${JSON.stringify(theme)});const value=Object.fromEntries(Object.entries(fixture.habitDurationMinutes).map(([id,durationMinutes])=>[id,{durationMinutes}]));export default function FixtureApp(){return React.createElement(HabitPresentationContext.Provider,{value},React.createElement(App));}`});
+  });
   await page.route(/\/src\/main\.tsx(?:\?.*)?$/,async route=>{
-    const source=await (await route.fetch()).text();
+    const source=(await (await route.fetch()).text()).replace(/(['"])\/src\/App\.tsx\1/g,'$1/src/ui-fixture-app.tsx$1');
     await route.fulfill({contentType:'application/javascript',body:`import {createStorageEngine} from '/src/storage/db.ts';\nimport {seedUiFixture} from '/src/test/ui-fixture.ts';\nawait seedUiFixture(createStorageEngine(),${JSON.stringify(variant)},${JSON.stringify(theme)});\n`+source});
   });
 }

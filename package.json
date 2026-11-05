@@ -16,7 +16,8 @@
     "test:ui-hygiene": "node --import tsx tests/ui-hygiene.spec.ts",
     "test:ui-primitives": "node --import tsx tests/ui-primitives.spec.ts",
     "test:stage1": "UI_FUNCTIONAL_ONLY=1 node --import tsx tests/stage1.spec.ts",
-    "test:stage1-perf": "node tests/run-stage1-perf.mjs"
+    "test:stage1-perf": "node tests/run-stage1-perf.mjs",
+    "test:stage2": "node --import tsx tests/stage2.spec.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

@@ -12,6 +12,7 @@ export const ROUTES = [
   {id:'quick-habit',path:'/#/today',mode:'Звички',overlay:'habit'},
   {id:'triage',path:'/#/today',mode:'Завдання',overlay:'triage'},
   {id:'weekly',path:'/#/today',mode:'Завдання',overlay:'weekly'},
+  ...([1,2,3] as const).map(step=>({id:`weekly-step-${step+1}`,path:'/#/today',mode:'Завдання',overlay:'weekly',step} as const)),
 ] as const;
 type Finding={rule:string;target:string;detail:string};
 
@@ -69,8 +70,8 @@ export async function runUiHygiene() {
         }
         if('overlay' in route) {
           if(route.overlay==='triage') { await page.getByRole('button',{name:'Інші дії дня',exact:true}).click(); await page.getByRole('menuitem',{name:'Переглянути попередні плани',exact:true}).click(); }
-          else if(route.overlay==='weekly') { await page.goto(runtime.url+'/#/life_areas'); await page.getByRole('button',{name:'Щотижневий огляд · 4 кроки',exact:true}).click(); }
-          else { await page.getByRole('button',{name:'Створити новий запис у поточному розділі',exact:true}).last().click(); if(route.overlay!=='task')await page.getByRole('radio',{name:route.overlay==='event'?'Подія':'Звичка',exact:true}).click(); }
+          else if(route.overlay==='weekly') { await page.goto(runtime.url+'/#/life_areas'); await page.getByRole('button',{name:'Щотижневий огляд · 4 кроки',exact:true}).click(); if('step' in route)for(let step=0;step<route.step;step++)await page.getByRole('dialog').getByRole('button',{name:'Далі',exact:true}).click(); }
+          else { await page.getByRole('button',{name:'Створити новий запис у поточному розділі',exact:true}).last().click(); if(route.overlay!=='task')await page.getByRole('button',{name:route.overlay==='event'?'Подія':'Звичка',exact:true}).click(); }
           await page.waitForTimeout(100);
         }
         const findings=await page.evaluate(inspectUiHygiene);
@@ -87,7 +88,7 @@ export async function runUiHygiene() {
         const counts:Record<string,number>={};for(const finding of findings)counts[finding.rule]=(counts[finding.rule]??0)+1;
         records.push({route:route.id,theme,variant,total:findings.length,counts,findings});
         console.log(`${route.id} ${theme} ${variant}: ${findings.length}`);
-        await page.screenshot({path:`${runtime.out}/${route.id}-${theme}-${variant}.png`,animations:'disabled'});
+        if(process.env.UI_SCREENSHOTS!=='0')await page.screenshot({path:`${runtime.out}/${route.id}-${theme}-${variant}.png`,animations:'disabled'});
       }catch(error){records.push({route:route.id,theme,variant,total:1,counts:{harness:1},findings:[{rule:'harness',target:'page',detail:String(error)}]});}
       finally{await context.close();}
     }

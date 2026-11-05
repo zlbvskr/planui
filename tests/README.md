@@ -1,0 +1,14 @@
+# UI contract checks
+`npm run test:ui-hygiene` runs a standalone Playwright WebKit spec at 390×844: Today Day/Tasks/Habits × dark/light × filled/empty. It exits nonzero for baseline violations; do not bless them or suppress the rules. Extend `ROUTES` in later stages.
+
+Install the existing Playwright package's WebKit browser/runtime outside the repository (`npx playwright install webkit`); set `PLAYWRIGHT_BROWSERS_PATH` if needed. Axe is an external audit tool, not an application or project dependency. Supply axe-core **4.14.0**'s `axe.min.js` through `UI_AXE_PATH`; the runner verifies SHA-256 `20c09fe157a8a34a30e241aaa1fcdade657734f08ab379ecfbeb7d45cc46e878` before execution. For example, install it with `npm install --prefix /tmp/planui-a11y axe-core@4.14.0` and set `UI_AXE_PATH=/tmp/planui-a11y/node_modules/axe-core/axe.min.js`.
+
+The runner starts Vite on 127.0.0.1:3030 with HMR disabled and stops it afterward. `UI_TEST_URL` can select an already-running dev server. `UI_ARTIFACT_DIR` defaults to `/tmp/planui-stage-0`; screenshots and JSON/Markdown findings remain outside the repository.
+
+The clock is paused at 2026-11-05 05:41 Europe/Kyiv. `src/test/ui-fixture.ts` contains typed filled/empty data; it accepts only a memory engine. Module interception replaces the storage factory for this browser context, and IndexedDB.open throws if any code attempts persistent access. No fixture flag, route or import is added to production; no fixture data is written to application storage. Contexts are disposable.
+
+Presentation-only metadata (direction hues and habit duration estimates) lives beside the fixture because these fields are not present in the persisted model. Do not extend the schema for screenshots. The image fixture is a tiny local PNG with matching media metadata and SHA-256. `npm test` validates the fixture through the canonical snapshot validator and verifies persistent-engine rejection.
+
+`npm run test:ui-primitives` exercises overlay values, switch/slider state, menu keyboard focus, DurationField save and Sheet/InfoSheet dismissal in WebKit. `npm test` includes formatter, fixture and primitive server-rendered contract tests. Production build validation also checks that fixture text is absent from the compiled graph.
+
+The browser evaluator defines the identity `__name` helper used by tsx serialization; this is harness-only. Hygiene rule self-tests cover forbidden text/controls, overflow, nesting, target size and long text, and ignore a visually clipped skip link.

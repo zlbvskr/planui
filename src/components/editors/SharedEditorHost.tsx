@@ -1,3 +1,4 @@
+import { formatDuration, formatDate } from '../../lib/format';
 import { PillMenu as SelectField } from '../ui/design';
 import { WishExtrasFields, emptyWishExtras, resolveWishExtras } from '../wishlist/WishExtrasFields';
 import React, { useEffect, useMemo, useState } from 'react';
@@ -1319,8 +1320,8 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
         </div>
 
         {globalQuickAdd && selectedAction === 'task' && <div className="quick-options">
-          <button type="button" className="ui-pill" aria-expanded={quickPanel==='date'} onClick={()=>setQuickPanel(quickPanel==='date'?null:'date')}>Дата й час{editableContext.targetDate ? ` · ${new Intl.DateTimeFormat('uk-UA',{day:'numeric',month:'short',timeZone:'UTC'}).format(new Date(editableContext.targetDate+'T12:00:00Z'))}` : ''}</button>
-          <button type="button" className="ui-pill" aria-expanded={quickPanel==='duration'} onClick={()=>setQuickPanel(quickPanel==='duration'?null:'duration')}>Тривалість{taskEstimate ? ` · ${taskEstimate} хв` : ''}</button>
+          <button type="button" className="ui-pill" aria-expanded={quickPanel==='date'} onClick={()=>setQuickPanel(quickPanel==='date'?null:'date')}>Дата й час{editableContext.targetDate ? ` · ${formatDate(editableContext.targetDate,{day:'numeric',month:'short'})}` : ''}</button>
+          <button type="button" className="ui-pill" aria-expanded={quickPanel==='duration'} onClick={()=>setQuickPanel(quickPanel==='duration'?null:'duration')}>Тривалість{taskEstimate ? ` · ${formatDuration(Number(taskEstimate))}` : ''}</button>
           <SelectField label="Зусилля" value={taskEffort??''} onChange={e=>setTaskEffort((e.target.value||null) as Task['effort'])} options={[{value:'',label:'Без оцінки'},{value:'small',label:'•'},{value:'medium',label:'••'},{value:'large',label:'•••'}]} />
           <button type="button" className="ui-pill" aria-expanded={quickPanel==='direction'} onClick={()=>setQuickPanel(quickPanel==='direction'?null:'direction')}>Напрям{editableContext.folderId ? ` · ${folders.find(f=>f.id===editableContext.folderId)?.name??''}` : ''}</button>
           <SelectField label="Сфера" value={taskLifeArea} onChange={e=>setTaskLifeArea(e.target.value)} options={[{value:'',label:'Успадкувати'},...lifeAreaQuestions.filter(a=>!a.archived&&!a.mergedIntoId).map(a=>({value:a.id,label:a.questionTextUk}))]} />

@@ -1,3 +1,4 @@
+import { formatDate, formatMonthYear, formatDateRange, formatTimeRange } from '../lib/format';
 import { PlanuiError } from '../i18n/errorsUk';
 import {
   EventTemporalSchedule,
@@ -1063,17 +1064,7 @@ export function todayLocalDateInZone(
 }
 
 export function formatUkrainianDateHeading(localDate: LocalDateString): string {
-  const parts = parseLocalDateParts(localDate);
-  if (!parts) return localDate;
-  const utc = new Date(
-    Date.UTC(parts.year, parts.month - 1, parts.day, 12, 0, 0)
-  );
-  return new Intl.DateTimeFormat('uk-UA', {
-    timeZone: 'UTC',
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-  }).format(utc);
+  return formatDate(localDate);
 }
 
 export function formatUkrainianTimeRange(
@@ -1081,9 +1072,7 @@ export function formatUkrainianTimeRange(
   endLocalTime: LocalTimeString,
   isOvernight: boolean = false
 ): string {
-  return isOvernight
-    ? `${startLocalTime}–${endLocalTime} (+1 д.)`
-    : `${startLocalTime}–${endLocalTime}`;
+  return formatTimeRange(startLocalTime, endLocalTime, isOvernight);
 }
 
 // ============================================================================
@@ -1256,69 +1245,18 @@ export function buildMonthGridDates(
 export function formatUkrainianMonthYearHeading(
   localDate: LocalDateString
 ): string {
-  const parts = parseLocalDateParts(localDate);
-  if (!parts) return localDate;
-  const utc = new Date(Date.UTC(parts.year, parts.month - 1, 15, 12, 0, 0));
-  const raw = new Intl.DateTimeFormat('uk-UA', {
-    timeZone: 'UTC',
-    month: 'long',
-    year: 'numeric',
-  }).format(utc);
-  return raw.charAt(0).toUpperCase() + raw.slice(1);
+  return formatMonthYear(localDate);
 }
 
 export function formatUkrainianWeekRangeHeading(
   referenceDate: LocalDateString
 ): string {
-  const weekDates = buildWeekDates(referenceDate);
-  const first = parseLocalDateParts(weekDates[0]);
-  const last = parseLocalDateParts(weekDates[6]);
-  if (!first || !last) return referenceDate;
-
-  const firstUtc = new Date(
-    Date.UTC(first.year, first.month - 1, first.day, 12, 0, 0)
-  );
-  const lastUtc = new Date(
-    Date.UTC(last.year, last.month - 1, last.day, 12, 0, 0)
-  );
-
-  if (first.year === last.year && first.month === last.month) {
-    const monthYear = new Intl.DateTimeFormat('uk-UA', {
-      timeZone: 'UTC',
-      month: 'long',
-      year: 'numeric',
-    }).format(lastUtc);
-    return `${first.day}–${last.day} ${monthYear}`;
-  }
-
-  const firstFmt = new Intl.DateTimeFormat('uk-UA', {
-    timeZone: 'UTC',
-    day: 'numeric',
-    month: 'short',
-    ...(first.year !== last.year ? { year: 'numeric' } : {}),
-  }).format(firstUtc);
-  const lastFmt = new Intl.DateTimeFormat('uk-UA', {
-    timeZone: 'UTC',
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  }).format(lastUtc);
-
-  return `${firstFmt} – ${lastFmt}`;
+  const dates = buildWeekDates(referenceDate); return formatDateRange(dates[0], dates[6], true);
 }
 
 export function formatUkrainianShortDayMonth(
   localDate: LocalDateString
 ): string {
-  const parts = parseLocalDateParts(localDate);
-  if (!parts) return localDate;
-  const utc = new Date(
-    Date.UTC(parts.year, parts.month - 1, parts.day, 12, 0, 0)
-  );
-  return new Intl.DateTimeFormat('uk-UA', {
-    timeZone: 'UTC',
-    day: 'numeric',
-    month: 'short',
-  }).format(utc);
+  return formatDate(localDate, {day:'numeric',month:'short'});
 }
 

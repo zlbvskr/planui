@@ -1,3 +1,4 @@
+import { formatDuration } from '../../lib/format';
 import React, { useMemo, useState } from 'react';
 import { Clock, Layers, Plus, Trash2 } from 'lucide-react';
 import {
@@ -602,7 +603,7 @@ export function SharedDayTimeline({
                           >
                             <span>
                               Частка на добу:{' '}
-                              {item.segment.elapsedDurationMinutes} хв
+                              {formatDuration(item.segment.elapsedDurationMinutes)}
                             </span>
                             <span>· {pos.statusBadgeUk}</span>
                             {pos.hasConflict && (
@@ -771,7 +772,7 @@ export function SharedDayTimeline({
                   {UK_STRINGS.scheduling.occupiedTotalLabel}
                 </div>
                 <div className="font-semibold mt-0.5 tabular-nums">
-                  {effectiveProjection.availability.totalOccupiedMinutes} хв
+                  {formatDuration(effectiveProjection.availability.totalOccupiedMinutes)}
                 </div>
               </div>
 
@@ -787,7 +788,7 @@ export function SharedDayTimeline({
                   {UK_STRINGS.scheduling.unoccupiedTotalLabel}
                 </div>
                 <div className="font-semibold mt-0.5 tabular-nums">
-                  {effectiveProjection.availability.totalUnoccupiedMinutes} хв
+                  {formatDuration(effectiveProjection.availability.totalUnoccupiedMinutes)}
                 </div>
               </div>
 
@@ -857,7 +858,7 @@ export function SharedDayTimeline({
                         onClick={() => onOpenGapPicker(gap)}
                         data-testid={`${testIdPrefix}-gap-pill-${idx}`}
                         aria-label={UK_STRINGS.timeline.planInGapAria(
-                          `${gap.startLocalTime}–${gap.endLocalTime} (${gap.durationMinutes} хв)`
+                          `${gap.startLocalTime}–${gap.endLocalTime} (${formatDuration(gap.durationMinutes)})`
                         )}
                         className="min-h-[44px] px-3 py-1.5 rounded-xl text-[12px] font-medium flex items-center gap-1.5 cursor-pointer transition-colors"
                         style={{
@@ -868,7 +869,7 @@ export function SharedDayTimeline({
                       >
                         <span className="font-mono tabular-nums">
                           {gap.startLocalTime} – {gap.endLocalTime} (
-                          {gap.durationMinutes} хв)
+                          {formatDuration(gap.durationMinutes)})
                         </span>
                         <span
                           className="text-[11px] font-semibold"
@@ -934,7 +935,7 @@ export function SharedDayTimeline({
                       style={{ color: 'var(--text-secondary)' }}
                     >
                       {pos.statusBadgeUk} ·{' '}
-                      {item.segment.elapsedDurationMinutes} хв
+                      {formatDuration(item.segment.elapsedDurationMinutes)}
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5">

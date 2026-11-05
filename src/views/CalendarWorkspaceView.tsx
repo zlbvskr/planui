@@ -1,3 +1,4 @@
+import { formatDuration } from '../lib/format';
 import { TopBar, Pill, Segmented, EmptyState } from '../components/ui/design';
 import {
   Calendar as CalendarIcon,
@@ -343,7 +344,7 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
               <p
-                className="text-[11px] font-semibold uppercase tracking-wider"
+                className="text-[11px] font-semibold  tracking-wider"
                 style={{ color: 'var(--text-secondary)' }}
               >
                 {UK_STRINGS.destinations.calendar.selectedDateDetailsHeading}
@@ -586,7 +587,7 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
         {allDayItems.length > 0 && (
           <div className="space-y-2">
             <h4
-              className="text-xs font-semibold uppercase tracking-wide"
+              className="text-xs font-semibold  tracking-wide"
               style={{ color: 'var(--text-secondary)' }}
             >
               {UK_STRINGS.destinations.calendar.allDayEventsSection}
@@ -652,7 +653,7 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
         {/* Timed commitments (work shifts, personal/rest events, task reservations) */}
         <div className="space-y-2">
           <h4
-            className="text-xs font-semibold uppercase tracking-wide"
+            className="text-xs font-semibold  tracking-wide"
             style={{ color: 'var(--text-secondary)' }}
           >
             {UK_STRINGS.destinations.calendar.timedCommitmentsSection} (
@@ -840,7 +841,7 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
         {untimedTasks.length > 0 && (
           <div className="space-y-2">
             <h4
-              className="text-xs font-semibold uppercase tracking-wide"
+              className="text-xs font-semibold  tracking-wide"
               style={{ color: 'var(--text-secondary)' }}
             >
               □ {UK_STRINGS.destinations.calendar.untimedTasksSection} (
@@ -875,7 +876,7 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
                         className="ml-2 text-[11px]"
                         style={{ color: 'var(--text-secondary)' }}
                       >
-                        ({task.estimatedDurationMinutes} хв)
+                        ({formatDuration(task.estimatedDurationMinutes)})
                       </span>
                     )}
                   </div>
@@ -902,7 +903,7 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
         {availability.unoccupiedGaps.length > 0 && (
           <div className="space-y-2 pt-1">
             <h4
-              className="text-xs font-semibold uppercase tracking-wide"
+              className="text-xs font-semibold  tracking-wide"
               style={{ color: 'var(--text-secondary)' }}
             >
               {UK_STRINGS.destinations.calendar.unoccupiedGapsSection}
@@ -1321,7 +1322,7 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
                     >
                       <div className="flex w-full items-center justify-between">
                         <span
-                          className="text-xs font-bold uppercase"
+                          className="text-xs font-bold "
                           style={{ color: 'var(--text-secondary)' }}
                         >
                           {day.weekdayShortUk} {roadmapCount(day.localDate) > 0 && <span aria-label={`Дорожня карта: ${roadmapCount(day.localDate)} позначок`}>◇ {roadmapCount(day.localDate)}</span>}
@@ -1442,7 +1443,7 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
                         className="flex flex-wrap items-center gap-2 text-left"
                       >
                         <span
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-xl text-xs font-bold uppercase"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-xl text-xs font-bold "
                           style={
                             isSelected
                               ? {
@@ -1702,7 +1703,7 @@ export const CalendarWorkspaceView: React.FC<CalendarWorkspaceViewProps> = ({
           {selectedDayFiltered.filteredUntimedTasks.length > 0 && (
             <Card className="space-y-2">
               <h3
-                className="text-xs font-semibold uppercase tracking-wide"
+                className="text-xs font-semibold  tracking-wide"
                 style={{ color: 'var(--text-secondary)' }}
               >
                 □ {UK_STRINGS.destinations.calendar.untimedTasksSection} (

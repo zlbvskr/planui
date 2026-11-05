@@ -1,3 +1,4 @@
+import { formatMonthYear, formatDateRange } from '../lib/format';
 import {
   CalendarEvent,
   DayOffAnnotation,
@@ -2129,16 +2130,7 @@ export function projectMonthCalendarGrid(params: {
   const selectedCell =
     cells.find((c) => c.localDate === params.selectedDate) ?? cells[0];
 
-  const utcMonth = new Date(
-    Date.UTC(selectedParts.year, selectedParts.month - 1, 15, 12, 0, 0)
-  );
-  const rawHeading = new Intl.DateTimeFormat('uk-UA', {
-    timeZone: 'UTC',
-    month: 'long',
-    year: 'numeric',
-  }).format(utcMonth);
-  const monthHeadingUk =
-    rawHeading.charAt(0).toUpperCase() + rawHeading.slice(1);
+  const monthHeadingUk = formatMonthYear(params.selectedDate);
 
   return {
     referenceSelectedDate: params.selectedDate,
@@ -2287,41 +2279,7 @@ export function projectWeekCalendarOverview(params: {
     0
   );
 
-  // Format week range heading
-  const firstParts = parseLocalDateParts(weekDates[0])!;
-  const lastParts = parseLocalDateParts(weekDates[6])!;
-  const firstUtc = new Date(
-    Date.UTC(firstParts.year, firstParts.month - 1, firstParts.day, 12, 0, 0)
-  );
-  const lastUtc = new Date(
-    Date.UTC(lastParts.year, lastParts.month - 1, lastParts.day, 12, 0, 0)
-  );
-  let weekRangeHeadingUk: string;
-  if (
-    firstParts.year === lastParts.year &&
-    firstParts.month === lastParts.month
-  ) {
-    const monthYear = new Intl.DateTimeFormat('uk-UA', {
-      timeZone: 'UTC',
-      month: 'long',
-      year: 'numeric',
-    }).format(lastUtc);
-    weekRangeHeadingUk = `${firstParts.day}–${lastParts.day} ${monthYear}`;
-  } else {
-    const firstFmt = new Intl.DateTimeFormat('uk-UA', {
-      timeZone: 'UTC',
-      day: 'numeric',
-      month: 'short',
-      ...(firstParts.year !== lastParts.year ? { year: 'numeric' } : {}),
-    }).format(firstUtc);
-    const lastFmt = new Intl.DateTimeFormat('uk-UA', {
-      timeZone: 'UTC',
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    }).format(lastUtc);
-    weekRangeHeadingUk = `${firstFmt} – ${lastFmt}`;
-  }
+  const weekRangeHeadingUk = formatDateRange(weekDates[0], weekDates[6], true);
 
   return {
     referenceSelectedDate: params.selectedDate,

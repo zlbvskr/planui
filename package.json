@@ -12,7 +12,9 @@
     "check:dist": "node scripts/check-dist.mjs",
     "test": "node --import tsx scripts/run-tests.mjs",
     "test:pages": "node scripts/test-pages.mjs",
-    "test:regression": "node scripts/test-cleanup-regression.mjs"
+    "test:regression": "node scripts/test-cleanup-regression.mjs",
+    "test:ui-hygiene": "node --import tsx tests/ui-hygiene.spec.ts",
+    "test:ui-primitives": "node --import tsx tests/ui-primitives.spec.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

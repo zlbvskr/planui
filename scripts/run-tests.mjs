@@ -5,3 +5,6 @@ for (const file of (await readdir(dir)).filter(file => file.endsWith('.test.ts')
 }
 await import('./pwa-worker.test.mjs');
 await import('./zip-stream.test.mjs');
+await import('../src/lib/__tests__/format.test.ts');
+await import('../src/ui/__tests__/primitives.test.tsx');
+await import('../src/test/ui-fixture.test.ts');

@@ -485,7 +485,7 @@ export function App() {
 
           {/* DESTINATION 1: СЬОГОДНІ (Today — Stage 6 Workspace & Timeline) */}
           {activeDestination === 'today' && snapshot && (
-            <TodayWorkspaceView
+            <TodayWorkspaceView folders={folders}
               mode={todayCtx.mode ?? 'day'}
               hasInteraction={todayCtx.hasInteraction}
               savedScrollTop={todayCtx.scrollTop}

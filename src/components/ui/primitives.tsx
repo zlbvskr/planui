@@ -492,6 +492,7 @@ export interface ModalSheetProps {
   title: string;
   subtitle?: string;
   transitionName?: string;
+  quickAdd?: boolean;
   isDirty?: boolean;
   onClose: () => void;
   children: React.ReactNode;
@@ -502,10 +503,19 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
   title,
   subtitle,
   transitionName,
+  quickAdd = false,
   isDirty = false,
   onClose,
   children,
 }) => {
+  const [viewport, setViewport] = useState({height: 0, bottom: 0});
+  const dragStart = useRef<number | null>(null);
+  useEffect(() => {
+    if (!isOpen || !quickAdd) return;
+    const update = () => { const v=window.visualViewport; if(v)setViewport({height:v.height,bottom:Math.max(0,window.innerHeight-v.height-v.offsetTop)}); };
+    update(); window.visualViewport?.addEventListener('resize',update);window.visualViewport?.addEventListener('scroll',update);
+    return()=>{window.visualViewport?.removeEventListener('resize',update);window.visualViewport?.removeEventListener('scroll',update);};
+  }, [isOpen,quickAdd]);
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
@@ -585,7 +595,7 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
   const modalContent = (
     <div
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
-      style={{ backgroundColor: 'rgba(0, 0, 0, 0.48)' }}
+      style={{ backgroundColor: 'rgba(0, 0, 0, 0.48)', bottom: quickAdd ? viewport.bottom : undefined }}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) {
           requestClose();
@@ -594,6 +604,7 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
     >
       <div
         ref={dialogRef}
+        data-quick-add={quickAdd || undefined}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
@@ -601,11 +612,13 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
         className="planui-floating-capsule w-full sm:max-w-[540px] max-h-[92dvh] flex flex-col rounded-t-3xl sm:rounded-3xl overflow-hidden planui-transition-modal"
         style={{
           viewTransitionName: transitionName,
+          maxHeight: quickAdd && viewport.height ? viewport.height * .92 : undefined,
           backgroundColor: 'var(--glass-bg)',
           border: '1px solid var(--border-strong)',
           boxShadow: 'var(--glass-shadow)',
         }}
       >
+        {quickAdd && <div className="quick-grabber" onTouchStart={e=>{dragStart.current=e.touches[0].clientY;}} onTouchEnd={e=>{if(dragStart.current!==null&&e.changedTouches[0].clientY-dragStart.current>60)requestClose();dragStart.current=null;}}><i /></div>}
         <header
           className="flex items-start justify-between gap-3 px-5 py-4 border-b shrink-0"
           style={{ borderColor: 'var(--border-subtle)' }}

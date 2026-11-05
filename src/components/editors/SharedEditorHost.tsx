@@ -1,3 +1,4 @@
+import { PillMenu as SelectField } from '../ui/design';
 import { WishExtrasFields, emptyWishExtras, resolveWishExtras } from '../wishlist/WishExtrasFields';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
@@ -78,7 +79,6 @@ import {
   InputField,
   ModalSheet,
   SegmentedControl,
-  SelectField,
   TextAreaField,
   FeedbackBanner,
 } from '../ui/primitives';
@@ -160,6 +160,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
     useState<EditableCreationContext>(initialContext);
 
   // Task fields
+  const [quickPanel, setQuickPanel] = useState<string | null>(null);
   const [taskEffort, setTaskEffort] = useState<Task['effort']>(null);
   const [taskLifeArea, setTaskLifeArea] = useState('');
   const [taskTitle, setTaskTitle] = useState('');
@@ -1203,16 +1204,17 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
   return (
     <ModalSheet
       transitionName="planui-create"
+      quickAdd={globalQuickAdd}
       isOpen={isOpen}
       title={globalQuickAdd ? 'Швидке додавання' : UK_STRINGS.creation.sheetTitleChooseAction}
-      subtitle={globalQuickAdd ? 'Достатньо назви. Решту можна додати пізніше.' : UK_STRINGS.creation.sheetSubtitleContext}
+      subtitle={globalQuickAdd ? undefined : UK_STRINGS.creation.sheetSubtitleContext}
       isDirty={isDirty}
       onClose={onClose}
     >
-      <form onSubmit={handleSave} className="space-y-4" noValidate>
+      <form onSubmit={handleSave} className={globalQuickAdd ? "quick-add-form space-y-4" : "space-y-4"} noValidate>
         {selectedAction === 'task' && (            <InputField
               label={UK_STRINGS.creation.taskForm.titleLabel}
-              placeholder={UK_STRINGS.creation.taskForm.titlePlaceholder}
+              placeholder={globalQuickAdd ? 'Що потрібно зробити?' : UK_STRINGS.creation.taskForm.titlePlaceholder}
               value={taskTitle}
               onChange={(e) => setTaskTitle(e.target.value)}
               data-testid="create-task-title-input"
@@ -1302,7 +1304,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
                 />
                 <div>
                   <div className="text-[14px] font-semibold leading-tight">
-                    {act.labelUk}
+                    {globalQuickAdd ? ({task:'Справа',shift:'Зміна',event:'Подія',goal:'Ціль',habit:'Звичка',personal_record:'Стан',wish:'Бажання',project:'Проєкт'} as Record<string,string>)[act.kind] ?? act.labelUk : act.labelUk}
                   </div>
                   <div
                     className="hidden"
@@ -1316,7 +1318,14 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
           })}
         </div>
 
-        <details open={selectedAction !== 'task'}>
+        {globalQuickAdd && selectedAction === 'task' && <div className="quick-options">
+          <button type="button" className="ui-pill" aria-expanded={quickPanel==='date'} onClick={()=>setQuickPanel(quickPanel==='date'?null:'date')}>Дата й час{editableContext.targetDate ? ` · ${new Intl.DateTimeFormat('uk-UA',{day:'numeric',month:'short',timeZone:'UTC'}).format(new Date(editableContext.targetDate+'T12:00:00Z'))}` : ''}</button>
+          <button type="button" className="ui-pill" aria-expanded={quickPanel==='duration'} onClick={()=>setQuickPanel(quickPanel==='duration'?null:'duration')}>Тривалість{taskEstimate ? ` · ${taskEstimate} хв` : ''}</button>
+          <SelectField label="Зусилля" value={taskEffort??''} onChange={e=>setTaskEffort((e.target.value||null) as Task['effort'])} options={[{value:'',label:'Без оцінки'},{value:'small',label:'•'},{value:'medium',label:'••'},{value:'large',label:'•••'}]} />
+          <button type="button" className="ui-pill" aria-expanded={quickPanel==='direction'} onClick={()=>setQuickPanel(quickPanel==='direction'?null:'direction')}>Напрям{editableContext.folderId ? ` · ${folders.find(f=>f.id===editableContext.folderId)?.name??''}` : ''}</button>
+          <SelectField label="Сфера" value={taskLifeArea} onChange={e=>setTaskLifeArea(e.target.value)} options={[{value:'',label:'Успадкувати'},...lifeAreaQuestions.filter(a=>!a.archived&&!a.mergedIntoId).map(a=>({value:a.id,label:a.questionTextUk}))]} />
+        </div>}
+        <details className={globalQuickAdd && selectedAction==='task' ? 'quick-context-panel' : ''} open={globalQuickAdd && selectedAction==='task' ? quickPanel==='date'||quickPanel==='direction' : selectedAction !== 'task'}>
           <summary className="min-h-[44px] py-3 cursor-pointer">Дата / час · Напрям / проєкт</summary>
         {/* Editable Prefilled Context Block (C04: Prefilled date/folder/project/stage must be visible and editable) */}
         <div
@@ -1800,13 +1809,13 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
         </div>
 
         </details>
-        {selectedAction === 'task' && <div className="flex flex-wrap gap-2">
+        {selectedAction === 'task' && !globalQuickAdd && <div className="flex flex-wrap gap-2">
           <SelectField label="Зусилля" value={taskEffort ?? ''} onChange={e => setTaskEffort((e.target.value || null) as Task['effort'])} options={[{value:'',label:'Не задано'},{value:'small',label:'•'},{value:'medium',label:'••'},{value:'large',label:'•••'}]} />
           <SelectField label="Сфера життя" value={taskLifeArea} onChange={e => setTaskLifeArea(e.target.value)} options={[{value:'',label:'Успадкувати'},...lifeAreaQuestions.filter(area => !area.archived && !area.mergedIntoId).map(area => ({value:area.id,label:area.questionTextUk}))]} />
         </div>}
         {/* Specific Form Fields by Action */}
         {selectedAction === 'task' && (
-          <details className="space-y-3.5"><summary className="min-h-[44px] py-3 cursor-pointer">Тривалість · Дедлайн · Деталі</summary>
+          <details className={globalQuickAdd ? "quick-duration-panel space-y-3.5" : "space-y-3.5"} open={globalQuickAdd ? quickPanel==='duration' : undefined}><summary className="min-h-[44px] py-3 cursor-pointer">Тривалість · Дедлайн · Деталі</summary>
             <TextAreaField
               label={UK_STRINGS.creation.taskForm.descriptionLabel}
               placeholder={UK_STRINGS.creation.taskForm.descriptionPlaceholder}
@@ -3059,16 +3068,14 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
         )}
 
         <div className="flex items-center justify-end gap-2.5 pt-2">
-          <Button variant="secondary" onClick={onClose}>
-            {UK_STRINGS.app.cancelButton}
-          </Button>
+          {!globalQuickAdd && <Button variant="secondary" onClick={onClose}>{UK_STRINGS.app.cancelButton}</Button>}
           <Button
             type="submit"
             variant="primary"
             disabled={isSaving}
             data-testid="shared-editor-submit-button"
           >
-            {UK_STRINGS.app.saveButton}
+            {globalQuickAdd ? '↑ Додати' : UK_STRINGS.app.saveButton}
           </Button>
         </div>
       </form>

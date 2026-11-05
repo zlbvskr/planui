@@ -1,4 +1,7 @@
-import { TopBar, Pill, Segmented } from '../components/ui/design';
+import { evaluateHabitOnDate } from '../domain/habits';
+import { DayCanvas } from '../components/today/DayCanvas';
+import { Leaf } from 'lucide-react';
+import { RoundButton, WeekStrip, Pill, Segmented } from '../components/ui/design';
 import { selectTaskReviewState } from '../domain/projections';
 import { TodayMode, DailyPlan } from '../domain/types';
 import { EMPTY_DAILY_PLAN, shouldRevealNow, projectTodayTasks, deadlineDate } from '../domain/today';
@@ -15,6 +18,7 @@ import {
 } from 'lucide-react';
 import {
   CalendarEvent,
+  Folder,
   DayOffAnnotation,
   EntityId,
   Habit,
@@ -64,6 +68,7 @@ export interface TodayWorkspaceViewProps {
   reservations: readonly TaskReservation[];
   tasks: readonly Task[];
   projects: readonly Project[];
+  folders: readonly Folder[];
   dayOffAnnotations: readonly DayOffAnnotation[];
   habits: readonly Habit[];
   habitEntries: readonly HabitEntry[];
@@ -99,6 +104,7 @@ export function TodayWorkspaceView({
   events,
   reservations,
   tasks,
+  projects, folders,
   dayOffAnnotations,
   habits,
   habitEntries,
@@ -120,9 +126,10 @@ export function TodayWorkspaceView({
   const effectiveMode = mode === 'habits' && !habitsEnabled ? 'day' : mode;
   const rootRef = useRef<HTMLDivElement>(null);
   const [focusOpen, setFocusOpen] = useState(false);
+  useEffect(() => { const header=rootRef.current?.querySelector('.today-heading'); if(!header)return; const observer=new IntersectionObserver(([entry])=>rootRef.current?.classList.toggle('today-scrolled',!entry.isIntersecting),{threshold:0}); observer.observe(header);return()=>observer.disconnect(); }, []);
   const [planningTask, setPlanningTask] = useState<{ task: Task; reservationId?: string; reviewAction?: string } | null>(null);
   useEffect(() => { onModalStateChange?.(Boolean(planningTask) || focusOpen); return () => onModalStateChange?.(false); }, [Boolean(planningTask), focusOpen]);
-  const revealCurrentTime = () => rootRef.current?.querySelector('[data-testid="today-current-time-indicator"]')?.scrollIntoView({ block: 'center', behavior: 'instant' as ScrollBehavior });
+  const revealCurrentTime = () => {}; // The 24-hour canvas restores its own current-time viewport.
   useEffect(() => {
     if (!shouldRevealNow({ selectedDate, mode: effectiveMode, hasInteraction, scrollTop: savedScrollTop }, actualTodayDate)) return;
     const frame = requestAnimationFrame(() => { revealCurrentTime(); onInteraction(); });
@@ -207,19 +214,13 @@ export function TodayWorkspaceView({
 
   return (
     <div ref={rootRef} className="space-y-4" data-testid="destination-view-today" onPointerDownCapture={onInteraction} onWheelCapture={onInteraction} onKeyDownCapture={onInteraction}>
-      <TopBar>
-        <div className="ui-topbar-title"><h1>Сьогодні</h1><Pill data-testid="today-return-to-actual-today-button" onClick={() => { onSelectDate(actualTodayDate); if (selectedDate === actualTodayDate) revealCurrentTime(); }}>Зараз</Pill></div>
-        <div className="today-date-row">
-          <Button variant="subtle" size="icon" aria-label={UK_STRINGS.app.previousDayAria} data-testid="today-prev-day-button" onClick={() => onSelectDate(addDaysToLocalDate(selectedDate, -1))}><ChevronLeft aria-hidden="true" className="w-5 h-5" /></Button>
-          <span data-testid="today-selected-date-heading">{new Intl.DateTimeFormat('uk-UA', { weekday: 'short', day: 'numeric', month: 'long', timeZone: 'UTC' }).format(new Date(selectedDate + 'T12:00:00Z'))}</span>
-          <Button variant="subtle" size="icon" aria-label={UK_STRINGS.app.nextDayAria} data-testid="today-next-day-button" onClick={() => onSelectDate(addDaysToLocalDate(selectedDate, 1))}><ChevronRight aria-hidden="true" className="w-5 h-5" /></Button>
-        </div>
-        <Segmented<TodayMode> label="Режими Сьогодні" value={effectiveMode} onChange={onChangeMode} options={[{ value: 'day', label: 'День' }, { value: 'tasks', label: 'Завдання' }, ...(habitsEnabled ? [{ value: 'habits' as const, label: 'Звички' }] : [])]} />
-        <div className="ui-topbar-actions">
-          <Pill selected={dailyPlan.minimalDay} onClick={async () => { try { await repositories.saveDailyPlan(selectedDate, { ...dailyPlan, minimalDay: !dailyPlan.minimalDay }, dailyPlan); await onDataChanged(); } catch { window.alert('Не вдалося змінити вигляд дня. Оновіть дані й повторіть.'); } }}>Мінімальний день</Pill>
-          <Pill onClick={() => setFocusOpen(true)}>Фокус дня</Pill>
-        </div>
-      </TopBar>
+      <header className="today-heading">
+        <div><h1>Сьогодні</h1><p data-testid="today-selected-date-heading">{new Intl.DateTimeFormat('uk-UA', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }).format(new Date(selectedDate + 'T12:00:00Z'))}</p></div>
+        <RoundButton aria-label="Мінімальний день" aria-pressed={dailyPlan.minimalDay} onClick={async () => { try { await repositories.saveDailyPlan(selectedDate, { ...dailyPlan, minimalDay: !dailyPlan.minimalDay }, dailyPlan); await onDataChanged(); } catch { window.alert('Не вдалося змінити вигляд дня. Оновіть дані й повторіть.'); } }}><Leaf aria-hidden="true" size={22} /></RoundButton>
+      </header>
+      <div className="today-mode-bar"><span className="today-compact-title">Сьогодні</span><Segmented<TodayMode> label="Режими Сьогодні" value={effectiveMode} onChange={onChangeMode} options={[{ value: 'day', label: 'День' }, { value: 'tasks', label: 'Завдання' }, ...(habitsEnabled ? [{ value: 'habits' as const, label: 'Звички' }] : [])]} /></div>
+      <WeekStrip date={selectedDate} today={actualTodayDate} onChange={onSelectDate} markers={Object.fromEntries(events.filter(e=>e.type==='work_shift'&&e.schedule.kind==='timed').map(e=>{const i=(e.schedule as {interval:{originStartLocalDate:string;originStartLocalTime:string;originEndLocalDate:string}}).interval;return [i.originStartLocalDate,i.originEndLocalDate!==i.originStartLocalDate?'night':'day'];}))} />
+      <div className="today-tools"><details><summary aria-label="Інші дії дня">⋯</summary><div className="flex flex-wrap gap-2"><Pill onClick={() => setFocusOpen(true)}>Фокус дня</Pill><Pill onClick={()=>onSelectDate(addDaysToLocalDate(selectedDate,-7))}>Попередній тиждень</Pill><Pill onClick={()=>onSelectDate(addDaysToLocalDate(selectedDate,7))}>Наступний тиждень</Pill><Pill data-testid="today-return-to-actual-today-button" onClick={()=>onSelectDate(actualTodayDate)}>Сьогодні</Pill></div></details></div>
       {selectedDate === actualTodayDate && tasks.some(task => selectTaskReviewState(task, actualTodayDate, reservations, activeZone) === 'needs_triage') && <details className="rounded-3xl p-4" style={{ background: 'var(--surface-card-elevated)', border: '1px solid var(--border-subtle)' }}>
         <summary className="cursor-pointer">Переглянути попередні плани</summary>
         <p>Ці справи залишилися на попередніх датах. Оберіть наступний крок, коли будете готові.</p>
@@ -294,11 +295,11 @@ export function TodayWorkspaceView({
         </div>
       )}
 
-      {effectiveMode === 'habits' && habitsEnabled && habitsContent}
-      {effectiveMode === 'tasks' && <TodayTasksPanel events={events} actualTodayDate={actualTodayDate} nowMs={nowMs} date={selectedDate} zone={activeZone} plan={dailyPlan} tasks={tasks} reservations={reservations} repositories={repositories} onChanged={() => onDataChanged()} onToggle={onToggleTaskState} onPlan={task => setPlanningTask({ task })} />}
+      {effectiveMode === 'habits' && habitsEnabled && <section className="today-habits space-y-4"><h2 className="ui-section-label">Звички дня</h2>{habits.filter(h=>h.state==='active').map(h=>{const state=evaluateHabitOnDate({habit:h,entriesForHabit:habitEntries.filter(e=>e.habitId===h.id),localDate:selectedDate,daysOff:dayOffAnnotations.map(d=>d.localDate)});return <div className="ui-row" key={h.id}><div className="flex-1"><p className="ui-section-label">{h.contextCueUk||'Щодня'}</p><h3>{h.name}</h3></div><Pill selected={state.cellStatus==='completed'} onClick={async()=>{try{await repositories.recordHabitEntryForDateTransactionally({habitId:h.id,localDate:selectedDate,input:{kind:'complete'}});await onDataChanged();}catch{window.alert('Не вдалося записати виконання.');}}}>Стандарт</Pill>{h.minimumVersionUk&&<Pill selected={Boolean(state.entry?.minimumCompletedUk)} onClick={async()=>{try{await repositories.recordHabitEntryForDateTransactionally({habitId:h.id,localDate:selectedDate,input:{kind:'minimum'}});await onDataChanged();}catch{window.alert('Не вдалося записати виконання.');}}}>Мінімум</Pill>}</div>;})}{!habits.some(h=>h.state==='active')&&<p className="text-sm">Додайте звичку для свого ритму дня.</p>}<details><summary className="ui-pill">Керувати звичками й історією</summary>{habitsContent}</details></section>}
+      {effectiveMode === 'tasks' && <TodayTasksPanel folders={folders} projects={projects} events={events} actualTodayDate={actualTodayDate} nowMs={nowMs} date={selectedDate} zone={activeZone} plan={dailyPlan} tasks={tasks} reservations={reservations} repositories={repositories} onChanged={() => onDataChanged()} onToggle={onToggleTaskState} onPlan={task => setPlanningTask({ task })} />}
       {effectiveMode === 'day' && <>
       {/* 5. Main Proportional Timeline for Selected Date (6.1 / 6.5) */}
-      <SharedDayTimeline
+      <DayCanvas folders={folders} projects={projects} plan={dailyPlan}
         onInspectHabitSession={onInspectHabitSession}
         testIdPrefix="today"
         projection={todayProjection}

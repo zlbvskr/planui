@@ -20,11 +20,7 @@ export function DailyFocusPanel({ date, zone, plan, tasks, reservations, reposit
     finally { setBusy(false); }
   }
   return <>
-    {(plan.focusNoteUk || plan.focusTaskIds.length > 0) && <Surface className="today-focus" data-testid="today-daily-focus">
-    <h2 className="font-semibold">Фокус дня</h2>
-    {plan.focusNoteUk && <p className="whitespace-pre-wrap break-words">{plan.focusNoteUk}</p>}
-    <ul>{plan.focusTaskIds.map(id => { const task = tasks.find(t => t.id === id); return <li key={id}>{task ? `${task.state === 'completed' ? '✓ ' : ''}${task.title}` : 'Справа більше недоступна'}</li>; })}</ul>
-    </Surface>}
+    {plan.focusNoteUk && <p className="today-focus-note">{plan.focusNoteUk}</p>}
     <Sheet title="Фокус дня" isOpen={isOpen} onClose={closeEditor} isDirty={JSON.stringify(ids) !== JSON.stringify(plan.focusTaskIds) || note !== (plan.focusNoteUk ?? '') || minimal !== plan.minimalDay}>
       <form onSubmit={save} className="space-y-3 pt-2">
         <p>Оберіть 1–3 справи для фокусу, якщо це корисно. Можна обрати більше або жодної.</p>
@@ -32,9 +28,9 @@ export function DailyFocusPanel({ date, zone, plan, tasks, reservations, reposit
         <TextAreaField label="Головний намір (необов’язково)" value={note} onChange={e => setNote(e.target.value)} />
         <InputField label="Знайти справу для фокусу" value={query} onChange={e => setQuery(e.target.value)} />
         <fieldset className="max-h-72 overflow-y-auto space-y-1"><legend>Що залишити у фокусі</legend>
-          {tasks.filter(t => t.state !== 'canceled' && (ids.includes(t.id) || (t.state === 'open' && t.title.toLocaleLowerCase('uk').includes(query.toLocaleLowerCase('uk'))))).map(task => <label key={task.id} className="min-h-[44px] flex items-center gap-2"><input type="checkbox" checked={ids.includes(task.id)} onChange={() => setIds(ids.includes(task.id) ? ids.filter(id => id !== task.id) : [...ids, task.id])} /><span className="break-words">{task.title}</span></label>)}
+          {tasks.filter(t => t.state !== 'canceled' && (ids.includes(t.id) || (t.state === 'open' && t.title.toLocaleLowerCase('uk').includes(query.toLocaleLowerCase('uk'))))).map(task => <button type="button" key={task.id} className="ui-pill" aria-pressed={ids.includes(task.id)} onClick={() => setIds(ids.includes(task.id) ? ids.filter(id => id !== task.id) : [...ids, task.id])}>{task.title}</button>)}
         </fieldset>
-        <label className="min-h-[44px] flex items-center gap-2"><input type="checkbox" checked={minimal} onChange={e => setMinimal(e.target.checked)} />Мінімальний день</label>
+        <button type="button" className="ui-pill" aria-pressed={minimal} onClick={()=>setMinimal(!minimal)}>Мінімальний день</button>
         <p>Це допомагає спростити план, а не стерти зобов’язання. Залишається не більше одного малого кроку з фокусу без терміну й сеансу. Терміни, робота, події та зайнятий час залишаються видимими. Пріоритет не визначає обов’язковість. Розклад не змінюється.</p>
         {error && <p role="alert">{error}</p>}
         <Button type="submit" disabled={busy} variant="primary">Зберегти фокус і вигляд дня</Button>

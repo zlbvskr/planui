@@ -43,3 +43,9 @@ export function WeekStrip({ date, today, markers = {}, onChange }: { date: strin
     {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Нд'].map((label, index) => { const d = new Date(start); d.setUTCDate(d.getUTCDate() + index); const value = d.toISOString().slice(0, 10); return <button type="button" key={value} aria-pressed={value === date} aria-current={value === today ? 'date' : undefined} aria-label={new Intl.DateTimeFormat('uk-UA', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }).format(d)} onClick={() => onChange(value)}><span>{label}</span><strong>{d.getUTCDate()}</strong><small aria-label={markers[value] === 'night' ? 'Нічна зміна' : markers[value] === 'day' ? 'Денна зміна' : undefined}>{markers[value] === 'night' ? '☾' : markers[value] === 'day' ? '☀' : ''}</small></button>; })}
   </div>;
 }
+
+export function PillMenu({ label, options, value, onChange, disabled, ...props }: {label: string; options: readonly {value: string; label: string}[]; value?: string | number | readonly string[]; onChange?: React.ChangeEventHandler<HTMLSelectElement>; disabled?: boolean; [key: string]: unknown}) {
+  const [open, setOpen] = React.useState(false);
+  const id = React.useId();
+  return <div className="ui-menu"><button type="button" className="ui-pill" disabled={disabled} aria-expanded={open} aria-controls={id} onClick={()=>setOpen(!open)} data-testid={props['data-testid'] as string | undefined}>{label}{value ? ` · ${options.find(o=>o.value===value)?.label??value}` : ''} ⌄</button>{open&&<div id={id} className="ui-menu-options" role="group" aria-label={label}>{options.map(o=><button type="button" key={o.value} aria-pressed={o.value===value} onClick={()=>{onChange?.({target:{value:o.value},currentTarget:{value:o.value}} as React.ChangeEvent<HTMLSelectElement>);setOpen(false);}}>{o.label}</button>)}</div>}</div>;
+}

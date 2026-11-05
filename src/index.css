@@ -408,3 +408,66 @@ html:not(.dark) [data-testid="destination-view-today"] [data-testid$="current-ti
 [data-testid="mobile-floating-capsule"] { height: 64px; min-height: 64px; }
 @media (prefers-reduced-transparency: reduce) { .ui-segmented { background: var(--glass-bg-fallback); backdrop-filter: none; -webkit-backdrop-filter: none; } }
 :root[data-reduced-transparency="true"] .ui-segmented { background: var(--glass-bg-fallback); backdrop-filter: none; -webkit-backdrop-filter: none; }
+.today-heading { display: flex; justify-content: space-between; align-items: center; padding-top: 24px; gap: 16px; }
+.today-heading h1 { font-size: 36px; line-height: 1.1; letter-spacing: -1px; font-weight: 700; }
+.today-heading p { color: var(--text-secondary); font-size: 16px; margin-top: 8px; text-transform: capitalize; }
+.today-heading [aria-pressed="true"] { color: var(--color-dayoff-text); background: var(--color-dayoff-tint); }
+.today-mode-bar { position: sticky; top: 8px; z-index: 30; }
+.today-compact-title { display: none; }
+.today-scrolled .today-mode-bar { border-radius: 20px; background: var(--glass-bg-fallback); padding: 8px; box-shadow: var(--glass-shadow); }
+.today-scrolled .today-compact-title { display: block; padding: 0 8px 8px; font-weight: 600; }
+.today-scrolled .ui-segmented { background: transparent; backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: none; border: 0; }
+.today-tools { position: relative; height: 0; margin: 0 !important; z-index: 32; }
+.today-tools > details > summary { position: absolute; right: 0; top: -8px; min-width: 44px; min-height: 44px; text-align: center; cursor: pointer; list-style: none; }
+.today-tools > details > div { position: absolute; right: 0; top: 36px; background: var(--bg-surface); border: 1px solid var(--border-strong); padding: 12px; border-radius: 20px; max-width: 320px; }
+.today-continuity { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 20px; margin-bottom: 8px; }
+.today-continuity > button { display: flex; align-items: center; width: 100%; padding: 12px; gap: 12px; text-align: left; }
+.today-continuity strong { font-size: 14px; font-weight: 600; display: block; }
+.today-continuity small { color: var(--text-secondary); display: block; font-size: 12px; margin-top: 2px; }
+.today-continuity > button > span:nth-child(2) { flex: 1; }
+.today-moon { width: 32px; height: 32px; display: grid; place-items: center; color: #e4b86d; background: #c7953026; border-radius: 50%; flex-shrink: 0; }
+.today-time-scroll { height: min(680px,78dvh); overflow-y: auto; overscroll-behavior-y: contain; scrollbar-width: none; padding-bottom: 4px; }
+.today-time-canvas { position: relative; }
+.today-hour { position: absolute; width: 100%; display: flex; align-items: center; gap: 12px; }
+.today-hour > span { width: 40px; color: var(--text-secondary); font-size: 12px; font-variant-numeric: tabular-nums; transform: translateY(-50%); }
+.today-hour i { height: 1px; background: var(--border-subtle); flex: 1; }
+.today-time-item { position: absolute; padding: 8px 10px; min-height: 44px; }
+.today-item-open { width: 100%; height: 100%; text-align: left; display: flex; flex-direction: column; justify-content: center; overflow: hidden; padding-right: 12px; }
+.today-item-open h3 { font-size: 17px; line-height: 1.2; }
+.today-item-open p { font-size: 14px; margin-top: 4px; }
+.today-item-open .ui-item-meta { font-size: 11px; margin-top: 4px; }
+.today-star { position: absolute; right: 12px; top: 8px; color: #f6d866; }
+.today-deadline { position: absolute; right: 8px; bottom: 8px; font-size: 10px; background: #ffffff24; border-radius: 12px; padding: 4px 6px; }
+.today-reminder { border-radius: 999px; padding-block: 0; }
+.today-reminder .today-item-open { flex-direction: row; justify-content: space-between; align-items: center; gap: 4px; }
+.today-reminder h3 { font-size: 14px; }
+.today-item-menu { position: absolute; right: 0; top: 0; }
+.today-item-menu summary { min-width: 44px; min-height: 44px; display: grid; align-items: end; justify-content: end; padding: 4px; cursor: pointer; font-size: 12px; color: var(--text-secondary); }
+.today-item-menu[open] { z-index: 35; }
+.today-item-menu > div { position: absolute; right: 0; width: 200px; background: var(--bg-surface); padding: 8px; border: 1px solid var(--border-strong); border-radius: 12px; box-shadow: var(--glass-shadow); }
+.today-now-line { position: absolute; width: 100%; display: flex; align-items: center; color: var(--color-brand); pointer-events: none; z-index: 20; }
+.today-now-line span { width: 52px; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.today-now-line i { height: 2px; flex: 1; background: currentColor; position: relative; }
+.today-now-line i::before { content: ''; position: absolute; width: 7px; height: 7px; border-radius: 50%; background: currentColor; top: -2px; left: 0; }
+.today-gap { position: absolute; left: 52px; right: 0; min-height: 44px; padding: 12px; border: 1px dashed var(--border-strong); border-radius: 20px; font-size: 12px; color: var(--text-secondary); }
+.today-now-jump { position: absolute; right: 20px; z-index: 25; }
+.ui-menu-options { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px; background: var(--bg-surface); border: 1px solid var(--border-strong); border-radius: 12px; }
+.ui-menu-options button { padding: 8px 12px; min-height: 44px; border-radius: 999px; background: var(--bg-elevated); }
+.ui-menu-options button[aria-pressed="true"] { box-shadow: inset 0 0 0 1px var(--text-secondary); }
+[data-testid="destination-view-today"] > .today-focus { display: none; }
+.today-time-scroll { height: clamp(300px,calc(100dvh - 470px),680px); }
+[data-testid="destination-view-today"] .today-now-line > span { color: var(--color-brand) !important; }
+.today-item-open h3 { font-size: 20px; }
+.today-reminder .today-item-open h3 { font-size: 14px; }
+.today-tools > details > summary { top: -2px; right: 4px; min-height: 44px; transform: translateY(-50%); }
+.today-habits .ui-row { flex-wrap: wrap; padding-inline: 0; }
+.today-habits .ui-row > div { min-width: 100%; }
+.today-focus-note { font-size: 14px; color: var(--text-secondary); }
+.today-scrolled .today-mode-bar { backdrop-filter: blur(20px) saturate(180%); -webkit-backdrop-filter: blur(20px) saturate(180%); background: var(--glass-bg); }
+@media (prefers-reduced-transparency: reduce) { .today-scrolled .today-mode-bar { backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--glass-bg-fallback); } }
+:root[data-reduced-transparency="true"] .today-scrolled .today-mode-bar { backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--glass-bg-fallback); }
+
+/* Keep direction metadata and the time marker readable on the light canvas. */
+html:not(.dark) .ui-item-meta { color: color-mix(in srgb,var(--item-hue) 40%,#000); }
+html:not(.dark) [data-testid="destination-view-today"] .today-now-line > span { color: var(--color-brand-text) !important; }
+html:not(.dark) [data-testid="mobile-floating-capsule"] button[data-active="true"] { color: var(--text-primary) !important; }

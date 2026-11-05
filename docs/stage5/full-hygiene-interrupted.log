@@ -1,0 +1,64 @@
+
+> react-example@0.0.0 test:ui-hygiene
+> node --import tsx tests/ui-hygiene.spec.ts
+
+Skipping host requirements validation logic because `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS` env variable is set.
+me-hub dark filled: 0
+me-areas dark filled: 0
+me-area-sheet dark filled: 0
+me-areas-review dark filled: 0
+me-planning dark filled: 0
+me-state dark filled: 0
+today-day dark filled: 0
+today-day-midnight dark filled: 0
+today-tasks dark filled: 0
+today-habits dark filled: 0
+quick-task dark filled: 0
+quick-event dark filled: 0
+quick-habit dark filled: 0
+triage dark filled: 0
+weekly dark filled: 0
+weekly-step-2 dark filled: 0
+weekly-step-3 dark filled: 0
+weekly-step-4 dark filled: 0
+directions-root dark filled: 0
+directions-folder dark filled: 0
+directions-goal dark filled: 0
+directions-project dark filled: 0
+directions-roadmap dark filled: 0
+directions-goal-roadmap dark filled: 0
+directions-filters dark filled: 0
+calendar-month dark filled: 0
+calendar-week dark filled: 0
+calendar-day dark filled: 0
+calendar-roster dark filled: 0
+calendar-stamp dark filled: 0
+calendar-templates dark filled: 0
+me-hub dark empty: 0
+me-areas dark empty: 0
+me-areas-review dark empty: 1
+me-planning dark empty: 0
+me-state dark empty: 0
+today-day dark empty: 0
+today-day-midnight dark empty: 0
+today-tasks dark empty: 0
+today-habits dark empty: 0
+quick-task dark empty: 0
+quick-event dark empty: 0
+quick-habit dark empty: 0
+triage dark empty: 0
+weekly dark empty: 0
+weekly-step-2 dark empty: 0
+weekly-step-3 dark empty: 0
+weekly-step-4 dark empty: 0
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+browserContext.newPage: Target page, context or browser has been closed
+    at runUiHygiene (/workspace/planui/tests/ui-hygiene.spec.ts:69:32)
+    at async <anonymous> (/workspace/planui/tests/ui-hygiene.spec.ts:127:52) {
+  log: []
+}
+
+Node.js v24.22.1

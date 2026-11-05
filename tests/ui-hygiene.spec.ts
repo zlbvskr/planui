@@ -3,6 +3,7 @@ import { startUiRuntime, installUiFixture, loadAxe, UI_CONTEXT } from './ui-runt
 
 /** Later stages extend this list; never silently exclude a failing screen. */
 export const ROUTES = [
+  ...(['hub','areas','area-sheet','areas-review','planning','state'] as const).map(me=>({id:`me-${me}`,path:'/#/me',mode:'Я',me} as const)),
   {id:'today-day',path:'/#/today',mode:'День',position:'now'},
   {id:'today-day-midnight',path:'/#/today',mode:'День',position:'midnight'},
   {id:'today-tasks',path:'/#/today',mode:'Завдання'},
@@ -68,9 +69,16 @@ export async function runUiHygiene() {
       const page=await context.newPage();const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
       try {
         await installUiFixture(page,variant,theme);await page.goto(runtime.url+route.path);
-        await page.getByTestId(route.path.includes('plans')?'destination-view-plans':route.path.includes('calendar')?'destination-view-calendar':'destination-view-today').waitFor();await page.waitForTimeout(100);
-        if(!('directions' in route))await page.getByRole('button',{name:route.mode,exact:true}).click();await page.waitForTimeout(100);
+        await page.getByTestId(route.path.includes('plans')?'destination-view-plans':route.path.includes('calendar')?'destination-view-calendar':route.path.includes('me')?'destination-view-me':'destination-view-today').waitFor();await page.waitForTimeout(100);
+        if(!('directions' in route)&&!('me' in route))await page.getByRole('button',{name:route.mode,exact:true}).click();await page.waitForTimeout(100);
         await page.evaluate(()=>{scrollTo(0,0);document.getAnimations().forEach(a=>{try{a.finish();}catch{}});});
+        if('me' in route){
+          if(['areas','area-sheet','areas-review'].includes(route.me))await page.getByTestId('me-drilldown-life-areas').click();
+          if(route.me==='area-sheet')await page.locator('.area-list-row').first().click();
+          if(route.me==='areas-review')await page.getByRole('button',{name:'Огляд сфер',exact:true}).click();
+          if(route.me==='planning')await page.getByRole('button',{name:'Короткий огляд планування',exact:true}).click();
+          if(route.me==='state')await page.goto(runtime.url+'/#/records');
+        }
         if('directions' in route){
           if(['folder','goal','goal-roadmap'].includes(route.directions)&&variant==='filled')await page.getByRole('button',{name:'Перехід на іншу роботу',exact:true}).click();
           if(['goal','goal-roadmap'].includes(route.directions)&&variant==='filled')await page.locator('.ui-disclosure').filter({hasText:'Перехід на іншу роботу'}).click();
@@ -86,7 +94,7 @@ export async function runUiHygiene() {
         if('stamp' in route){await page.getByRole('button',{name:'Штамп змін',exact:true}).click();if(route.stamp==='templates')await page.getByRole('dialog').last().getByRole('button',{name:'Шаблони',exact:true}).click();}
         if('overlay' in route) {
           if(route.overlay==='triage') { await page.getByRole('button',{name:'Інші дії дня',exact:true}).click(); await page.getByRole('menuitem',{name:'Переглянути попередні плани',exact:true}).click(); }
-          else if(route.overlay==='weekly') { await page.goto(runtime.url+'/#/life_areas'); await page.getByRole('button',{name:'Щотижневий огляд · 4 кроки',exact:true}).click(); if('step' in route)for(let step=0;step<route.step;step++)await page.getByRole('dialog').getByRole('button',{name:'Далі',exact:true}).click(); }
+          else if(route.overlay==='weekly') { await page.goto(runtime.url+'/#/me'); await page.getByRole('button',{name:'Щотижневий огляд',exact:true}).click(); if('step' in route)for(let step=0;step<route.step;step++)await page.getByRole('dialog').getByRole('button',{name:'Далі',exact:true}).click(); }
           else { await page.getByRole('button',{name:'Створити новий запис у поточному розділі',exact:true}).last().click(); if(route.overlay!=='task')await page.getByRole('button',{name:route.overlay==='event'?'Подія':'Звичка',exact:true}).click(); }
           await page.waitForTimeout(100);
         }

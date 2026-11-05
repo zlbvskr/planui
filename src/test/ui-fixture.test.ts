@@ -14,7 +14,7 @@ describe('UI fixture isolation and coherence',()=>{
     assert.equal(new Date(UI_CLOCK).toISOString(),'2026-11-05T03:41:00.000Z');
   });
   it('empty is fresh and does not mutate later filled fixtures',()=>{
-    const empty=createUiFixture('empty');assert.equal(empty.snapshot.tasks.length,0);assert.equal(empty.snapshot.lifeAreaQuestions.length,0);
+    const empty=createUiFixture('empty');assert.equal(empty.snapshot.tasks.length,0);assert.equal(empty.snapshot.lifeAreaQuestions.length,10);assert.equal(empty.snapshot.lifeAreaAssessments.length,0);
     assert.equal(createUiFixture().snapshot.tasks.length,5);empty.snapshot.settings.theme='light';assert.equal(createUiFixture().snapshot.settings.theme,'dark');
   });
   it('refuses a persistent engine before starting a transaction',async()=>{

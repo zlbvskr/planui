@@ -1,3 +1,5 @@
+import { PageHeader, SubHeader, Section, Row } from '../ui';
+import { WeeklyReviewSheet } from '../components/today/WeeklyReviewSheet';
 import { formatInstant } from '../lib/format';
 import {
   ArrowLeft,
@@ -156,6 +158,9 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
   onModalStateChange, onSettingsConfirmationChange,
 }) => {
   const [initialPlanningReview, setInitialPlanningReview] = useState(false);
+  const [weeklyHub, setWeeklyHub] = useState(false);
+  useEffect(()=>{const addGoal=()=>onOpenGlobalCreation('goal');window.addEventListener('planui:add-goal',addGoal);return()=>window.removeEventListener('planui:add-goal',addGoal);},[onOpenGlobalCreation]);
+  useEffect(()=>{const add=()=>onOpenGlobalCreation('event');window.addEventListener('planui:add-recovery',add);return()=>window.removeEventListener('planui:add-recovery',add);},[onOpenGlobalCreation]);
   const [localError, setLocalError] = useState<string | null>(null);
 
   // ---------------------------------------------------------------------------
@@ -947,63 +952,9 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
   ];
 
   return (
-    <div className="space-y-5" data-testid="destination-view-me">
-      {/* Header with drill-down back button when inside a subsection */}
-      <header className="space-y-2">
-        {subView !== 'overview' && (
-          <button
-            type="button"
-            onClick={() => {
-              setLocalError(null);
-              onChangeSubView('overview', null);
-            }}
-            data-testid="me-back-to-overview-button"
-            className="inline-flex items-center gap-1.5 text-[14px] font-medium px-2.5 py-1.5 rounded-xl cursor-pointer planui-transition-micro"
-            style={{
-              backgroundColor: 'var(--bg-elevated)',
-              color: 'var(--text-primary)',
-              border: '1px solid var(--border-subtle)',
-            }}
-          >
-            <ArrowLeft className="w-4 h-4" aria-hidden="true" />
-            <span>Усі розділи «Я»</span>
-          </button>
-        )}
-
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <div>
-            <h1 className="text-[32px] font-bold tracking-tight leading-tight m-0">
-              {subView === 'overview'
-                ? UK_STRINGS.destinations.me.title
-                : subView === 'records'
-                ? 'Відмітки стану та архів'
-                : subView === 'life_areas'
-                ? 'Сфери життя'
-                : subView === 'inspiration'
-                ? 'Моє бажане життя'
-                : subView === 'wishlist'
-                ? 'Список бажань'
-                : 'Налаштування'}
-            </h1>
-            <p
-              className="text-[15px] m-0 mt-1"
-              style={{ color: 'var(--text-secondary)' }}
-            >
-              {subView === 'overview'
-                ? UK_STRINGS.destinations.me.subtitle
-                : subView === 'records'
-                ? 'Добровільні відмітки стану та окремий архів щоденника.'
-                : subView === 'life_areas'
-                ? 'Редаговані сфери життя, часткові огляди 0–10 та незмінна історія попередніх шкал.'
-                : subView === 'inspiration'
-                ? 'Нотатки, цитати, безпечні посилання та локальні растрові зображення без зовнішніх стрічок.'
-                : subView === 'wishlist'
-                ? 'Бажані речі та враження з групами наміру «Зараз», «Пізніше», «Колись» без фінансового обліку.'
-                : 'Тема, часовий пояс, доступність, резервне копіювання ZIP та локальне сховище.'}
-            </p>
-          </div>
-        </div>
-      </header>
+    <div className="space-y-5" data-ui="content-start" data-testid="destination-view-me">
+      {subView === 'overview' ? <PageHeader title="Я" /> : <SubHeader title={initialPlanningReview && subView === 'life_areas' ? 'Короткий огляд планування' : ({records:'Стан',life_areas:'Сфери життя',inspiration:'Моє бажане життя',wishlist:'Список бажань',settings:'Налаштування'}[subView])} onBack={() => { setInitialPlanningReview(false); onChangeSubView('overview',null); }} />}
+      {weeklyHub && <WeeklyReviewSheet snapshot={snapshot} today={actualTodayDate} repositories={repositories} onClose={()=>setWeeklyHub(false)} onOpenPlan={onOpenPlan} onPause={p=>onOpenPlan('project',p.id)} onInspectEvent={onInspectCalendarEvent} onChanged={()=>onDataChanged()} />}
 
       {localError && (
         <FeedbackBanner
@@ -1016,279 +967,16 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
       {/* =====================================================================
           10.1 ME OVERVIEW: Quiet drill-down rows/cards
          ===================================================================== */}
-      {subView === 'overview' && (
-        <div
-          className="space-y-3"
-          data-testid="me-overview-drilldown-list"
-          role="list"
-          aria-label="Підрозділи особистого простору Я"
-        >
-          {/* 1. Personal records (State check-ins module) */}
-          {((settings.modules?.stateCheckInsEnabled ?? false) || personalRecords.length > 0) && (
-            <button
-              type="button"
-              role="listitem"
-              onClick={() => onChangeSubView('records')}
-              data-testid="me-drilldown-records"
-              className="w-full p-4 rounded-2xl flex items-center justify-between gap-3 text-left cursor-pointer planui-transition-micro"
-              style={{
-                backgroundColor: 'var(--bg-surface)',
-                border: '1px solid var(--border-subtle)',
-                color: 'var(--text-primary)',
-              }}
-            >
-              <div className="flex items-start gap-3.5 min-w-0">
-                <div
-                  className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-                  style={{ backgroundColor: 'var(--bg-elevated)' }}
-                >
-                  <HeartHandshake
-                    className="w-5 h-5"
-                    style={{ color: 'var(--color-brand-text)' }}
-                    aria-hidden="true"
-                  />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-[16px] font-semibold">
-                    Відмітки стану та архів
-                  </div>
-                  <div
-                    className="text-[13px] mt-0.5 leading-snug"
-                    style={{ color: 'var(--text-secondary)' }}
-                  >
-                    {personalRecords.length === 0
-                      ? 'Добровільні відмітки настрою, енергії, напруги та сну'
-                      : `Записів у хронології: ${personalRecords.length}`}
-                  </div>
-                </div>
-              </div>
-              <ChevronRight
-                className="w-5 h-5 shrink-0"
-                style={{ color: 'var(--text-secondary)' }}
-                aria-hidden="true"
-              />
-            </button>
-          )}
-
-          {/* 2. Life areas (Core - always present) */}
-          <button
-            type="button"
-            role="listitem"
-            onClick={() => onChangeSubView('life_areas')}
-            data-testid="me-drilldown-life-areas"
-            className="w-full p-4 rounded-2xl flex items-center justify-between gap-3 text-left cursor-pointer planui-transition-micro"
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              border: '1px solid var(--border-subtle)',
-              color: 'var(--text-primary)',
-            }}
-          >
-            <div className="flex items-start gap-3.5 min-w-0">
-              <div
-                className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-                style={{ backgroundColor: 'var(--bg-elevated)' }}
-              >
-                <Compass
-                  className="w-5 h-5"
-                  style={{ color: 'var(--color-personal)' }}
-                  aria-hidden="true"
-                />
-              </div>
-              <div className="min-w-0">
-                <div className="text-[16px] font-semibold">Сфери життя</div>
-                <div
-                  className="text-[13px] mt-0.5 leading-snug"
-                  style={{ color: 'var(--text-secondary)' }}
-                >
-                  {lifeAreaAssessments.length === 0
-                    ? `${sortedLifeQuestions.filter(q => !q.archived && !q.mergedIntoId).length} сфер для огляду (нові відповіді: 0–10)`
-                    : `Збережених оглядів: ${lifeAreaAssessments.length} • Сфер: ${sortedLifeQuestions.length}`}
-                </div>
-              </div>
-            </div>
-            <ChevronRight
-              className="w-5 h-5 shrink-0"
-              style={{ color: 'var(--text-secondary)' }}
-              aria-hidden="true"
-            />
-          </button>
-
-          <Button onClick={() => { setInitialPlanningReview(true); onChangeSubView('life_areas'); }}>Короткий огляд планування</Button>
-          {/* 3. Inspiration (Desired Life module) */}
-          {((settings.modules?.desiredLifeEnabled ?? false) || inspirationItems.length > 0) && (
-            <button
-              type="button"
-              role="listitem"
-              onClick={() => onChangeSubView('inspiration')}
-              data-testid="me-drilldown-inspiration"
-              className="w-full p-4 rounded-2xl flex items-center justify-between gap-3 text-left cursor-pointer planui-transition-micro"
-              style={{
-                backgroundColor: 'var(--bg-surface)',
-                border: '1px solid var(--border-subtle)',
-                color: 'var(--text-primary)',
-              }}
-            >
-              <div className="flex items-start gap-3.5 min-w-0">
-                <div
-                  className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-                  style={{ backgroundColor: 'var(--bg-elevated)' }}
-                >
-                  <Sparkles
-                    className="w-5 h-5"
-                    style={{ color: 'var(--color-work)' }}
-                    aria-hidden="true"
-                  />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-[16px] font-semibold">
-                    Моє бажане життя
-                  </div>
-                  <div
-                    className="text-[13px] mt-0.5 leading-snug"
-                    style={{ color: 'var(--text-secondary)' }}
-                  >
-                    {inspirationItems.length === 0
-                      ? 'Ідеї, цитати, орієнтири та растрові зображення'
-                      : `Елементів: ${inspirationItems.length} • Вибраних: ${
-                          inspirationItems.filter((i) => i.isFavorite).length
-                        }`}
-                  </div>
-                </div>
-              </div>
-              <ChevronRight
-                className="w-5 h-5 shrink-0"
-                style={{ color: 'var(--text-secondary)' }}
-                aria-hidden="true"
-              />
-            </button>
-          )}
-
-          {/* 4. Wishlist (Wishlist module) */}
-          {(settings.modules?.wishlistEnabled ?? true) && (
-            <button
-              type="button"
-              role="listitem"
-              onClick={() => onChangeSubView('wishlist')}
-              data-testid="me-drilldown-wishlist"
-              className="w-full p-4 rounded-2xl flex items-center justify-between gap-3 text-left cursor-pointer planui-transition-micro"
-              style={{
-                backgroundColor: 'var(--bg-surface)',
-                border: '1px solid var(--border-subtle)',
-                color: 'var(--text-primary)',
-              }}
-            >
-              <div className="flex items-start gap-3.5 min-w-0">
-                <div
-                  className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-                  style={{ backgroundColor: 'var(--bg-elevated)' }}
-                >
-                  <Gift
-                    className="w-5 h-5"
-                    style={{ color: 'var(--color-reservation)' }}
-                    aria-hidden="true"
-                  />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-[16px] font-semibold">Список бажань</div>
-                  <div
-                    className="text-[13px] mt-0.5 leading-snug"
-                    style={{ color: 'var(--text-secondary)' }}
-                  >
-                    {wishes.length === 0
-                      ? 'Бажання за групами «Зараз», «Пізніше», «Колись» та категоріями'
-                      : `Активних бажань: ${activeWishCount} • Категорій: ${wishlistCategories.length}`}
-                  </div>
-                </div>
-              </div>
-              <ChevronRight
-                className="w-5 h-5 shrink-0"
-                style={{ color: 'var(--text-secondary)' }}
-                aria-hidden="true"
-              />
-            </button>
-          )}
-
-          {/* Lightweight Setup Card if all optional modules disabled */}
-          {settings.modules &&
-            !settings.modules.habitsEnabled &&
-            !settings.modules.stateCheckInsEnabled &&
-            !settings.modules.desiredLifeEnabled &&
-            !settings.modules.wishlistEnabled && (
-              <div
-                className="p-4 rounded-2xl border border-dashed space-y-2"
-                style={{
-                  backgroundColor: 'var(--bg-elevated)',
-                  borderColor: 'var(--border-subtle)',
-                }}
-                data-testid="me-optional-modules-hint"
-              >
-                <div className="text-[15px] font-medium">
-                  Додаткові можливості планувальника
-                </div>
-                <p
-                  className="text-[13px] leading-relaxed m-0"
-                  style={{ color: 'var(--text-secondary)' }}
-                >
-                  За замовчуванням увімкнено лише базове планування дня, календаря та напрямів. У будь-який момент ви можете увімкнути звички, відмітки стану, моє бажане життя або список бажань у налаштуваннях.
-                </p>
-                <Button
-                  variant="subtle"
-                  size="sm"
-                  onClick={() => onChangeSubView('settings')}
-                >
-                  Переглянути додаткові модулі в Налаштуваннях →
-                </Button>
-              </div>
-            )}
-
-          {/* 5. Settings (Secondary destination) */}
-          <button
-            type="button"
-            role="listitem"
-            onClick={() => onChangeSubView('settings')}
-            data-testid="me-drilldown-settings"
-            className="w-full p-4 rounded-2xl flex items-center justify-between gap-3 text-left cursor-pointer planui-transition-micro"
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              border: '1px solid var(--border-subtle)',
-              color: 'var(--text-primary)',
-            }}
-          >
-            <div className="flex items-start gap-3.5 min-w-0">
-              <div
-                className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-                style={{ backgroundColor: 'var(--bg-elevated)' }}
-              >
-                <Settings
-                  className="w-5 h-5"
-                  style={{ color: 'var(--text-secondary)' }}
-                  aria-hidden="true"
-                />
-              </div>
-              <div className="min-w-0">
-                <div className="text-[16px] font-semibold">Налаштування</div>
-                <div
-                  className="text-[13px] mt-0.5 leading-snug"
-                  style={{ color: 'var(--text-secondary)' }}
-                >
-                  Тема (
-                  {settings.theme === 'light'
-                    ? 'Світла'
-                    : settings.theme === 'dark'
-                    ? 'Темна'
-                    : 'Системна'}
-                  ), часовий пояс ({activeZone}), повний бекап ZIP та сховище
-                </div>
-              </div>
-            </div>
-            <ChevronRight
-              className="w-5 h-5 shrink-0"
-              style={{ color: 'var(--text-secondary)' }}
-              aria-hidden="true"
-            />
-          </button>
-        </div>
-      )}
+      {subView === 'overview' && <div data-testid="me-overview-drilldown-list" className="space-y-5">
+        <Section title="Огляд">
+          <button className="ui-disclosure" onClick={()=>setWeeklyHub(true)}><Row title="Щотижневий огляд" leading={<Compass size={20}/>} trailing={<ChevronRight size={18}/>} /></button>
+          <button className="ui-disclosure" onClick={()=>{setInitialPlanningReview(true);onChangeSubView('life_areas');}}><Row title="Короткий огляд планування" leading={<Star size={20}/>} trailing={<ChevronRight size={18}/>} /></button>
+        </Section>
+        <Section title="Особисте">
+          {([{key:'life_areas',title:'Сфери життя',icon:Compass,enabled:true,test:'life-areas'}, {key:'records',title:'Стан',icon:HeartHandshake,enabled:settings.modules?.stateCheckInsEnabled,test:'records'}, {key:'inspiration',title:'Моє бажане життя',icon:Sparkles,enabled:settings.modules?.desiredLifeEnabled,test:'inspiration'}, {key:'wishlist',title:'Список бажань',icon:Gift,enabled:settings.modules?.wishlistEnabled ?? true,test:'wishlist'}] as const).filter(r=>r.enabled).map((r,i)=><button key={r.key} className="ui-disclosure" data-testid={`me-drilldown-${r.test}`} onClick={()=>{setInitialPlanningReview(false);onChangeSubView(r.key);}} style={{'--item-hue':['#c27b55','#ab759c','#6b9d8c','#7c8fba'][i]} as React.CSSProperties}><Row title={r.title} leading={<r.icon size={20}/>} trailing={<ChevronRight size={18}/>} /></button>)}
+        </Section>
+        <Section title="Налаштування"><button className="ui-disclosure" data-testid="me-drilldown-settings" onClick={()=>onChangeSubView('settings')}><Row title="Налаштування" leading={<Settings size={20}/>} trailing={<ChevronRight size={18}/>} /></button></Section>
+      </div>}
 
       {/* =====================================================================
           10.2 PERSONAL RECORDS SUBVIEW

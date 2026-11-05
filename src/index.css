@@ -726,3 +726,19 @@ html:not(.dark) .roster-footnote {color:#41454c;}
 .directions-stage4 [data-ui="page-header"] .ui-segmented button{font-size:12px;flex:0 0 auto;padding:0 12px}.directions-stage4 [data-ui="page-header"] .ui-segmented button:last-child{flex:1;min-width:0;padding:0 4px}
 .directions-stage4 [data-ui="page-header"]>.ui-pill-row{padding-left:0;padding-right:0}.directions-stage4 [data-ui="page-header"]>.ui-pill-row>.ui-pill-row{padding:4px 0;gap:6px}
 .stage4-area-chips{display:flex;flex-wrap:wrap;gap:8px}.stage4-area-chips .ui-pill{white-space:normal;text-align:left}
+
+/* Stage 5: compact personal hub and manual area ratings. */
+.area-list-row .ui-row { min-height:56px; padding-block:7px; }
+.area-list-row .ui-icon-tile { background:color-mix(in srgb,var(--area-hue) 18%,transparent); color:var(--area-hue); width:30px; height:30px; }
+.area-list-row .ui-row-text { font-size:13px; }
+.area-list-row .ui-row-trailing { font-size:12px; gap:6px; white-space:nowrap; }
+.area-score-bar { width:32px; height:3px; background:var(--border-subtle); border-radius:4px; overflow:hidden; }
+.area-score-bar i { display:block; height:100%; background:var(--area-hue); }
+[data-testid="me-overview-drilldown-list"] .ui-icon-tile { color:var(--item-hue,var(--color-brand)); background:color-mix(in srgb,var(--item-hue,var(--color-brand)) 15%,transparent); }
+[data-testid="life-areas-review"] .ui-surface > .ui-disclosure + .ui-disclosure,
+[data-testid="me-overview-drilldown-list"] .ui-surface > .ui-disclosure + .ui-disclosure { border-top:1px solid var(--border-subtle); }
+.state-slider-row { padding:6px 16px; border-top:1px solid var(--border-subtle); }
+.state-checkins > .flex .ui-menu-trigger { border:1px solid var(--border-subtle); background:var(--bg-elevated); }
+.state-slider-row .ui-slider > div { width:100%; }
+.life-area-detail .ui-section-label { color:var(--text-primary); }
+.weekly-review .ui-section-label { color:var(--text-primary); }

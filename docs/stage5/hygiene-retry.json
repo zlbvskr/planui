@@ -1,0 +1,34 @@
+[
+  {
+    "route": "me-area-sheet",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "me-area-sheet",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "me-area-sheet",
+    "theme": "light",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "me-area-sheet",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  }
+]

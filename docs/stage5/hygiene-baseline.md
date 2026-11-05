@@ -1,0 +1,26 @@
+| Route | Theme | Fixture | Findings |
+|---|---|---|---:|
+| me-hub | dark | filled | 0 |
+| me-areas | dark | filled | 0 |
+| me-area-sheet | dark | filled | 0 |
+| me-areas-review | dark | filled | 0 |
+| me-planning | dark | filled | 0 |
+| me-state | dark | filled | 0 |
+| me-hub | dark | empty | 0 |
+| me-areas | dark | empty | 0 |
+| me-area-sheet | dark | empty | 0 |
+| me-areas-review | dark | empty | 0 |
+| me-planning | dark | empty | 0 |
+| me-state | dark | empty | 0 |
+| me-hub | light | filled | 0 |
+| me-areas | light | filled | 0 |
+| me-area-sheet | light | filled | 0 |
+| me-areas-review | light | filled | 0 |
+| me-planning | light | filled | 0 |
+| me-state | light | filled | 0 |
+| me-hub | light | empty | 0 |
+| me-areas | light | empty | 0 |
+| me-area-sheet | light | empty | 0 |
+| me-areas-review | light | empty | 0 |
+| me-planning | light | empty | 0 |
+| me-state | light | empty | 0 |

@@ -165,9 +165,9 @@ export function TodayWorkspaceView({
     reviewAction?: string;
   } | null>(null);
   useEffect(() => {
-    onModalStateChange?.(Boolean(planningTask) || focusOpen);
+    onModalStateChange?.(Boolean(planningTask) || focusOpen || reviewOpen);
     return () => onModalStateChange?.(false);
-  }, [Boolean(planningTask), focusOpen]);
+  }, [Boolean(planningTask), focusOpen, reviewOpen]);
   const todayProjection = useMemo(
     () =>
       projectScheduleForDate({

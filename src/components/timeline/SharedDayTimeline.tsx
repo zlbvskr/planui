@@ -646,7 +646,7 @@ export function SharedDayTimeline(props: SharedDayTimelineProps) {
       const line = el.querySelector<HTMLElement>(".today-now-line");
       const rect = line?.getBoundingClientRect();
       setAway(
-        !rect || rect.top > viewport.bottom
+        !rect ? (date>today?"up":"down") : rect.top > viewport.bottom
           ? "down"
           : rect.top < viewport.top + 44
             ? "up"

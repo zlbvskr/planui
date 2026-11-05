@@ -471,3 +471,23 @@ html:not(.dark) [data-testid="destination-view-today"] [data-testid$="current-ti
 html:not(.dark) .ui-item-meta { color: color-mix(in srgb,var(--item-hue) 40%,#000); }
 html:not(.dark) [data-testid="destination-view-today"] .today-now-line > span { color: var(--color-brand-text) !important; }
 html:not(.dark) [data-testid="mobile-floating-capsule"] button[data-active="true"] { color: var(--text-primary) !important; }
+[data-quick-add="true"] > header { padding: 0; border: 0; min-height: 0; }
+[data-quick-add="true"] > header > div { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+[data-quick-add="true"] > header > button { position: absolute; right: 12px; top: 8px; width: 44px; border-radius: 50%; padding: 12px; background: transparent; border: 0; }
+[data-quick-add="true"] > header > button > span { display: none; }
+.quick-grabber { height: 32px; display: grid; place-items: center; flex-shrink: 0; touch-action: none; }
+.quick-grabber i { width: 36px; height: 4px; border-radius: 999px; background: var(--text-secondary); opacity: .5; }
+.quick-add-form > div:first-child > label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.quick-add-form [data-testid="create-task-title-input"] { border: 0 !important; background: transparent !important; border-radius: 0; padding: 4px 0 12px; font-size: 24px; line-height: 1.25; font-weight: 600; }
+.quick-add-form input::placeholder { color: var(--text-secondary); opacity: 1; }
+.quick-options { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; scrollbar-width: none; }
+.quick-options > * { flex-shrink: 0; }
+.quick-options .ui-menu-options { position: absolute; left: 20px; right: 20px; z-index: 10; margin-top: 8px; }
+.quick-context-panel > summary, .quick-duration-panel > summary { display: none; }
+.quick-add-form [data-testid="editable-creation-context"] { background: transparent !important; border: 0 !important; padding: 0; }
+.quick-add-form [data-testid="editable-creation-context"] > div:first-child { display: none; }
+.quick-add-form [data-testid="shared-editor-submit-button"] { min-width: 64px; min-height: 64px; border-radius: 999px; }
+.quick-add-form [role="radiogroup"] { scrollbar-width: none; }
+.quick-add-form [role="radiogroup"] button { font-size: 13px; background: transparent !important; }
+.quick-add-form [role="radio"][aria-checked="true"] { background: var(--bg-pressed) !important; border-color: var(--border-strong) !important; }
+.quick-add-form [data-testid="create-task-title-input"]:focus-visible { outline: none; }

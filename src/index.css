@@ -741,3 +741,4 @@ html:not(.dark) .roster-footnote {color:#41454c;}
 .state-checkins > .flex .ui-menu-trigger { border:1px solid var(--border-subtle); background:var(--bg-elevated); }
 .state-slider-row .ui-slider > div { width:100%; }
 .life-area-detail .ui-section-label { color:var(--text-primary); }
+.weekly-review .ui-section-label { color:var(--text-primary); }

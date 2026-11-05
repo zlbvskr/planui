@@ -13,6 +13,7 @@ export const ROUTES = [
   {id:'triage',path:'/#/today',mode:'Завдання',overlay:'triage'},
   {id:'weekly',path:'/#/today',mode:'Завдання',overlay:'weekly'},
   ...([1,2,3] as const).map(step=>({id:`weekly-step-${step+1}`,path:'/#/today',mode:'Завдання',overlay:'weekly',step} as const)),
+  ...(['root','folder','goal','project','roadmap','goal-roadmap','filters'] as const).map(screen=>({id:`directions-${screen}`,path:'/#/plans',mode:'Напрями',directions:screen} as const)),
   {id:'calendar-month',path:'/#/calendar',mode:'Місяць'},
   {id:'calendar-week',path:'/#/calendar',mode:'Тиждень'},
   {id:'calendar-day',path:'/#/calendar',mode:'День'},
@@ -67,9 +68,17 @@ export async function runUiHygiene() {
       const page=await context.newPage();const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
       try {
         await installUiFixture(page,variant,theme);await page.goto(runtime.url+route.path);
-        await page.getByTestId(route.path.includes('calendar')?'destination-view-calendar':'destination-view-today').waitFor();await page.waitForTimeout(100);
-        await page.getByRole('button',{name:route.mode,exact:true}).click();await page.waitForTimeout(100);
+        await page.getByTestId(route.path.includes('plans')?'destination-view-plans':route.path.includes('calendar')?'destination-view-calendar':'destination-view-today').waitFor();await page.waitForTimeout(100);
+        if(!('directions' in route))await page.getByRole('button',{name:route.mode,exact:true}).click();await page.waitForTimeout(100);
         await page.evaluate(()=>{scrollTo(0,0);document.getAnimations().forEach(a=>{try{a.finish();}catch{}});});
+        if('directions' in route){
+          if(['folder','goal','goal-roadmap'].includes(route.directions)&&variant==='filled')await page.getByRole('button',{name:'Перехід на іншу роботу',exact:true}).click();
+          if(['goal','goal-roadmap'].includes(route.directions)&&variant==='filled')await page.locator('.ui-disclosure').filter({hasText:'Перехід на іншу роботу'}).click();
+          if(route.directions==='project'&&variant==='filled'){await page.getByRole('button',{name:'Творчість',exact:true}).click();await page.locator('.ui-disclosure').filter({hasText:'Альбом із другом'}).click();}
+          if(route.directions==='roadmap')await page.getByRole('button',{name:'Глобальна дорожня карта',exact:true}).click();
+          if(route.directions==='goal-roadmap')await page.getByRole('button',{name:variant==='filled'?'Дорожня карта':'Глобальна дорожня карта',exact:true}).click();
+          if(route.directions==='filters')await page.getByRole('button',{name:/^Фільтри/}).click();
+        }
         if('position' in route && route.position==='midnight') {
           await page.evaluate(()=>{const el=document.querySelector<HTMLElement>('.continuous-time-scroll')!;const day=el.querySelector<HTMLElement>('[data-date="2026-11-06"]')!;el.scrollTop+=day.getBoundingClientRect().top-el.getBoundingClientRect().top+day.offsetHeight-140;});
           await page.waitForTimeout(100);

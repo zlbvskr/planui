@@ -1,3 +1,19 @@
+import {
+  PageHeader,
+  SubHeader,
+  Segmented,
+  PillRow,
+  RoundButton,
+  Section,
+  Row,
+  Toggle,
+  ActionMenu,
+  Sheet,
+  EmptyState,
+  Disclosure,
+  SelectField as ContractSelectField,
+} from "../ui";
+import { PlanDetail } from "./PlanDetail";
 import { RoadmapView } from './RoadmapView';
 import React, { useMemo, useState } from 'react';
 import {
@@ -114,6 +130,9 @@ export const PlansView: React.FC<PlansViewProps> = ({
   onDataChanged,
   onModalStateChange,
 }) => {
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [reorderOpen, setReorderOpen] = useState(false);
   const [showRoadmap, setShowRoadmap] = useState(false);
   // Modal states inside Plans
   const [showFullAncestorModal, setShowFullAncestorModal] = useState(false);
@@ -1705,23 +1724,113 @@ export const PlansView: React.FC<PlansViewProps> = ({
   }, [folders, editingFolder]);
 
   return (
-    <div className="space-y-4" data-testid="destination-view-plans">
-      <nav className="planui-floating-header flex gap-2" aria-label="Простір напрямів"><Button aria-pressed={!showRoadmap} onClick={() => setShowRoadmap(false)}>Напрями</Button><Button aria-pressed={showRoadmap} onClick={() => setShowRoadmap(true)}>Глобальна дорожня карта</Button></nav>
-      {!showRoadmap && <nav aria-label="Статус планів напряму" className="flex flex-wrap gap-2">{([{id:'active',label:'Активні'},{id:'idea',label:'Ідеї'},{id:'paused',label:'На паузі'},{id:'completed',label:'Завершені'}] as const).map(option=><Button key={option.id} aria-pressed={directionStatus===option.id} onClick={()=>setDirectionStatus(option.id)}>{option.label}</Button>)}</nav>}
-      {showRoadmap && <RoadmapView source={{ folders, goals, projects, stages, tasks }} repositories={repositories} onChanged={onDataChanged} initialOwner={activeProject ? { kind: 'project', id: activeProject.id } : activeGoal ? { kind: 'goal', id: activeGoal.id } : null} onInspect={owner => {setShowRoadmap(false);onUpdatePlansContext(owner.kind === 'goal' ? { activeGoalId: owner.id, activeProjectId: null } : { activeProjectId: owner.id });}} />}
-      <div hidden={showRoadmap} className="space-y-4">
-      <header className="space-y-1">
-        <h1 className="text-[32px] font-bold tracking-tight leading-tight m-0">
-          {UK_STRINGS.destinations.plans.title}
-        </h1>
-        <p
-          className="text-[15px] m-0"
-          style={{ color: 'var(--text-secondary)' }}
+    <div className="space-y-4 directions-stage4" data-testid="destination-view-plans">
+      {activeGoal || activeProject ? (
+        <SubHeader
+          title={(activeProject ?? activeGoal)!.title}
+          onBack={() => {
+            setShowRoadmap(false);
+            onUpdatePlansContext(
+              activeProject
+                ? { activeProjectId: null }
+                : { activeGoalId: null },
+            );
+          }}
+          actions={
+            <ActionMenu
+              label="Дії плану"
+              items={[
+                {
+                  label: "Редагувати",
+                  onSelect: () =>
+                    activeProject
+                      ? openProjectEditModal(activeProject)
+                      : openGoalEditModal(activeGoal!),
+                },
+                {
+                  label: "Архівувати",
+                  onSelect: () =>
+                    activeProject
+                      ? setArchivingProject(activeProject)
+                      : void handleToggleGoalArchived(activeGoal!),
+                },
+                {
+                  label: "Видалити",
+                  onSelect: () =>
+                    activeProject
+                      ? setDeletingProject(activeProject)
+                      : openGoalDeleteModal(activeGoal!),
+                },
+              ]}
+            />
+          }
+        />
+      ) : (
+        <PageHeader
+          title="Напрями"
+          actions={
+            <>
+              <RoundButton
+                aria-label="Пошук"
+                onClick={() => setSearchOpen(!searchOpen)}
+              >
+                <Search size={20} />
+              </RoundButton>
+              <RoundButton
+                aria-label="Додати"
+                onClick={() => onOpenGlobalCreation("folder")}
+              >
+                <Plus size={20} />
+              </RoundButton>
+            </>
+          }
         >
-          {UK_STRINGS.destinations.plans.subtitle}
-        </p>
-      </header>
-
+          {searchOpen && (
+            <InputField
+              label="Пошук напрямів"
+              value={plansContext.searchQuery}
+              onChange={(e) =>
+                onUpdatePlansContext({ searchQuery: e.target.value })
+              }
+            />
+          )}
+          <Segmented
+            label="Простір напрямів"
+            value={showRoadmap ? "roadmap" : "directions"}
+            onChange={(v) => setShowRoadmap(v === "roadmap")}
+            options={[
+              { value: "directions", label: "Напрями" },
+              { value: "roadmap", label: "Глобальна дорожня карта" },
+            ]}
+          />
+          <div className="ui-pill-row" data-ui="pill-row">
+            <PillRow
+              label="Статус планів"
+              value={directionStatus}
+              onChange={setDirectionStatus}
+              options={[
+                { value: "active", label: "Активні" },
+                { value: "idea", label: "Ідеї" },
+                { value: "paused", label: "На паузі" },
+                { value: "completed", label: "Завершені" },
+              ]}
+            />
+            <button className="ui-pill" onClick={() => setFiltersOpen(true)}>
+              Фільтри
+              {(plansContext.priorityFilter !== "all" ||
+                plansContext.showCompletedTasks ||
+                plansContext.showArchivedProjects) && (
+                <span className="stage4-badge">
+                  {Number(plansContext.priorityFilter !== "all") +
+                    Number(plansContext.showCompletedTasks) +
+                    Number(plansContext.showArchivedProjects)}
+                </span>
+              )}
+            </button>
+          </div>
+        </PageHeader>
+      )}
+      <div data-ui="content-start" />
       {modalError && (
         <FeedbackBanner
           tone="error"
@@ -1729,1891 +1838,320 @@ export const PlansView: React.FC<PlansViewProps> = ({
           onDismiss={() => setModalError(null)}
         />
       )}
-
-      {undoConflictMessage && (
-        <FeedbackBanner
-          tone="info"
-          message={undoConflictMessage}
-          onDismiss={() => setUndoConflictMessage(null)}
+      {activeFolder && !activeGoal && !activeProject && (
+        <nav className="stage4-path" aria-label="Шлях напряму">
+          <RoundButton
+            aria-label="До батьківського напряму"
+            onClick={() =>
+              onUpdatePlansContext({ activeFolderId: activeFolder.parentId })
+            }
+          >
+            ‹
+          </RoundButton>
+          <button
+            onClick={() => onUpdatePlansContext({ activeFolderId: null })}
+          >
+            Усі напрями
+          </button>
+          {breadcrumbData.fullChain.map((f) => (
+            <React.Fragment key={f.id}>
+              <span>›</span>
+              <button
+                onClick={() => onUpdatePlansContext({ activeFolderId: f.id })}
+              >
+                {f.name}
+              </button>
+            </React.Fragment>
+          ))}
+        </nav>
+      )}
+      {(activeGoal || activeProject) && (
+        <Segmented
+          label="План"
+          value={showRoadmap ? "roadmap" : "detail"}
+          onChange={(v) => setShowRoadmap(v === "roadmap")}
+          options={[
+            { value: "detail", label: "Деталі" },
+            { value: "roadmap", label: "Дорожня карта" },
+          ]}
         />
       )}
-
-      {lastUndoToken && (
-        <div
-          className="p-3 rounded-2xl flex flex-wrap items-center justify-between gap-2"
-          style={{
-            backgroundColor: 'var(--bg-surface)',
-            border: '1px solid var(--border-subtle)',
-          }}
-          data-testid="task-lifecycle-undo-banner"
-        >
-          <span className="text-[13px] font-medium">
-            Стан справи змінено ({lastUndoToken.previousTaskSnapshot.title}). Доступне
-            негайне повернення з перевіркою ревізій.
-          </span>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => void handleUndoTaskLifecycle()}
-              data-testid="undo-task-lifecycle-button"
-            >
-              {UK_STRINGS.scheduling.undoActionButton}
-            </Button>
-            <Button
-              variant="subtle"
-              size="sm"
-              onClick={() => setLastUndoToken(null)}
-            >
-              Приховати
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* Container Breadcrumb Navigation with full-path access when abbreviated (C05 / 4.1) */}
-      <div
-        className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-2xl"
-        style={{
-          backgroundColor: 'var(--bg-surface)',
-          border: '1px solid var(--border-subtle)',
-        }}
-        data-testid="plans-container-bar"
-      >
-        <div className="flex flex-wrap items-center gap-1.5 text-[14px] font-medium">
-          <button
-            type="button"
-            onClick={() =>
-              onUpdatePlansContext({
-                activeFolderId: null,
-                activeProjectId: null,
-              })
-            }
-            data-testid="breadcrumb-root-button"
-            className="px-2 py-1 rounded-lg flex items-center gap-1.5 cursor-pointer"
-            style={{
-              backgroundColor:
-                !activeFolder && !activeProject
-                  ? 'var(--bg-elevated)'
-                  : 'transparent',
-              color: 'var(--text-primary)',
-            }}
-          >
-            <FolderIcon
-              className="w-4 h-4 shrink-0"
-              style={{ color: 'var(--color-work)' }}
-              aria-hidden="true"
-            />
-            <span>{UK_STRINGS.destinations.plans.rootBreadcrumb}</span>
-          </button>
-
-          {breadcrumbData.isAbbreviated && (
-            <>
-              <ChevronRight
-                className="w-3.5 h-3.5"
-                style={{ color: 'var(--text-secondary)' }}
-                aria-hidden="true"
-              />
-              <button
-                type="button"
-                onClick={() => setShowFullAncestorModal(true)}
-                data-testid="plans-show-full-path-button"
-                aria-label={UK_STRINGS.plansView.showFullAncestorPath}
-                className="px-2 py-1 rounded-lg text-[13px] font-semibold cursor-pointer"
-                style={{
-                  backgroundColor: 'var(--bg-elevated)',
-                  color: 'var(--color-personal)',
-                }}
-              >
-                … ({breadcrumbData.fullChain.length})
-              </button>
-            </>
-          )}
-
-          {visibleBreadcrumbFolders.map((crumb) => {
-            const isCurrentFolder =
-              crumb.id === plansContext.activeFolderId && !activeProject;
-            return (
-              <React.Fragment key={crumb.id}>
-                <ChevronRight
-                  className="w-3.5 h-3.5"
-                  style={{ color: 'var(--text-secondary)' }}
-                  aria-hidden="true"
-                />
-                <button
-                  type="button"
-                  onClick={() =>
-                    onUpdatePlansContext({
-                      activeFolderId: crumb.id,
-                      activeProjectId: null,
-                    })
-                  }
-                  data-testid={`breadcrumb-folder-${crumb.name}`}
-                  className="px-2 py-1 rounded-lg cursor-pointer"
-                  style={{
-                    backgroundColor: isCurrentFolder
-                      ? 'var(--bg-elevated)'
-                      : 'transparent',
-                    color: 'var(--text-primary)',
-                  }}
-                >
-                  {crumb.name}
-                </button>
-              </React.Fragment>
+      {showRoadmap ? (
+        <RoadmapView
+          source={{ folders, goals, projects, stages, tasks }}
+          selectedState={directionStatus}
+          repositories={repositories}
+          onChanged={onDataChanged}
+          initialOwner={
+            activeProject
+              ? { kind: "project", id: activeProject.id }
+              : activeGoal
+                ? { kind: "goal", id: activeGoal.id }
+                : null
+          }
+          onInspect={(owner) => {
+            setShowRoadmap(false);
+            onUpdatePlansContext(
+              owner.kind === "goal"
+                ? { activeGoalId: owner.id, activeProjectId: null }
+                : { activeProjectId: owner.id },
             );
-          })}
-
-          {activeProject && (
-            <>
-              <ChevronRight
-                className="w-3.5 h-3.5"
-                style={{ color: 'var(--text-secondary)' }}
-                aria-hidden="true"
-              />
-              <span
-                className="px-2.5 py-1 rounded-lg flex items-center gap-1.5 font-semibold"
-                style={{
-                  backgroundColor: 'var(--bg-elevated)',
-                  color: 'var(--text-primary)',
-                }}
-                data-testid="plans-active-project-crumb"
-              >
-                <Briefcase
-                  className="w-3.5 h-3.5"
-                  style={{ color: 'var(--color-personal)' }}
-                  aria-hidden="true"
-                />
-                <span>{activeProject.title}</span>
-              </span>
-            </>
-          )}
-
-          {activeGoal && (
-            <>
-              <ChevronRight
-                className="w-3.5 h-3.5"
-                style={{ color: 'var(--text-secondary)' }}
-                aria-hidden="true"
-              />
-              <span
-                className="px-2.5 py-1 rounded-lg flex items-center gap-1.5 font-semibold"
-                style={{
-                  backgroundColor: 'var(--bg-elevated)',
-                  color: 'var(--text-primary)',
-                }}
-                data-testid="plans-active-goal-crumb"
-              >
-                <Target
-                  className="w-3.5 h-3.5"
-                  style={{ color: 'var(--color-brand)' }}
-                  aria-hidden="true"
-                />
-                <span>{activeGoal.title}</span>
-              </span>
-            </>
-          )}
-        </div>
-
-        {/* Hidden compatibility span for active container label */}
-        <span className="sr-only" data-testid="plans-active-container-label">
-          {activeProject
-            ? activeProject.title
-            : activeGoal
-            ? activeGoal.title
-            : activeFolder
-            ? activeFolder.name
-            : UK_STRINGS.destinations.plans.rootBreadcrumb}
-        </span>
-
-        <div className="flex items-center gap-2">
-          {activeProject ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => onUpdatePlansContext({ activeProjectId: null })}
-              data-testid="plans-back-from-project-button"
-            >
-              {UK_STRINGS.plansView.backToFolderFromProject}
-            </Button>
-          ) : activeGoal ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => onUpdatePlansContext({ activeGoalId: null })}
-              data-testid="plans-back-from-goal-button"
-            >
-              {UK_STRINGS.plansView.backToFolderFromProject}
-            </Button>
-          ) : (
-            activeFolder && (
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() =>
-                  onUpdatePlansContext({
-                    activeFolderId: activeFolder.parentId,
-                  })
-                }
-                data-testid="plans-back-parent-button"
-              >
-                {UK_STRINGS.destinations.plans.backToParentFolder}
-              </Button>
-            )
-          )}
-        </div>
-      </div>
-
-      {/* Search and Filters inside Plans (4.1) */}
-      <Card>
-        <div className="space-y-3">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-            <div className="sm:col-span-1">
-              <InputField
-                label={UK_STRINGS.plansView.searchLabel}
-                placeholder={UK_STRINGS.destinations.plans.searchPlaceholder}
-                value={plansContext.searchQuery}
-                onChange={(e) =>
-                  onUpdatePlansContext({ searchQuery: e.target.value })
-                }
-                data-testid="plans-search-input"
-              />
-            </div>
-
-            <SelectField
-              label="Фільтр за станом"
-              value={plansContext.taskStateFilter}
-              onChange={(e) =>
-                onUpdatePlansContext({
-                  taskStateFilter: e.target.value as PlansTaskStateFilter,
-                })
-              }
-              options={[
-                { value: 'all', label: UK_STRINGS.plansView.filterStateAll },
-                { value: 'open', label: UK_STRINGS.plansView.filterStateOpen },
-                {
-                  value: 'completed',
-                  label: UK_STRINGS.plansView.filterStateCompleted,
-                },
-                {
-                  value: 'canceled',
-                  label: UK_STRINGS.plansView.filterStateCanceled,
-                },
-              ]}
-              data-testid="plans-state-filter-select"
-            />
-
-            <SelectField
-              label="Фільтр за пріоритетом"
-              value={plansContext.priorityFilter}
-              onChange={(e) =>
-                onUpdatePlansContext({
-                  priorityFilter: e.target.value as PlansPriorityFilter,
-                })
-              }
-              options={[
-                {
-                  value: 'all',
-                  label: UK_STRINGS.plansView.filterPriorityAll,
-                },
-                {
-                  value: 'high',
-                  label: UK_STRINGS.plansView.filterPriorityHigh,
-                },
-                {
-                  value: 'normal',
-                  label: UK_STRINGS.plansView.filterPriorityNormal,
-                },
-                {
-                  value: 'low',
-                  label: UK_STRINGS.plansView.filterPriorityLow,
-                },
-              ]}
-              data-testid="plans-priority-filter-select"
-            />
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-            <div className="flex flex-wrap items-center gap-4 text-[13px]">
-              <label className="inline-flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={plansContext.showCompletedTasks}
-                  onChange={(e) =>
-                    onUpdatePlansContext({
-                      showCompletedTasks: e.target.checked,
-                    })
-                  }
-                  data-testid="plans-toggle-show-completed"
-                  className="w-4 h-4 accent-[var(--color-brand)]"
-                />
-                <span>{UK_STRINGS.plansView.showCompletedToggle}</span>
-              </label>
-
-              {!activeProject && (
-                <label className="inline-flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={plansContext.showArchivedProjects}
-                    onChange={(e) =>
-                      onUpdatePlansContext({
-                        showArchivedProjects: e.target.checked,
-                      })
-                    }
-                    data-testid="plans-toggle-show-archived-projects"
-                    className="w-4 h-4 accent-[var(--color-brand)]"
-                  />
-                  <span>{UK_STRINGS.plansView.showArchivedProjectsToggle}</span>
-                </label>
-              )}
-            </div>
-
-            {isSearchActive && (
-              <Button
-                variant="subtle"
-                size="sm"
-                onClick={() =>
-                  onUpdatePlansContext({
-                    searchQuery: '',
-                    taskStateFilter: 'all',
-                    priorityFilter: 'all',
-                  })
-                }
-                data-testid="plans-clear-filters-button"
-              >
-                {UK_STRINGS.plansView.clearSearchButton}
-              </Button>
-            )}
-          </div>
-        </div>
-      </Card>
-
-      {/* Non-punitive Batch Action Bar when tasks are selected (4.3 / C06) */}
-      {selectedTaskIds.length > 0 && (
-        <div
-          className="p-3.5 rounded-2xl space-y-2.5"
-          style={{
-            backgroundColor: 'var(--bg-surface)',
-            border: '1.5px solid var(--color-brand)',
           }}
-          data-testid="plans-batch-action-bar"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-[14px] font-semibold">
-              {UK_STRINGS.plansView.batchBarTitle}: {selectedTaskIds.length}
-            </span>
-            <Button
-              variant="subtle"
-              size="sm"
-              onClick={() => setSelectedTaskIds([])}
-            >
-              {UK_STRINGS.plansView.batchClearSelection}
-            </Button>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() =>
-                void handleBatchOperation({
-                  kind: 'set_planned_date',
-                  plannedDate: actualTodayDate,
-                })
-              }
-              data-testid="batch-plan-today-button"
-            >
-              {UK_STRINGS.plansView.batchPlanForToday}
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() =>
-                void handleBatchOperation({
-                  kind: 'set_planned_date',
-                  plannedDate: null,
-                })
-              }
-              data-testid="batch-clear-date-button"
-            >
-              {UK_STRINGS.plansView.batchClearDate}
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() =>
-                void handleBatchOperation({
-                  kind: 'move_ownership',
-                  ownership: { kind: 'standalone', folderId: null },
-                })
-              }
-              data-testid="batch-move-to-root-button"
-            >
-              {UK_STRINGS.plansView.batchMoveToRoot}
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => void handleBatchOperation({ kind: 'complete' })}
-              data-testid="batch-complete-button"
-            >
-              {UK_STRINGS.plansView.batchComplete}
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => void handleBatchOperation({ kind: 'cancel' })}
-              data-testid="batch-cancel-button"
-            >
-              {UK_STRINGS.plansView.batchCancel}
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* OPEN PROJECT DETAIL VIEW (4.2, 4.4, 4.5) */}
-      {activeProject ? (
-        <div className="space-y-4" data-testid="plans-open-project-view">
-          <Card>
-            <div className="space-y-3">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div className="space-y-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-[22px] font-bold m-0">
-                      {activeProject.title}
-                    </h2>
-                    <span
-                      className="px-2.5 py-0.5 rounded-full text-[12px] font-semibold"
-                      style={{
-                        backgroundColor: 'var(--bg-elevated)',
-                        color: 'var(--text-primary)',
-                      }}
-                      data-testid="open-project-state-badge"
-                    >
-                      {activeProject.state === 'active'
-                        ? UK_STRINGS.plansView.projectStateActive
-                        : activeProject.state === 'paused'
-                        ? UK_STRINGS.plansView.projectStatePaused
-                        : UK_STRINGS.plansView.projectStateCompleted}
-                    </span>
-                    {activeProject.archived && (
-                      <span
-                        className="px-2.5 py-0.5 rounded-full text-[12px] font-semibold"
-                        style={{
-                          backgroundColor: 'var(--color-brand-tint)',
-                          color: 'var(--color-brand-text)',
-                        }}
-                        data-testid="open-project-archived-badge"
-                      >
-                        {UK_STRINGS.plansView.projectArchivedBadge}
-                      </span>
-                    )}
-                  </div>
-                  {activeProject.targetDate && (
-                    <div
-                      className="text-[13px] flex items-center gap-1.5"
-                      style={{ color: 'var(--text-secondary)' }}
-                    >
-                      <CalendarIcon className="w-3.5 h-3.5" aria-hidden="true" />
-                      <span>
-                        {UK_STRINGS.plansView.projectTargetDatePrefix}:{' '}
-                        {activeProject.targetDate}
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Project Actions */}
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => openProjectEditModal(activeProject)}
-                    data-testid="open-project-edit-button"
-                  >
-                    <Edit3 className="w-4 h-4" aria-hidden="true" />
-                    <span>{UK_STRINGS.plansView.editProjectButton}</span>
-                  </Button>
-
-                  {activeProject.state !== 'completed' && (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => setCompletingProject(activeProject)}
-                      data-testid="open-project-complete-button"
-                    >
-                      <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
-                      <span>{UK_STRINGS.plansView.completeProjectButton}</span>
-                    </Button>
-                  )}
-
-                  {activeProject.archived ? (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => void handleUnarchiveProject(activeProject)}
-                      data-testid="open-project-unarchive-button"
-                    >
-                      {UK_STRINGS.plansView.unarchiveProjectButton}
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => {
-                        setArchivingProject(activeProject);
-                        setArchivePlanningChoice('retain_planning');
-                      }}
-                      data-testid="open-project-archive-button"
-                    >
-                      <Archive className="w-4 h-4" aria-hidden="true" />
-                      <span>{UK_STRINGS.plansView.archiveProjectButton}</span>
-                    </Button>
-                  )}
-
-                  <Button
-                    variant="danger"
-                    size="sm"
-                    onClick={() => {
-                      setDeletingProject(activeProject);
-                      setProjectDeleteTaskMode('rehome_to_folder');
-                    }}
-                    data-testid="open-project-delete-button"
-                  >
-                    <Trash2 className="w-4 h-4" aria-hidden="true" />
-                  </Button>
-                </div>
-              </div>
-
-              {/* Project Metadata: Desired Outcome, Criteria, Description, Collaborators */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                {activeProject.desiredOutcome && (
-                  <div
-                    className="p-3 rounded-xl space-y-1"
-                    style={{ backgroundColor: 'var(--bg-elevated)' }}
-                  >
-                    <div
-                      className="text-[12px] font-semibold"
-                      style={{ color: 'var(--text-secondary)' }}
-                    >
-                      {UK_STRINGS.plansView.projectOutcomeHeading}
-                    </div>
-                    <div className="text-[14px]">
-                      {activeProject.desiredOutcome}
-                    </div>
-                  </div>
-                )}
-
-                {activeProject.completionCriteria && (
-                  <div
-                    className="p-3 rounded-xl space-y-1"
-                    style={{ backgroundColor: 'var(--bg-elevated)' }}
-                  >
-                    <div
-                      className="text-[12px] font-semibold"
-                      style={{ color: 'var(--text-secondary)' }}
-                    >
-                      {UK_STRINGS.plansView.projectCriteriaHeading}
-                    </div>
-                    <div className="text-[14px]">
-                      {activeProject.completionCriteria}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {activeProject.description && (
-                <p
-                  className="text-[14px] m-0"
-                  style={{ color: 'var(--text-secondary)' }}
-                >
-                  {activeProject.description}
-                </p>
-              )}
-
-              {activeProject.collaboratorText && (
-                <div
-                  className="text-[13px]"
-                  style={{ color: 'var(--text-secondary)' }}
-                  data-testid="open-project-collaborators"
-                >
-                  <strong>
-                    {UK_STRINGS.plansView.projectCollaboratorsHeading}:
-                  </strong>{' '}
-                  {activeProject.collaboratorText}
-                </div>
-              )}
-
-              {/* Honest Project Task Completion Progress (C05 / 4.5) */}
-              {(() => {
-                const prog = calculateProjectTaskProgress(
-                  tasks,
-                  activeProject.id
-                );
-                return (
-                  <div
-                    className="p-3 rounded-xl space-y-2"
-                    style={{ backgroundColor: 'var(--bg-elevated)' }}
-                    data-testid="open-project-progress-card"
-                  >
-                    {!prog.hasCountableTasks ? (
-                      <div
-                        className="text-[13px]"
-                        style={{ color: 'var(--text-secondary)' }}
-                        data-testid="open-project-progress-empty"
-                      >
-                        {UK_STRINGS.plansView.projectProgressEmpty}
-                      </div>
-                    ) : (
-                      <>
-                        <ProgressBar
-                          completedCount={prog.completedCount}
-                          totalCount={prog.totalCountable}
-                          label={UK_STRINGS.plansView.projectProgressLabel(
-                            prog.completedCount,
-                            prog.totalCountable
-                          )}
-                        />
-                        <div
-                          className="text-[12px]"
-                          style={{ color: 'var(--text-secondary)' }}
-                        >
-                          {UK_STRINGS.plansView.projectProgressDisclaimer}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                );
-              })()}
-            </div>
-          </Card>
-
-          {/* Stages Section (4.2) */}
-          <Card
-            title={UK_STRINGS.plansView.stagesHeading}
-            headerRight={
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => onOpenGlobalCreation('stage')}
-                data-testid="project-add-stage-button"
-              >
-                <Plus className="w-4 h-4" aria-hidden="true" />
-                <span>{UK_STRINGS.creation.actions.stage.label}</span>
-              </Button>
-            }
-          >
-            {activeProjectStages.length === 0 ? (
-              <p
-                className="text-[14px] m-0"
-                style={{ color: 'var(--text-secondary)' }}
-              >
-                {UK_STRINGS.plansView.noStagesNote}
-              </p>
-            ) : (
-              <div className="space-y-3">
-                {activeProjectStages.map((stage, idx) => {
-                  const stageTasks = activeProjectVisibleTasks.filter(
-                    (t) =>
-                      t.ownership.kind === 'project' &&
-                      t.ownership.stageId === stage.id
-                  );
-                  return (
-                    <div
-                      key={stage.id}
-                      data-testid={`project-stage-card-${stage.title}`}
-                      className="p-3.5 rounded-xl space-y-2.5"
-                      style={{
-                        backgroundColor: 'var(--bg-elevated)',
-                        border: '1px solid var(--border-subtle)',
-                      }}
-                    >
-                      <div className="flex flex-wrap items-start justify-between gap-2">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <Layers
-                              className="w-4 h-4"
-                              style={{ color: 'var(--color-reservation)' }}
-                              aria-hidden="true"
-                            />
-                            <h3 className="text-[16px] font-semibold m-0">
-                              {stage.title}
-                            </h3>
-                          </div>
-                          {stage.expectedOutcome && (
-                            <p
-                              className="text-[13px] m-0 mt-1"
-                              style={{ color: 'var(--text-secondary)' }}
-                            >
-                              {stage.expectedOutcome}
-                            </p>
-                          )}
-                          {stage.targetDate && (
-                            <div
-                              className="text-[12px] mt-1"
-                              style={{ color: 'var(--text-secondary)' }}
-                            >
-                              Орієнтовна дата етапу: {stage.targetDate}
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="flex items-center gap-1">
-                          <Button
-                            variant="subtle"
-                            size="icon"
-                            disabled={idx === 0}
-                            aria-label={`${UK_STRINGS.plansView.moveUpAria}: ${stage.title}`}
-                            data-testid={`stage-move-up-${stage.title}`}
-                            onClick={() =>
-                              void handleReorderStage(stage.id, 'up')
-                            }
-                          >
-                            <ArrowUp className="w-4 h-4" aria-hidden="true" />
-                          </Button>
-                          <Button
-                            variant="subtle"
-                            size="icon"
-                            disabled={idx === activeProjectStages.length - 1}
-                            aria-label={`${UK_STRINGS.plansView.moveDownAria}: ${stage.title}`}
-                            data-testid={`stage-move-down-${stage.title}`}
-                            onClick={() =>
-                              void handleReorderStage(stage.id, 'down')
-                            }
-                          >
-                            <ArrowDown className="w-4 h-4" aria-hidden="true" />
-                          </Button>
-                          <Button
-                            variant="subtle"
-                            size="icon"
-                            aria-label={`${UK_STRINGS.plansView.editStageButton}: ${stage.title}`}
-                            onClick={() => {
-                              setEditingStage(stage);
-                              setStageEditTitle(stage.title);
-                              setStageEditOutcome(stage.expectedOutcome ?? '');
-                              setStageEditTargetDate(stage.targetDate);
-                            }}
-                          >
-                            <Edit3 className="w-4 h-4" aria-hidden="true" />
-                          </Button>
-                          <Button
-                            variant="subtle"
-                            size="icon"
-                            aria-label={`${UK_STRINGS.plansView.deleteStageButton}: ${stage.title}`}
-                            onClick={() => void handleDeleteStage(stage.id)}
-                          >
-                            <Trash2 className="w-4 h-4" aria-hidden="true" />
-                          </Button>
-                        </div>
-                      </div>
-
-                      {stageTasks.length > 0 ? (
-                        <ul className="space-y-2 m-0 p-0 list-none pt-1">
-                          {stageTasks.map(renderTaskRow)}
-                        </ul>
-                      ) : (
-                        <div
-                          className="text-[13px] pt-1"
-                          style={{ color: 'var(--text-secondary)' }}
-                        >
-                          У цьому етапі ще немає справ.
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </Card>
-
-          {/* Unstaged Project Tasks (4.2: Allow projects without stages and tasks outside stage groups) */}
-          <Card
-            title={UK_STRINGS.plansView.unstagedTasksHeading}
-            headerRight={
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => onOpenGlobalCreation('task')}
-                data-testid="project-add-task-button"
-              >
-                <Plus className="w-4 h-4" aria-hidden="true" />
-                <span>{UK_STRINGS.creation.actions.task.label}</span>
-              </Button>
-            }
-          >
-            {(() => {
-              const unstagedTasks = activeProjectVisibleTasks.filter(
-                (t) =>
-                  t.ownership.kind === 'project' && t.ownership.stageId === null
-              );
-              if (unstagedTasks.length === 0) {
-                return (
-                  <p
-                    className="text-[14px] m-0"
-                    style={{ color: 'var(--text-secondary)' }}
-                  >
-                    Поза етапами немає справ за поточним фільтром.
-                  </p>
-                );
-              }
-              return (
-                <ul className="space-y-2 m-0 p-0 list-none">
-                  {unstagedTasks.map(renderTaskRow)}
-                </ul>
-              );
-            })()}
-          </Card>
-        </div>
-      ) : activeGoal ? (
-        /* OPEN GOAL DETAIL VIEW (Stage M1 / M3) */
-        <div className="space-y-4" data-testid="plans-open-goal-view">
-          <Card>
-            <div className="space-y-3">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div className="space-y-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Target
-                      className="w-5 h-5 shrink-0"
-                      style={{ color: 'var(--color-brand)' }}
-                      aria-hidden="true"
-                    />
-                    <h2
-                      className="text-[22px] font-bold m-0"
-                      data-testid="open-goal-title"
-                    >
-                      {activeGoal.title}
-                    </h2>
-                    <span
-                      className="px-2.5 py-0.5 rounded-full text-[12px] font-semibold"
-                      style={{
-                        backgroundColor: 'var(--bg-elevated)',
-                        color: 'var(--text-primary)',
-                      }}
-                      data-testid="open-goal-state-badge"
-                    >
-                      {activeGoal.state === 'idea'
-                        ? UK_STRINGS.creation.goalForm.stateIdea
-                        : activeGoal.state === 'active'
-                        ? UK_STRINGS.creation.goalForm.stateActive
-                        : activeGoal.state === 'paused'
-                        ? UK_STRINGS.creation.goalForm.statePaused
-                        : UK_STRINGS.creation.goalForm.stateCompleted}
-                    </span>
-                    {activeGoal.archived && (
-                      <span
-                        className="px-2.5 py-0.5 rounded-full text-[12px] font-semibold"
-                        style={{
-                          backgroundColor: 'var(--color-brand-tint)',
-                          color: 'var(--color-brand-text)',
-                        }}
-                        data-testid="open-goal-archived-badge"
-                      >
-                        Заархівовано
-                      </span>
-                    )}
-                  </div>
-                  {(activeGoal.timing?.targetDate ||
-                    activeGoal.timing?.targetPeriodUk) && (
-                    <div
-                      className="text-[13px] flex items-center gap-1.5"
-                      style={{ color: 'var(--text-secondary)' }}
-                    >
-                      <CalendarIcon className="w-3.5 h-3.5" aria-hidden="true" />
-                      <span>
-                        Орієнтир:{' '}
-                        {[
-                          activeGoal.timing.targetDate,
-                          activeGoal.timing.targetPeriodUk,
-                        ]
-                          .filter(Boolean)
-                          .join(' • ')}
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Goal Actions */}
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => openGoalEditModal(activeGoal)}
-                    data-testid="open-goal-edit-button"
-                  >
-                    <Edit3 className="w-4 h-4" aria-hidden="true" />
-                    <span>{UK_STRINGS.plansView.editGoalButton}</span>
-                  </Button>
-
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => void handleToggleGoalCompleted(activeGoal)}
-                    data-testid="open-goal-complete-button"
-                  >
-                    <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
-                    <span>
-                      {activeGoal.state === 'completed'
-                        ? UK_STRINGS.plansView.reopenGoalButton
-                        : UK_STRINGS.plansView.completeGoalButton}
-                    </span>
-                  </Button>
-
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => void handleToggleGoalArchived(activeGoal)}
-                    data-testid="open-goal-archive-button"
-                  >
-                    <Archive className="w-4 h-4" aria-hidden="true" />
-                    <span>
-                      {activeGoal.archived
-                        ? UK_STRINGS.plansView.unarchiveGoalButton
-                        : UK_STRINGS.plansView.archiveGoalButton}
-                    </span>
-                  </Button>
-
-                  <Button
-                    variant="danger"
-                    size="sm"
-                    onClick={() => openGoalDeleteModal(activeGoal)}
-                    data-testid="open-goal-delete-button"
-                  >
-                    <Trash2 className="w-4 h-4" aria-hidden="true" />
-                    <span>{UK_STRINGS.plansView.deleteGoalButton}</span>
-                  </Button>
-                </div>
-              </div>
-
-              {/* Purpose */}
-              {activeGoal.purposeUk && (
-                <div
-                  className="p-3 rounded-xl space-y-1"
-                  style={{ backgroundColor: 'var(--bg-elevated)' }}
-                  data-testid="open-goal-purpose-box"
-                >
-                  <div
-                    className="text-[12px] font-semibold"
-                    style={{ color: 'var(--text-secondary)' }}
-                  >
-                    {UK_STRINGS.creation.goalForm.purposeLabel}
-                  </div>
-                  <div className="text-[14px] leading-relaxed">
-                    {activeGoal.purposeUk}
-                  </div>
-                </div>
-              )}
-
-              {/* Criteria */}
-              {activeGoal.completionCriteriaUk && (
-                <div
-                  className="p-3 rounded-xl space-y-1"
-                  style={{ backgroundColor: 'var(--bg-elevated)' }}
-                  data-testid="open-goal-criteria-box"
-                >
-                  <div
-                    className="text-[12px] font-semibold"
-                    style={{ color: 'var(--text-secondary)' }}
-                  >
-                    {UK_STRINGS.creation.goalForm.criteriaLabel}
-                  </div>
-                  <div className="text-[14px] leading-relaxed">
-                    {activeGoal.completionCriteriaUk}
-                  </div>
-                </div>
-              )}
-
-              {/* Implementation Intention */}
-              {activeGoal.implementationIntentionUk && (
-                <div
-                  className="p-3 rounded-xl space-y-1"
-                  style={{ backgroundColor: 'var(--bg-elevated)' }}
-                  data-testid="open-goal-intention-box"
-                >
-                  <div
-                    className="text-[12px] font-semibold"
-                    style={{ color: 'var(--text-secondary)' }}
-                  >
-                    {UK_STRINGS.creation.goalForm.implementationIntentionLabel}
-                  </div>
-                  <div className="text-[14px] leading-relaxed italic">
-                    {activeGoal.implementationIntentionUk}
-                  </div>
-                </div>
-              )}
-
-              {/* Progress Summary: Transparent task count */}
-              {activeGoalProgress && (
-                <div
-                  className="p-3 rounded-xl space-y-1.5"
-                  style={{ backgroundColor: 'var(--bg-elevated)' }}
-                  data-testid="open-goal-progress-box"
-                >
-                  <div className="flex items-center justify-between text-[13px] font-medium">
-                    <span>
-                      Виконано прямих справ:{' '}
-                      {activeGoalProgress.directTasks.completedCount} з{' '}
-                      {activeGoalProgress.directTasks.totalCountable}
-                    </span>
-                    <span>
-                      Пов’язаних проєктів: {activeGoalProjects.length}
-                    </span>
-                  </div>
-                  <div
-                    className="text-[12px]"
-                    style={{ color: 'var(--text-secondary)' }}
-                  >
-                    Досягнення цілі є усвідомленим рішенням користувача, а не автоматичним відсотком.
-                  </div>
-                </div>
-              )}
-            </div>
-          </Card>
-
-          {/* Canonical Next Action Task */}
-          {activeGoal.nextActionTaskId &&
-            (() => {
-              const nextTask = tasks.find(
-                (t) => t.id === activeGoal.nextActionTaskId
-              );
-              if (!nextTask) return null;
-              return (
-                <Card title="Канонічний наступний крок">
-                  <ul className="m-0 p-0 list-none">
-                    {renderTaskRow(nextTask)}
-                  </ul>
-                </Card>
-              );
-            })()}
-
-          {/* Associated Projects */}
-          <Card
-            title={UK_STRINGS.plansView.goalProjectsHeading}
-            headerRight={
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => onOpenGlobalCreation('project')}
-                data-testid="goal-add-project-button"
-              >
-                <Plus className="w-4 h-4" aria-hidden="true" />
-                <span>{UK_STRINGS.creation.actions.project.label}</span>
-              </Button>
-            }
-          >
-            {activeGoalProjects.length === 0 ? (
-              <p
-                className="text-[14px] m-0"
-                style={{ color: 'var(--text-secondary)' }}
-              >
-                {UK_STRINGS.plansView.noGoalProjectsNote}
-              </p>
-            ) : (
-              <div className="space-y-2.5">
-                {activeGoalProjects.map((p) => {
-                  const prog = calculateProjectTaskProgress(tasks, p.id);
-                  return (
-                    <div
-                      key={p.id}
-                      className="p-3 rounded-xl flex items-center justify-between gap-2.5"
-                      style={{
-                        backgroundColor: 'var(--bg-elevated)',
-                        border: '1px solid var(--border-subtle)',
-                      }}
-                      data-testid={`goal-project-card-${p.title}`}
-                    >
-                      <button
-                        type="button"
-                        onClick={() =>
-                          onUpdatePlansContext({ activeProjectId: p.id })
-                        }
-                        className="text-left flex-1 cursor-pointer"
-                      >
-                        <div className="flex items-center gap-2">
-                          <Briefcase
-                            className="w-4 h-4 shrink-0"
-                            style={{ color: 'var(--color-personal)' }}
-                            aria-hidden="true"
-                          />
-                          <span className="font-semibold text-[15px]">
-                            {p.title}
-                          </span>
-                        </div>
-                        <div
-                          className="text-[12px] mt-1"
-                          style={{ color: 'var(--text-secondary)' }}
-                        >
-                          Справи: {prog.completedCount} / {prog.totalCountable}
-                        </div>
-                      </button>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() =>
-                          onUpdatePlansContext({ activeProjectId: p.id })
-                        }
-                        data-testid={`open-goal-project-${p.title}`}
-                      >
-                        <span>Відкрити проєкт</span>
-                        <ChevronRight className="w-4 h-4" aria-hidden="true" />
-                      </Button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </Card>
-
-          {/* Direct Goal Tasks */}
-          <Card
-            title={UK_STRINGS.plansView.goalDirectTasksHeading}
-            headerRight={
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => onOpenGlobalCreation('task')}
-                data-testid="goal-add-task-button"
-              >
-                <Plus className="w-4 h-4" aria-hidden="true" />
-                <span>{UK_STRINGS.creation.actions.task.label}</span>
-              </Button>
-            }
-          >
-            {activeGoalTasks.length === 0 ? (
-              <p
-                className="text-[14px] m-0"
-                style={{ color: 'var(--text-secondary)' }}
-              >
-                {UK_STRINGS.plansView.noDirectGoalTasksNote}
-              </p>
-            ) : (
-              <ul className="space-y-2 m-0 p-0 list-none">
-                {activeGoalTasks.map(renderTaskRow)}
-              </ul>
-            )}
-          </Card>
-        </div>
-      ) : (
-        /* CONTAINER VIEW: FOLDERS, GOALS, PROJECTS, AND TASKS (4.1) */
+        />
+      ) : activeGoal || activeProject ? (
         <>
-          {childFolders.length === 0 &&
-          containerGoals.length === 0 &&
-          containerProjects.length === 0 &&
-          containerTasks.length === 0 ? (
-            plansContext.activeFolderId === null &&
-            !isSearchActive &&
-            folders.length === 0 ? (
-              <Card title={UK_STRINGS.plansView.starterDirectionsTitle}>
-                <div className="space-y-3" data-testid="starter-directions-card">
-                  <p
-                    className="text-[14px] m-0"
-                    style={{ color: 'var(--text-secondary)' }}
-                  >
-                    {UK_STRINGS.plansView.starterDirectionsPrompt}
-                  </p>
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={() => void handleCreateStarterDirections()}
-                    data-testid="starter-directions-create-button"
-                  >
-                    <Plus className="w-4 h-4" aria-hidden="true" />
-                    <span>{UK_STRINGS.plansView.starterDirectionsButton}</span>
-                  </Button>
-                </div>
-              </Card>
-            ) : (
-              <EmptyStateCard
-                icon={
-                  isSearchActive ? (
-                    <Search className="w-5 h-5" />
-                  ) : (
-                    <FolderIcon className="w-5 h-5" />
-                  )
-                }
-                title={
-                  isSearchActive
-                    ? UK_STRINGS.plansView.noFilterMatchesTitle
-                    : UK_STRINGS.destinations.plans.emptyTitle
-                }
-                description={
-                  isSearchActive
-                    ? UK_STRINGS.plansView.noFilterMatchesDescription
-                    : UK_STRINGS.destinations.plans.emptyDescription
-                }
-                actionLabel={
-                  isSearchActive
-                    ? UK_STRINGS.plansView.clearSearchButton
-                    : UK_STRINGS.creation.actions.task.label
-                }
-                onAction={() => {
-                  if (isSearchActive) {
-                    onUpdatePlansContext({
-                      searchQuery: '',
-                      taskStateFilter: 'all',
-                      priorityFilter: 'all',
-                    });
-                  } else {
-                    onOpenGlobalCreation('task');
+          <PlanDetail
+            record={(activeProject ?? activeGoal)!}
+            kind={activeProject ? "project" : "goal"}
+            tasks={activeProject ? activeProjectVisibleTasks : activeGoalTasks}
+            reservations={reservations}
+            repositories={repositories}
+            onChanged={onDataChanged}
+            onTask={openTaskEditor}
+            onAdd={() => onOpenGlobalCreation("task")}
+          />
+          {!activeProject && activeGoalProjects.length > 0 && (
+            <Section title="Проєкти">
+              {activeGoalProjects.map((p) => (
+                <Disclosure
+                  key={p.id}
+                  title={p.title}
+                  onClick={() =>
+                    onUpdatePlansContext({ activeProjectId: p.id })
                   }
-                }}
-              />
-            )
-          ) : (
-            <div className="space-y-4">
-              {/* Optional Starter Directions prompt at root container if user has no folders (Stage M3) */}
-              {plansContext.activeFolderId === null &&
-                folders.length === 0 &&
-                !isSearchActive && (
-                  <Card title={UK_STRINGS.plansView.starterDirectionsTitle}>
-                    <div
-                      className="space-y-3"
-                      data-testid="starter-directions-card"
-                    >
-                      <p
-                        className="text-[14px] m-0"
-                        style={{ color: 'var(--text-secondary)' }}
+                />
+              ))}
+            </Section>
+          )}
+        </>
+      ) : (
+        <>
+          {childFolders.length > 0 && (
+            <Section title="Напрями">
+              {childFolders.map((f, i) => {
+                const gs = goals.filter(
+                  (g) =>
+                    g.folderId === f.id &&
+                    g.state === directionStatus &&
+                    !g.archived,
+                );
+                const ps = projects.filter(
+                  (p) =>
+                    p.folderId === f.id &&
+                    p.state === directionStatus &&
+                    !p.archived,
+                );
+                const ts = tasks.filter(
+                  (t) =>
+                    t.ownership.kind === "folder" &&
+                    t.ownership.folderId === f.id &&
+                    matchesTaskFilter(t),
+                );
+                return (
+                  <Row
+                    key={f.id}
+                    leading={
+                      <FolderIcon
+                        size={22}
+                        style={{ color: `hsl(${190 + i * 27} 55% 55%)` }}
+                      />
+                    }
+                    title={
+                      <button
+                        className="stage4-open"
+                        onClick={() =>
+                          onUpdatePlansContext({ activeFolderId: f.id })
+                        }
                       >
-                        {UK_STRINGS.plansView.starterDirectionsPrompt}
-                      </p>
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        onClick={() => void handleCreateStarterDirections()}
-                        data-testid="starter-directions-create-button"
-                      >
-                        <Plus className="w-4 h-4" aria-hidden="true" />
-                        <span>{UK_STRINGS.plansView.starterDirectionsButton}</span>
-                      </Button>
-                    </div>
-                  </Card>
-                )}
-
-              {/* Folders Card */}
-              {childFolders.length > 0 && (
-                <Card title={UK_STRINGS.destinations.plans.foldersHeading}>
-                  <div className="space-y-2">
-                    {childFolders.map((folder, idx) => (
-                      <div
-                        key={folder.id}
-                        className="p-2.5 rounded-xl flex items-center justify-between gap-2"
-                        style={{ backgroundColor: 'var(--bg-elevated)' }}
-                      >
-                        <button
-                          type="button"
-                          data-testid={`open-folder-${folder.name}`}
-                          onClick={() =>
-                            onUpdatePlansContext({
-                              activeFolderId: folder.id,
-                              activeProjectId: null,
-                              activeGoalId: null,
-                            })
-                          }
-                          className="min-h-[44px] px-2 flex items-center gap-2.5 text-left flex-1 cursor-pointer"
-                          style={{ color: 'var(--text-primary)' }}
-                        >
-                          <FolderIcon
-                            className="w-4 h-4 shrink-0"
-                            style={{ color: 'var(--color-work)' }}
-                            aria-hidden="true"
-                          />
-                          <span className="font-medium text-[15px]">
-                            {folder.name}
-                          </span>
-                          <ChevronRight
-                            className="w-4 h-4 ml-auto"
-                            style={{ color: 'var(--text-secondary)' }}
-                            aria-hidden="true"
-                          />
-                        </button>
-
-                        <div className="flex items-center gap-1 shrink-0">
-                          <Button
-                            variant="subtle"
-                            size="icon"
-                            disabled={idx === 0}
-                            aria-label={`${UK_STRINGS.plansView.moveUpAria}: ${folder.name}`}
-                            data-testid={`folder-move-up-${folder.name}`}
-                            onClick={() =>
-                              void handleReorderFolder(folder.id, 'up')
-                            }
-                          >
-                            <ArrowUp className="w-4 h-4" aria-hidden="true" />
-                          </Button>
-                          <Button
-                            variant="subtle"
-                            size="icon"
-                            disabled={idx === childFolders.length - 1}
-                            aria-label={`${UK_STRINGS.plansView.moveDownAria}: ${folder.name}`}
-                            data-testid={`folder-move-down-${folder.name}`}
-                            onClick={() =>
-                              void handleReorderFolder(folder.id, 'down')
-                            }
-                          >
-                            <ArrowDown className="w-4 h-4" aria-hidden="true" />
-                          </Button>
-                          <Button
-                            variant="subtle"
-                            size="icon"
-                            aria-label={`${UK_STRINGS.plansView.folderActionsEdit}: ${folder.name}`}
-                            data-testid={`folder-edit-${folder.name}`}
-                            onClick={() => openFolderEditModal(folder)}
-                          >
-                            <Edit3 className="w-4 h-4" aria-hidden="true" />
-                          </Button>
-                          <Button
-                            variant="subtle"
-                            size="icon"
-                            aria-label={`${UK_STRINGS.plansView.folderActionsDelete}: ${folder.name}`}
-                            data-testid={`folder-delete-${folder.name}`}
-                            onClick={() => openFolderDeleteModal(folder)}
-                          >
-                            <Trash2 className="w-4 h-4" aria-hidden="true" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </Card>
-              )}
-
-              {/* Goals Card (Stage M1 / M3) */}
-              {containerGoals.length > 0 && (
-                <Card
-                  title={UK_STRINGS.plansView.goalsHeading}
-                  headerRight={
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => onOpenGlobalCreation('goal')}
-                      data-testid="container-add-goal-button"
-                    >
-                      <Plus className="w-4 h-4" aria-hidden="true" />
-                      <span>{UK_STRINGS.creation.actions.goal.label}</span>
-                    </Button>
-                  }
-                >
-                  <div className="space-y-3">
-                    {/* Active goals */}
-                    {containerGoals.some((g) => g.state === 'active') && (
-                      <div className="space-y-2">
-                        <div
-                          className="text-[13px] font-semibold"
-                          style={{ color: 'var(--text-secondary)' }}
-                        >
-                          {UK_STRINGS.plansView.activeGoalsHeading}
-                        </div>
-                        {containerGoals
-                          .filter((g) => g.state === 'active')
-                          .map((goal) => {
-                            const goalProg = calculateGoalProgress(
-                              goal.id,
-                              tasks,
-                              projects
-                            );
-                            const linkedProjectsCount = projects.filter(
-                              (p) => p.goalId === goal.id
-                            ).length;
-                            return (
-                              <div
-                                key={goal.id}
-                                data-testid={`goal-card-${goal.title}`}
-                                className="p-3.5 rounded-xl space-y-2.5"
-                                style={{
-                                  backgroundColor: 'var(--bg-elevated)',
-                                  border: '1px solid var(--border-subtle)',
-                                }}
-                              >
-                                <div className="flex items-start justify-between gap-2">
-                                  <button
-                                    type="button"
-                                    data-testid={`open-goal-${goal.title}`}
-                                    onClick={() =>
-                                      onUpdatePlansContext({
-                                        activeGoalId: goal.id,
-                                        activeProjectId: null,
-                                      })
-                                    }
-                                    className="text-left flex-1 cursor-pointer space-y-1"
-                                  >
-                                    <div className="flex flex-wrap items-center gap-2">
-                                      <Target
-                                        className="w-4 h-4 shrink-0"
-                                        style={{ color: 'var(--color-brand)' }}
-                                        aria-hidden="true"
-                                      />
-                                      <span className="text-[16px] font-semibold">
-                                        {goal.title}
-                                      </span>
-                                      <span
-                                        className="px-2 py-0.5 rounded-md text-[11px] font-medium"
-                                        style={{
-                                          backgroundColor: 'var(--bg-surface)',
-                                          color: 'var(--text-secondary)',
-                                        }}
-                                      >
-                                        {UK_STRINGS.plansView.stateActive}
-                                      </span>
-                                      {goal.archived && (
-                                        <span
-                                          className="px-2 py-0.5 rounded-md text-[11px] font-semibold"
-                                          style={{
-                                            backgroundColor:
-                                              'var(--color-brand-tint)',
-                                            color: 'var(--color-brand-text)',
-                                          }}
-                                        >
-                                          {
-                                            UK_STRINGS.plansView
-                                              .projectArchivedBadge
-                                          }
-                                        </span>
-                                      )}
-                                    </div>
-                                    {goal.purposeUk && (
-                                      <p
-                                        className="text-[13px] m-0"
-                                        style={{
-                                          color: 'var(--text-secondary)',
-                                        }}
-                                      >
-                                        {goal.purposeUk}
-                                      </p>
-                                    )}
-                                    <div
-                                      className="text-[12px]"
-                                      style={{ color: 'var(--text-secondary)' }}
-                                    >
-                                      {goalProg.directTasks.totalCountable > 0
-                                        ? UK_STRINGS.plansView.goalProgressLabel(
-                                            goalProg.directTasks.completedCount,
-                                            goalProg.directTasks.totalCountable
-                                          )
-                                        : UK_STRINGS.plansView
-                                            .goalProgressEmpty}
-                                      {linkedProjectsCount > 0 &&
-                                        ` • Проєктів: ${linkedProjectsCount}`}
-                                    </div>
-                                  </button>
-
-                                  <div className="flex items-center gap-1.5 shrink-0">
-                                    <Button
-                                      variant="secondary"
-                                      size="sm"
-                                      onClick={() =>
-                                        onUpdatePlansContext({
-                                          activeGoalId: goal.id,
-                                          activeProjectId: null,
-                                        })
-                                      }
-                                      data-testid={`open-goal-btn-${goal.title}`}
-                                    >
-                                      <span>
-                                        {UK_STRINGS.plansView.openGoalButton}
-                                      </span>
-                                      <ChevronRight
-                                        className="w-4 h-4"
-                                        aria-hidden="true"
-                                      />
-                                    </Button>
-                                    <Button
-                                      variant="subtle"
-                                      size="icon"
-                                      aria-label={`${UK_STRINGS.plansView.editGoalButton}: ${goal.title}`}
-                                      onClick={() => openGoalEditModal(goal)}
-                                    >
-                                      <Edit3
-                                        className="w-4 h-4"
-                                        aria-hidden="true"
-                                      />
-                                    </Button>
-                                    <Button
-                                      variant="subtle"
-                                      size="icon"
-                                      aria-label={`${UK_STRINGS.plansView.deleteGoalButton}: ${goal.title}`}
-                                      onClick={() => openGoalDeleteModal(goal)}
-                                    >
-                                      <Trash2
-                                        className="w-4 h-4"
-                                        aria-hidden="true"
-                                      />
-                                    </Button>
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                      </div>
-                    )}
-
-                    {/* Ideas and Paused goals */}
-                    {containerGoals.some(
-                      (g) => g.state === 'idea' || g.state === 'paused'
-                    ) && (
-                      <div className="space-y-2 pt-2">
-                        <div
-                          className="text-[13px] font-semibold"
-                          style={{ color: 'var(--text-secondary)' }}
-                        >
-                          {UK_STRINGS.plansView.ideasAndPausedHeading}
-                        </div>
-                        {containerGoals
-                          .filter(
-                            (g) => g.state === 'idea' || g.state === 'paused'
-                          )
-                          .map((goal) => {
-                            const goalProg = calculateGoalProgress(
-                              goal.id,
-                              tasks,
-                              projects
-                            );
-                            const linkedProjectsCount = projects.filter(
-                              (p) => p.goalId === goal.id
-                            ).length;
-                            return (
-                              <div
-                                key={goal.id}
-                                data-testid={`goal-card-${goal.title}`}
-                                className="p-3.5 rounded-xl space-y-2.5 opacity-85"
-                                style={{
-                                  backgroundColor: 'var(--bg-elevated)',
-                                  border: '1px dashed var(--border-subtle)',
-                                }}
-                              >
-                                <div className="flex items-start justify-between gap-2">
-                                  <button
-                                    type="button"
-                                    data-testid={`open-goal-${goal.title}`}
-                                    onClick={() =>
-                                      onUpdatePlansContext({
-                                        activeGoalId: goal.id,
-                                        activeProjectId: null,
-                                      })
-                                    }
-                                    className="text-left flex-1 cursor-pointer space-y-1"
-                                  >
-                                    <div className="flex flex-wrap items-center gap-2">
-                                      <Target
-                                        className="w-4 h-4 shrink-0"
-                                        style={{
-                                          color: 'var(--text-secondary)',
-                                        }}
-                                        aria-hidden="true"
-                                      />
-                                      <span className="text-[16px] font-semibold">
-                                        {goal.title}
-                                      </span>
-                                      <span
-                                        className="px-2 py-0.5 rounded-md text-[11px] font-medium"
-                                        style={{
-                                          backgroundColor: 'var(--bg-surface)',
-                                          color: 'var(--text-secondary)',
-                                        }}
-                                      >
-                                        {goal.state === 'idea'
-                                          ? UK_STRINGS.plansView.stateIdea
-                                          : UK_STRINGS.plansView.statePaused}
-                                      </span>
-                                    </div>
-                                    {goal.purposeUk && (
-                                      <p
-                                        className="text-[13px] m-0"
-                                        style={{
-                                          color: 'var(--text-secondary)',
-                                        }}
-                                      >
-                                        {goal.purposeUk}
-                                      </p>
-                                    )}
-                                    <div
-                                      className="text-[12px]"
-                                      style={{ color: 'var(--text-secondary)' }}
-                                    >
-                                      {goalProg.directTasks.totalCountable > 0
-                                        ? UK_STRINGS.plansView.goalProgressLabel(
-                                            goalProg.directTasks.completedCount,
-                                            goalProg.directTasks.totalCountable
-                                          )
-                                        : UK_STRINGS.plansView
-                                            .goalProgressEmpty}
-                                      {linkedProjectsCount > 0 &&
-                                        ` • Проєктів: ${linkedProjectsCount}`}
-                                    </div>
-                                  </button>
-
-                                  <div className="flex items-center gap-1.5 shrink-0">
-                                    <Button
-                                      variant="secondary"
-                                      size="sm"
-                                      onClick={() =>
-                                        onUpdatePlansContext({
-                                          activeGoalId: goal.id,
-                                          activeProjectId: null,
-                                        })
-                                      }
-                                      data-testid={`open-goal-btn-${goal.title}`}
-                                    >
-                                      <span>
-                                        {UK_STRINGS.plansView.openGoalButton}
-                                      </span>
-                                      <ChevronRight
-                                        className="w-4 h-4"
-                                        aria-hidden="true"
-                                      />
-                                    </Button>
-                                    <Button
-                                      variant="subtle"
-                                      size="icon"
-                                      aria-label={`${UK_STRINGS.plansView.editGoalButton}: ${goal.title}`}
-                                      onClick={() => openGoalEditModal(goal)}
-                                    >
-                                      <Edit3
-                                        className="w-4 h-4"
-                                        aria-hidden="true"
-                                      />
-                                    </Button>
-                                    <Button
-                                      variant="subtle"
-                                      size="icon"
-                                      aria-label={`${UK_STRINGS.plansView.deleteGoalButton}: ${goal.title}`}
-                                      onClick={() => openGoalDeleteModal(goal)}
-                                    >
-                                      <Trash2
-                                        className="w-4 h-4"
-                                        aria-hidden="true"
-                                      />
-                                    </Button>
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                      </div>
-                    )}
-
-                    {/* Completed goals */}
-                    {containerGoals.some((g) => g.state === 'completed') && (
-                      <div className="space-y-2 pt-2">
-                        <div
-                          className="text-[13px] font-semibold"
-                          style={{ color: 'var(--color-dayoff)' }}
-                        >
-                          {UK_STRINGS.plansView.completedGoalsHeading}
-                        </div>
-                        {containerGoals
-                          .filter((g) => g.state === 'completed')
-                          .map((goal) => (
-                            <div
-                              key={goal.id}
-                              data-testid={`goal-card-${goal.title}`}
-                              className="p-3 rounded-xl flex items-center justify-between gap-2.5 opacity-70"
+                        {f.name}
+                      </button>
+                    }
+                    secondary={[
+                      gs.length && `${gs.length} цілі`,
+                      ps.length && `${ps.length} проєкти`,
+                      ts.length && `${ts.length} справи`,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                    trailing={
+                      <>
+                        <span className="stage4-dot" role="img" aria-label="Активний" />
+                        <ActionMenu
+                          label={`Дії: ${f.name}`}
+                          items={[
+                            {
+                              label: "Відкрити",
+                              onSelect: () =>
+                                onUpdatePlansContext({ activeFolderId: f.id }),
+                            },
+                            {
+                              label: "Редагувати",
+                              onSelect: () => openFolderEditModal(f),
+                            },
+                            {
+                              label: "Перемістити",
+                              onSelect: () => openFolderEditModal(f),
+                            },
+                            {
+                              label: "Змінити порядок",
+                              onSelect: () => setReorderOpen(true),
+                            },
+                            {
+                              label: "Видалити",
+                              onSelect: () => openFolderDeleteModal(f),
+                            },
+                          ]}
+                        />
+                      </>
+                    }
+                  />
+                );
+              })}
+            </Section>
+          )}
+          {containerGoals.length + containerProjects.length > 0 && (
+            <Section title={activeFolder?.name ?? "Цілі й проєкти"}>
+              {[
+                ...containerGoals,
+                ...containerProjects.filter((p) => !p.goalId),
+              ].map((p) => {
+                const own = tasks.filter((t) =>
+                  t.ownership.kind === "goal"
+                    ? t.ownership.goalId === p.id
+                    : t.ownership.kind === "project" &&
+                      t.ownership.projectId === p.id,
+                );
+                return (
+                  <Disclosure
+                    key={p.id}
+                    title={
+                      (
+                        <>
+                          {p.title}
+                          <span className="stage4-progress">
+                            <span
                               style={{
-                                backgroundColor: 'var(--bg-elevated)',
-                                border: '1px solid var(--border-subtle)',
+                                width: `${own.length ? (own.filter((t) => t.state === "completed").length / own.length) * 100 : 0}%`,
                               }}
-                            >
-                              <div className="flex items-center gap-2 min-w-0">
-                                <CheckCircle2
-                                  className="w-4 h-4 shrink-0"
-                                  style={{ color: 'var(--color-dayoff)' }}
-                                  aria-hidden="true"
-                                />
-                                <span className="text-[15px] font-medium truncate">
-                                  {goal.title}
-                                </span>
-                                <span
-                                  className="px-2 py-0.5 rounded-md text-[11px] font-medium"
-                                  style={{
-                                    backgroundColor: 'var(--bg-surface)',
-                                    color: 'var(--color-dayoff)',
-                                  }}
-                                >
-                                  {UK_STRINGS.plansView.stateCompleted}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-1 shrink-0">
-                                <Button
-                                  variant="subtle"
-                                  size="sm"
-                                  onClick={() =>
-                                    void handleToggleGoalCompleted(goal)
-                                  }
-                                >
-                                  {UK_STRINGS.plansView.reopenGoalButton}
-                                </Button>
-                                <Button
-                                  variant="subtle"
-                                  size="icon"
-                                  aria-label={`${UK_STRINGS.plansView.deleteGoalButton}: ${goal.title}`}
-                                  onClick={() => openGoalDeleteModal(goal)}
-                                >
-                                  <Trash2
-                                    className="w-4 h-4"
-                                    aria-hidden="true"
-                                  />
-                                </Button>
-                              </div>
-                            </div>
-                          ))}
-                      </div>
-                    )}
-                  </div>
-                </Card>
-              )}
-
-              {/* Projects Card */}
-              {containerProjects.length > 0 && (
-                <Card title={UK_STRINGS.destinations.plans.projectsHeading}>
-                  <div className="space-y-3">
-                    {containerProjects.map((project) => {
-                      const prog = calculateProjectTaskProgress(
-                        tasks,
-                        project.id
-                      );
-                      const linkedGoal = project.goalId
-                        ? goals.find((g) => g.id === project.goalId)
-                        : null;
-                      return (
-                        <div
-                          key={project.id}
-                          data-testid={`project-card-${project.title}`}
-                          className="p-3.5 rounded-xl space-y-2.5"
-                          style={{
-                            backgroundColor: 'var(--bg-elevated)',
-                            border: '1px solid var(--border-subtle)',
-                          }}
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <button
-                              type="button"
-                              data-testid={`open-project-${project.title}`}
-                              onClick={() =>
-                                onUpdatePlansContext({
-                                  activeProjectId: project.id,
-                                })
-                              }
-                              className="text-left flex-1 cursor-pointer space-y-1"
-                            >
-                              <div className="flex flex-wrap items-center gap-2">
-                                <Briefcase
-                                  className="w-4 h-4 shrink-0"
-                                  style={{ color: 'var(--color-personal)' }}
-                                  aria-hidden="true"
-                                />
-                                <span className="text-[16px] font-semibold">
-                                  {project.title}
-                                </span>
-                                <span
-                                  className="px-2 py-0.5 rounded-md text-[11px] font-medium"
-                                  style={{
-                                    backgroundColor: 'var(--bg-surface)',
-                                    color: 'var(--text-secondary)',
-                                  }}
-                                >
-                                  {project.state === 'active'
-                                    ? UK_STRINGS.plansView.projectStateActive
-                                    : project.state === 'paused'
-                                    ? UK_STRINGS.plansView.projectStatePaused
-                                    : UK_STRINGS.plansView.projectStateCompleted}
-                                </span>
-                                {linkedGoal && (
-                                  <span
-                                    className="px-2 py-0.5 rounded-md text-[11px] font-medium"
-                                    style={{
-                                      backgroundColor: 'var(--bg-surface)',
-                                      color: 'var(--color-brand)',
-                                      border: '1px solid var(--border-subtle)',
-                                    }}
-                                  >
-                                    Ціль: {linkedGoal.title}
-                                  </span>
-                                )}
-                                {project.archived && (
-                                  <span
-                                    className="px-2 py-0.5 rounded-md text-[11px] font-semibold"
-                                    style={{
-                                      backgroundColor:
-                                        'var(--color-brand-tint)',
-                                      color: 'var(--color-brand-text)',
-                                    }}
-                                  >
-                                    {UK_STRINGS.plansView.projectArchivedBadge}
-                                  </span>
-                                )}
-                              </div>
-
-                              {project.desiredOutcome && (
-                                <p
-                                  className="text-[13px] m-0"
-                                  style={{ color: 'var(--text-secondary)' }}
-                                >
-                                  {project.desiredOutcome}
-                                </p>
-                              )}
-                            </button>
-
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              onClick={() =>
-                                onUpdatePlansContext({
-                                  activeProjectId: project.id,
-                                })
-                              }
-                            >
-                              <span>{UK_STRINGS.plansView.openProjectButton}</span>
-                              <ChevronRight
-                                className="w-4 h-4"
-                                aria-hidden="true"
-                              />
-                            </Button>
-                          </div>
-
-                          {/* Honest Progress Display on Card */}
-                          <div>
-                            {!prog.hasCountableTasks ? (
-                              <div
-                                className="text-[12px]"
-                                style={{ color: 'var(--text-secondary)' }}
-                                data-testid={`project-card-empty-progress-${project.title}`}
-                              >
-                                {UK_STRINGS.plansView.projectProgressEmpty}
-                              </div>
-                            ) : (
-                              <ProgressBar
-                                completedCount={prog.completedCount}
-                                totalCount={prog.totalCountable}
-                                label={UK_STRINGS.plansView.projectProgressLabel(
-                                  prog.completedCount,
-                                  prog.totalCountable
-                                )}
-                              />
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </Card>
-              )}
-
-              {/* Tasks Card */}
-              {containerTasks.length > 0 && (
-                <Card
-                  title={
-                    isSearchActive
-                      ? 'Знайдені справи'
-                      : UK_STRINGS.destinations.plans.standaloneTasksHeading
-                  }
-                >
-                  <ul className="space-y-2 m-0 p-0 list-none">
-                    {containerTasks.map(renderTaskRow)}
-                  </ul>
-                </Card>
-              )}
-            </div>
+                            />
+                          </span>
+                        </>
+                      ) as unknown as string
+                    }
+                    secondary={
+                      tasks.find((t) => t.id === p.nextActionTaskId)?.title ??
+                      "Наступний крок не визначено"
+                    }
+                    onClick={() =>
+                      onUpdatePlansContext(
+                        "purposeUk" in p && "timing" in p
+                          ? { activeGoalId: p.id, activeProjectId: null }
+                          : { activeProjectId: p.id },
+                      )
+                    }
+                  />
+                );
+              })}
+            </Section>
+          )}
+          {activeFolder && containerTasks.length > 0 && (
+            <Section title="Справи">
+              {containerTasks.map((t) => (
+                <Disclosure
+                  key={t.id}
+                  title={t.title}
+                  onClick={() => openTaskEditor(t)}
+                />
+              ))}
+            </Section>
+          )}
+          {childFolders.length +
+            containerGoals.length +
+            containerProjects.length ===
+            0 && (
+            <EmptyState
+              text="Ще немає напрямів"
+              action="Додати"
+              onAction={() => onOpenGlobalCreation("folder")}
+            />
           )}
         </>
       )}
-
-      {/* MODAL 1: Full Ancestor Path Modal (when folder depth > 3) */}
+      <Sheet
+        title="Фільтри"
+        isOpen={filtersOpen}
+        onClose={() => setFiltersOpen(false)}
+      >
+        <ContractSelectField
+          label="Пріоритет"
+          value={plansContext.priorityFilter}
+          onChange={(e) =>
+            onUpdatePlansContext({
+              priorityFilter: e.target.value as PlansPriorityFilter,
+            })
+          }
+          options={[
+            { value: "all", label: "Усі" },
+            { value: "high", label: "Високий" },
+            { value: "normal", label: "Звичайний" },
+            { value: "low", label: "Низький" },
+          ]}
+        />
+        <Row
+          title="Показувати завершені"
+          trailing={
+            <Toggle
+              label="Показувати завершені"
+              checked={plansContext.showCompletedTasks}
+              onChange={(v) => onUpdatePlansContext({ showCompletedTasks: v })}
+            />
+          }
+        />
+        <Row
+          title="Показувати архівні"
+          trailing={
+            <Toggle
+              label="Показувати архівні"
+              checked={plansContext.showArchivedProjects}
+              onChange={(v) =>
+                onUpdatePlansContext({ showArchivedProjects: v })
+              }
+            />
+          }
+        />
+        <Button variant="primary" onClick={() => setFiltersOpen(false)}>
+          Готово
+        </Button>
+      </Sheet>
+      <Sheet
+        title="Змінити порядок"
+        isOpen={reorderOpen}
+        onClose={() => setReorderOpen(false)}
+      >
+        {childFolders.map((f) => (
+          <Row
+            key={f.id}
+            title={f.name}
+            trailing={
+              <ActionMenu
+                label={`Порядок: ${f.name}`}
+                items={[
+                  {
+                    label: "Вище",
+                    onSelect: () => void handleReorderFolder(f.id, "up"),
+                  },
+                  {
+                    label: "Нижче",
+                    onSelect: () => void handleReorderFolder(f.id, "down"),
+                  },
+                ]}
+              />
+            }
+          />
+        ))}
+      </Sheet>
+      <div>
+        {/* MODAL 1: Full Ancestor Path Modal (when folder depth > 3) */}
       <ModalSheet
         isOpen={showFullAncestorModal}
         title={UK_STRINGS.plansView.fullAncestorPathTitle}

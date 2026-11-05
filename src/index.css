@@ -714,3 +714,15 @@ html:not(.dark) .roster-footnote {color:#41454c;}
 .calendar-stage3 [data-ui="page-header"][data-compact=true]>.ui-pill-row {display:none;}
 .calendar-stage3 [data-ui="page-header"][data-compact=true] .ui-round {background:transparent;backdrop-filter:none;-webkit-backdrop-filter:none;box-shadow:none;}
 .dark [role="dialog"] .calendar-cells [data-adjacent=true] .calendar-day-number {color:#aeb3bd;opacity:1;}
+
+/* Stage 4: directions and informational roadmap periods. */
+.stage4-path{display:flex;align-items:center;gap:8px;overflow:auto;white-space:nowrap;font-size:14px}
+.stage4-path button,.stage4-open{min-height:44px;text-align:left;background:none;border:0;color:inherit;cursor:pointer}
+.stage4-open{font-weight:600;width:100%}.stage4-dot{width:7px;height:7px;border-radius:50%;background:var(--accent-primary,#5b99ff);display:inline-block}
+.stage4-badge{border-radius:10px;padding:3px 7px;background:var(--bg-elevated);font-size:12px;margin-left:6px;white-space:nowrap}
+.stage4-progress{display:block;height:3px;background:var(--border-subtle);border-radius:4px;margin-top:8px;width:100%;overflow:hidden}.stage4-progress>span{display:block;height:100%;background:var(--accent-primary,#5b99ff)}
+.stage4-stage{padding-bottom:12px;border-bottom:1px solid var(--border-subtle)}.stage4-period{margin:0 16px;padding:10px 14px;border-radius:8px;background:var(--bg-elevated);border-left:3px solid var(--accent-primary,#5b99ff);font-size:14px}.stage4-connector{border-left:1px solid var(--border-subtle);margin:8px 24px;padding-left:12px;font-size:12px;color:var(--text-secondary)}
+.stage4-status{display:flex;justify-content:flex-end}.stage4-roadmap{min-width:0}
+.directions-stage4 [data-ui="page-header"] .ui-segmented button{font-size:12px;flex:0 0 auto;padding:0 12px}.directions-stage4 [data-ui="page-header"] .ui-segmented button:last-child{flex:1;min-width:0;padding:0 4px}
+.directions-stage4 [data-ui="page-header"]>.ui-pill-row{padding-left:0;padding-right:0}.directions-stage4 [data-ui="page-header"]>.ui-pill-row>.ui-pill-row{padding:4px 0;gap:6px}
+.stage4-area-chips{display:flex;flex-wrap:wrap;gap:8px}.stage4-area-chips .ui-pill{white-space:normal;text-align:left}

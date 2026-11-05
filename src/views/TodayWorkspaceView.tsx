@@ -1,5 +1,7 @@
+import {minimumDayTasks} from '../components/today/minimumDayPresentation';
+import {DeferredTasks} from '../components/today/DeferredTasks';
 import { DateField, Row, Section } from '../ui';
-import { formatSubtitle } from "../lib/format";
+import { formatSubtitle, formatDuration, formatTimeRange } from "../lib/format";
 import { evaluateHabitOnDate } from "../domain/habits";
 import { DayCanvas } from "../components/today/DayCanvas";
 import { Leaf } from "lucide-react";
@@ -52,6 +54,7 @@ import { UK_STRINGS } from "../i18n/uk";
 import { Button, Card } from "../components/ui/primitives";
 
 export interface TodayWorkspaceViewProps {
+  habitHistory?: boolean;
   mode?: TodayMode;
   hasInteraction?: boolean;
   savedScrollTop?: number;
@@ -123,6 +126,7 @@ export function TodayWorkspaceView({
   habitEntries,
   habitsEnabled = true,
   habitsContent,
+  habitHistory=false,
   onInspectHabitSession,
   repositories,
   onSelectDate,
@@ -171,6 +175,7 @@ export function TodayWorkspaceView({
     reservationId?: string;
     reviewAction?: string;
     initialDate?: string;
+    initialTime?: string;
   } | null>(null);
   useEffect(() => {
     onModalStateChange?.(Boolean(planningTask) || focusOpen || reviewOpen);
@@ -213,7 +218,7 @@ export function TodayWorkspaceView({
       onWheelCapture={onInteraction}
       onKeyDownCapture={onInteraction}
     >
-      <header className="today-heading">
+      <header className="today-heading" hidden={effectiveMode==='habits'&&habitHistory}>
         <div>
           <h1>Сьогодні</h1>
           <p data-testid="today-selected-date-heading">
@@ -269,7 +274,7 @@ export function TodayWorkspaceView({
           </div>
         </div>
       </header>
-      <div className="today-mode-bar">
+      <div className="today-mode-bar" hidden={effectiveMode==='habits'&&habitHistory}>
         <span className="today-compact-title">Сьогодні</span>
         <Segmented<TodayMode>
           label="Режими Сьогодні"
@@ -284,7 +289,7 @@ export function TodayWorkspaceView({
           ]}
         />
       </div>
-      <WeekStrip
+      <div hidden={effectiveMode==='habits'&&habitHistory}><WeekStrip
         date={effectiveMode === "day" ? viewDate : selectedDate}
         today={actualTodayDate}
         onChange={onSelectDate}
@@ -311,11 +316,11 @@ export function TodayWorkspaceView({
               ];
             }),
         )}
-      />
+      /></div>
 
       {effectiveMode!=='habits'&&!triageDismissed&&triageTasks.length>0&&<div data-ui="content-start"><Section><Row title="Переглянути попередні плани" trailing={<><Button onClick={()=>{setTriageIndex(0);setReviewOpen(true);}}>Переглянути</Button><RoundButton aria-label="Приховати пропозицію" onClick={()=>setTriageDismissed(true)}>×</RoundButton></>}/></Section></div>}
       <Sheet title="Попередні плани" isOpen={reviewOpen} onClose={()=>setReviewOpen(false)}>
-        {triageTask?<div className="space-y-4"><div className="review-dots" role="group" aria-label={`${triageIndex+1} з ${triageTasks.length}`}>{triageTasks.map((task,i)=><span key={task.id} data-active={i===triageIndex}/>)}<small>{triageIndex+1} з {triageTasks.length}</small></div><h2>{triageTask.title}</h2><p>Потребує вашого рішення</p><div className="flex flex-wrap gap-2">{['Перенести','Зменшити обсяг','Розділити','Поставити на паузу','Відмовитися'].map(action=><button type="button" className="ui-pill" key={action} onClick={()=>action==='Перенести'?setRescheduleOpen(!rescheduleOpen):setPlanningTask({task:triageTask,reviewAction:action})}>{action}</button>)}</div>{rescheduleOpen&&<Section>{['Сьогодні ввечері','Завтра'].map(label=><Row key={label} title={label} trailing={<Button onClick={()=>{setRescheduleOpen(false);setPlanningTask({task:triageTask,reviewAction:'Перенести',initialDate:label==='Завтра'?addDaysToLocalDate(actualTodayDate,1):actualTodayDate});}}>Обрати</Button>}/>)}<DateField label="Інша дата" value={triageDate} onChange={e=>{setTriageDate(e.target.value);setPlanningTask({task:triageTask,reviewAction:'Перенести',initialDate:e.target.value});}}/></Section>}<button type="button" className="triage-keep" onClick={()=>{setRescheduleOpen(false);if(triageIndex+1<triageTasks.length)setTriageIndex(triageIndex+1);else setReviewOpen(false);}}>Залишити як є</button></div>:<p>Усе переглянуто</p>}
+        {triageTask?<div className="space-y-4"><div className="review-dots" role="group" aria-label={`${triageIndex+1} з ${triageTasks.length}`}>{triageTasks.map((task,i)=><span key={task.id} data-active={i===triageIndex}/>)}<small>{triageIndex+1} з {triageTasks.length}</small></div><h2>{triageTask.title}</h2><p>{triageTask.estimatedDurationMinutes?formatDuration(triageTask.estimatedDurationMinutes):"Без оцінки тривалості"}</p><div className="flex flex-wrap gap-2">{['Перенести','Зменшити обсяг','Розділити','Поставити на паузу','Відмовитися'].map(action=><button type="button" className="ui-pill" key={action} onClick={()=>action==='Перенести'?setRescheduleOpen(!rescheduleOpen):setPlanningTask({task:triageTask,reviewAction:action})}>{action}</button>)}</div>{rescheduleOpen&&<Section>{['Сьогодні ввечері','Завтра'].map(label=><Row key={label} title={label} trailing={<Button onClick={()=>{setRescheduleOpen(false);setPlanningTask({task:triageTask,reviewAction:'Перенести',initialDate:label==='Завтра'?addDaysToLocalDate(actualTodayDate,1):actualTodayDate,initialTime:label==='Сьогодні ввечері'?'18:00':undefined});}}>Обрати</Button>}/>)}<DateField label="Інша дата" value={triageDate} onChange={e=>{setTriageDate(e.target.value);setPlanningTask({task:triageTask,reviewAction:'Перенести',initialDate:e.target.value});}}/></Section>}<button type="button" className="triage-keep" onClick={()=>{setRescheduleOpen(false);if(triageIndex+1<triageTasks.length)setTriageIndex(triageIndex+1);else setReviewOpen(false);}}>Залишити як є</button></div>:<p>Усе переглянуто</p>}
       </Sheet>
       <DailyFocusPanel
         key={actionDate + ":" + JSON.stringify(actionPlan)}
@@ -329,48 +334,13 @@ export function TodayWorkspaceView({
         onClose={() => setFocusOpen(false)}
         onChanged={() => onDataChanged()}
       />
-      {dailyPlan.minimalDay && effectiveMode !== "day" && (
-        <Card className="space-y-2" data-testid="today-minimal-commitments">
-          <h2 className="font-semibold">
-            Зобов’язання та зайнятий час залишаються видимими
-          </h2>
-
-          <ul>
-            {todayProjection.timelineItems
-              .filter((item) => item.isBlocking)
-              .map((item) => (
-                <li key={item.itemKey}>
-                  {item.segment.displayStartLocalTime} –{" "}
-                  {item.segment.displayEndLocalTime}: {item.title}
-                </li>
-              ))}
-            {todayProjection.allDayItems
-              .filter((item) => item.isBlocking)
-              .map((item) => (
-                <li key={item.eventId}>Увесь день: {item.title}</li>
-              ))}
-            {projectTodayTasks(
-              tasks,
-              reservations,
-              selectedDate,
-              activeZone,
-              dailyPlan,
-            )
-              .relevant.filter((task) => task.deadline)
-              .map((task) => (
-                <li key={task.id}>
-                  Термін: {task.title},{" "}
-                  {formatUkrainianDateHeading(deadlineDate(task, activeZone)!)}
-                </li>
-              ))}
-          </ul>
-        </Card>
-      )}
+      {dailyPlan.minimalDay&&effectiveMode==='tasks'&&(todayProjection.timelineItems.some(i=>!i.taskId&&(i.isBlocking||events.some(e=>e.id===i.sourceId&&['sleep','rest'].includes(e.type))))||todayProjection.allDayItems.some(i=>i.isBlocking))&&<Section title="Зобов’язання і відновлення">{todayProjection.timelineItems.filter(i=>!i.taskId&&(i.isBlocking||events.some(e=>e.id===i.sourceId&&['sleep','rest'].includes(e.type)))).map(item=><Row key={item.itemKey} title={item.title} secondary={formatTimeRange(item.segment.displayStartLocalTime,item.segment.displayEndLocalTime)}/>)}{todayProjection.allDayItems.filter(i=>i.isBlocking).map(item=><Row key={item.eventId} title={item.title} secondary="Увесь день"/>)}</Section>}
       {planningTask && (
         <TaskPlanningSheet
-          key={planningTask.task.id + ":" + (planningTask.reservationId ?? "")}
+          key={planningTask.task.id + ":" + (planningTask.reservationId ?? "") + (planningTask.initialDate??'') + (planningTask.initialTime??'')}
           reviewAction={planningTask.reviewAction}
           initialDate={planningTask.initialDate}
+          initialTime={planningTask.initialTime}
           task={planningTask.task}
           initialReservationId={planningTask.reservationId}
           date={selectedDate}
@@ -473,6 +443,7 @@ export function TodayWorkspaceView({
       )}
       {effectiveMode === "day" && (
         <>
+          {actionPlan.minimalDay&&<><Section title="Залишити на сьогодні">{minimumDayTasks(projectTodayTasks(tasks,reservations,actionDate,activeZone,actionPlan).relevant,actionPlan).filter(t=>!reservations.some(r=>r.taskId===t.id&&r.state==='active')).map(task=><Row key={task.id} title={task.title} secondary={task.deadline?'Важливий термін':task.estimatedDurationMinutes?formatDuration(task.estimatedDurationMinutes):undefined} trailing={<Button onClick={()=>setPlanningTask({task})}>›</Button>}/>)}</Section><DeferredTasks tasks={projectTodayTasks(tasks,reservations,actionDate,activeZone,actionPlan).relevant.filter(t=>!minimumDayTasks(projectTodayTasks(tasks,reservations,actionDate,activeZone,actionPlan).relevant,actionPlan).includes(t))} repositories={repositories} onChanged={()=>onDataChanged()} onPlan={task=>setPlanningTask({task,reviewAction:'Перенести'})}/></>}
           {/* 5. Main Proportional Timeline for Selected Date (6.1 / 6.5) */}
           <DayCanvas
             plans={dailyPlans}

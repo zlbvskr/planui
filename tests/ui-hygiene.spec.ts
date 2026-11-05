@@ -12,6 +12,13 @@ export const ROUTES = [
   {id:'quick-habit',path:'/#/today',mode:'Звички',overlay:'habit'},
   {id:'triage',path:'/#/today',mode:'Завдання',overlay:'triage'},
   {id:'weekly',path:'/#/today',mode:'Завдання',overlay:'weekly'},
+  ...([1,2,3] as const).map(step=>({id:`weekly-step-${step+1}`,path:'/#/today',mode:'Завдання',overlay:'weekly',step} as const)),
+  {id:'calendar-month',path:'/#/calendar',mode:'Місяць'},
+  {id:'calendar-week',path:'/#/calendar',mode:'Тиждень'},
+  {id:'calendar-day',path:'/#/calendar',mode:'День'},
+  {id:'calendar-roster',path:'/#/calendar',mode:'Графік'},
+  {id:'calendar-stamp',path:'/#/calendar',mode:'Місяць',stamp:'stamp'},
+  {id:'calendar-templates',path:'/#/calendar',mode:'Місяць',stamp:'templates'},
 ] as const;
 type Finding={rule:string;target:string;detail:string};
 
@@ -55,22 +62,23 @@ export function inspectUiHygiene():Finding[] {
 export async function runUiHygiene() {
   const runtime=await startUiRuntime();const records=[];
   try {
-    for(const theme of ['dark','light'] as const)for(const variant of ['filled','empty'] as const)for(const route of ROUTES){
+    for(const theme of ['dark','light'] as const)for(const variant of ['filled','empty'] as const)for(const route of ROUTES.filter(route=>!process.env.UI_ROUTE_PREFIX||route.id.startsWith(process.env.UI_ROUTE_PREFIX))){
       const context=await runtime.browser.newContext({...UI_CONTEXT,colorScheme:theme,serviceWorkers:'block'});
       const page=await context.newPage();const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
       try {
         await installUiFixture(page,variant,theme);await page.goto(runtime.url+route.path);
-        await page.getByTestId('destination-view-today').waitFor();await page.waitForTimeout(100);
+        await page.getByTestId(route.path.includes('calendar')?'destination-view-calendar':'destination-view-today').waitFor();await page.waitForTimeout(100);
         await page.getByRole('button',{name:route.mode,exact:true}).click();await page.waitForTimeout(100);
         await page.evaluate(()=>{scrollTo(0,0);document.getAnimations().forEach(a=>{try{a.finish();}catch{}});});
         if('position' in route && route.position==='midnight') {
           await page.evaluate(()=>{const el=document.querySelector<HTMLElement>('.continuous-time-scroll')!;const day=el.querySelector<HTMLElement>('[data-date="2026-11-06"]')!;el.scrollTop+=day.getBoundingClientRect().top-el.getBoundingClientRect().top+day.offsetHeight-140;});
           await page.waitForTimeout(100);
         }
+        if('stamp' in route){await page.getByRole('button',{name:'Штамп змін',exact:true}).click();if(route.stamp==='templates')await page.getByRole('dialog').last().getByRole('button',{name:'Шаблони',exact:true}).click();}
         if('overlay' in route) {
           if(route.overlay==='triage') { await page.getByRole('button',{name:'Інші дії дня',exact:true}).click(); await page.getByRole('menuitem',{name:'Переглянути попередні плани',exact:true}).click(); }
-          else if(route.overlay==='weekly') { await page.goto(runtime.url+'/#/life_areas'); await page.getByRole('button',{name:'Щотижневий огляд · 4 кроки',exact:true}).click(); }
-          else { await page.getByRole('button',{name:'Створити новий запис у поточному розділі',exact:true}).last().click(); if(route.overlay!=='task')await page.getByRole('radio',{name:route.overlay==='event'?'Подія':'Звичка',exact:true}).click(); }
+          else if(route.overlay==='weekly') { await page.goto(runtime.url+'/#/life_areas'); await page.getByRole('button',{name:'Щотижневий огляд · 4 кроки',exact:true}).click(); if('step' in route)for(let step=0;step<route.step;step++)await page.getByRole('dialog').getByRole('button',{name:'Далі',exact:true}).click(); }
+          else { await page.getByRole('button',{name:'Створити новий запис у поточному розділі',exact:true}).last().click(); if(route.overlay!=='task')await page.getByRole('button',{name:route.overlay==='event'?'Подія':'Звичка',exact:true}).click(); }
           await page.waitForTimeout(100);
         }
         const findings=await page.evaluate(inspectUiHygiene);
@@ -87,7 +95,7 @@ export async function runUiHygiene() {
         const counts:Record<string,number>={};for(const finding of findings)counts[finding.rule]=(counts[finding.rule]??0)+1;
         records.push({route:route.id,theme,variant,total:findings.length,counts,findings});
         console.log(`${route.id} ${theme} ${variant}: ${findings.length}`);
-        await page.screenshot({path:`${runtime.out}/${route.id}-${theme}-${variant}.png`,animations:'disabled'});
+        if(process.env.UI_SCREENSHOTS!=='0')await page.screenshot({path:`${runtime.out}/${route.id}-${theme}-${variant}.png`,animations:'disabled'});
       }catch(error){records.push({route:route.id,theme,variant,total:1,counts:{harness:1},findings:[{rule:'harness',target:'page',detail:String(error)}]});}
       finally{await context.close();}
     }

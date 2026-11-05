@@ -1,3 +1,4 @@
+import {SelectField} from '../ui';
 import { WeeklyReviewSheet } from '../components/today/WeeklyReviewSheet';
 import { OptionalSlider } from '../components/ui/OptionalSlider';
 import { PlanuiError } from '../i18n/errorsUk';
@@ -7,7 +8,7 @@ import { STARTER_LIFE_AREAS, SATISFACTION_QUESTION_UK, ReviewAnswerDraft, LifeAr
 import { updateLifeAreaQuestionWording } from '../domain/personalSpace';
 import { addDaysToLocalDate, formatUkrainianDateHeading } from '../domain/temporal';
 import { PlanuiRepositories } from '../storage/repositories';
-import { Button, Card, InputField, ModalSheet, SelectField, TextAreaField } from '../components/ui/primitives';
+import { Button, Card, InputField, ModalSheet, TextAreaField } from '../components/ui/primitives';
 import { PlanningReviewPanel } from '../components/today/PlanningReviewPanel';
 import { TaskPlanningSheet } from '../components/today/TaskPlanningSheet';
 import { RoadmapView } from './RoadmapView';
@@ -59,7 +60,7 @@ export function LifeAreasReviewView({ snapshot, zone, today, repositories, onCha
   }
   function openPlan(kind: 'goal' | 'project', id: string) { if (reviewDirty) setLeavePlan({ kind, id }); else onOpenPlan(kind, id); }
   function update(id: string, patch: Partial<ReviewAnswerDraft>) { setReviewDirty(true); setDrafts(current => ({ ...current, [id]: { ...(current[id] ?? EMPTY_ANSWER), ...patch } })); }
-  return <div className="space-y-4" data-testid="life-areas-review">
+  return <div className="space-y-4" data-testid="life-areas-review" data-ui="content-start">
     <p>Сфери життя є редагованою рамкою для планування, а не валідованим психологічним тестом. Загальний бал життя й рейтинг сфер не обчислюються.</p>
     {error && <p role="alert">{error}</p>}
     <Button onClick={()=>setWeeklyOpen(true)}>Щотижневий огляд · 4 кроки</Button>

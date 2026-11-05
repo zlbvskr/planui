@@ -1,4 +1,5 @@
-import { DateField, TimeField } from '../../ui';
+import {SleepReminderNote} from '../habits/SleepReminderNote';
+import { Sheet, Section, Row, PillRow, ActionMenu, DurationField, Toggle, Slider, DateField, TimeField } from '../../ui';
 import { formatDuration, formatDate } from '../../lib/format';
 import { PillMenu as SelectField } from '../ui/design';
 import { WishExtrasFields, emptyWishExtras, resolveWishExtras } from '../wishlist/WishExtrasFields';
@@ -167,6 +168,11 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
     useState<EditableCreationContext>(initialContext);
 
   // Task fields
+  const [quickShiftDays,setQuickShiftDays]=useState<string[]>([]);
+  const [quickShiftDay,setQuickShiftDay]=useState('');
+  const quickSavedShiftDays=React.useRef(new Set<string>());
+  const [quickBatchConflict,setQuickBatchConflict]=useState(false);
+  const [quickAdvanced, setQuickAdvanced] = useState(false);
   const [quickPanel, setQuickPanel] = useState<string | null>(null);
   const [taskEffort, setTaskEffort] = useState<Task['effort']>(null);
   const [taskLifeArea, setTaskLifeArea] = useState('');
@@ -306,6 +312,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
   useEffect(() => {
     if (isOpen && !wasOpenRef.current) {
       wasOpenRef.current = true;
+      setQuickAdvanced(false); setQuickPanel(null); setQuickShiftDays([]);setQuickShiftDay('');quickSavedShiftDays.current.clear();setQuickBatchConflict(false);
       const contextualDefault =
         initialActionKind ??
         (getContextualCreationActions(activeDestination, contexts)[0]
@@ -804,9 +811,10 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
                 originZone: lockedEditorZone,
               } as const);
 
-        await repositories.saveCalendarEvent({
+        const record:CalendarEvent={
           id,
           title: eventTitle,
+          lifeAreaId: taskLifeArea || null,
           note: eventNote.trim() ? eventNote.trim() : null,
           type: effectiveType,
           color: effectiveType === 'work_shift' ? 'work' : eventColor,
@@ -824,7 +832,14 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
           createdAt: nowIso,
           updatedAt: nowIso,
           revision: 1,
-        });
+        };
+        if(globalQuickAdd&&selectedAction==='shift') {
+          const dates=[...new Set([eventStartDate,...quickShiftDays])].sort();
+          const offset=Math.round((Date.parse(eventEndDate+'T12:00:00Z')-Date.parse(eventStartDate+'T12:00:00Z'))/86400000);
+          const planned=dates.map((date,index)=>({...record,id:index===0?id:crypto.randomUUID(),schedule:{kind:'timed' as const,interval:buildZonedIntervalFromLocalInput({startLocalDate:date,startLocalTime:eventStartTime,endLocalDate:addDaysToLocalDate(date,offset),endLocalTime:eventEndTime,originZone:lockedEditorZone}).interval}}));
+          for(const event of planned) {const interval=event.schedule.interval;const report=detectScheduleConflicts({candidateStartInstant:interval.startInstant,candidateEndInstant:interval.endInstant,displayZone:lockedEditorZone,events,tasks,reservations});if(report.hasConflicts&&!confirmConsciousOverlap){setQuickBatchConflict(true);throw new Error('Вибрані дні мають перетин із розкладом.');}}
+          for(const event of planned){const day=event.schedule.interval.originStartLocalDate;if(!quickSavedShiftDays.current.has(day)){await repositories.saveCalendarEvent(event);quickSavedShiftDays.current.add(day);}}
+        } else await repositories.saveCalendarEvent(record);
 
         onEntityCreated(
           effectiveType === 'work_shift'
@@ -1207,6 +1222,690 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
     { value: '4', label: STRESS_SCALE_LABELS_UK[4] },
     { value: '5', label: STRESS_SCALE_LABELS_UK[5] },
   ];
+
+  if (globalQuickAdd && !quickAdvanced) {
+    const title =
+      selectedAction === "task"
+        ? taskTitle
+        : selectedAction === "habit"
+          ? habitName
+          : selectedAction === "wish"
+            ? wishTitle
+            : selectedAction === "goal"
+              ? goalTitle
+              : selectedAction === "personal_record"
+                ? recordText
+                : eventTitle;
+    const setTitle =
+      selectedAction === "task"
+        ? setTaskTitle
+        : selectedAction === "habit"
+          ? setHabitName
+          : selectedAction === "wish"
+            ? setWishTitle
+            : selectedAction === "goal"
+              ? setGoalTitle
+              : selectedAction === "personal_record"
+                ? setRecordText
+                : setEventTitle;
+    const labels: Record<string, string> = {
+      task: "Справа",
+      shift: "Зміна",
+      event: "Подія",
+      goal: "Ціль",
+      habit: "Звичка",
+      personal_record: "Стан",
+      wish: "Бажання",
+    };
+    const area =
+      selectedAction === "habit"
+        ? habitLifeAreaId
+        : selectedAction === "goal"
+          ? goalLifeAreaId
+          : taskLifeArea;
+    const setArea =
+      selectedAction === "habit"
+        ? setHabitLifeAreaId
+        : selectedAction === "goal"
+          ? setGoalLifeAreaId
+          : setTaskLifeArea;
+    const date =
+      selectedAction === "task"
+        ? editableContext.targetDate
+        : selectedAction === "habit"
+          ? habitEffectiveFromDate
+          : selectedAction === "goal"
+            ? goalTargetDate
+            : eventStartDate;
+    const chip = (key: string, label: string, value?: string | null) => (
+      <button
+        type="button"
+        className="ui-pill"
+        key={key}
+        aria-expanded={quickPanel === key}
+        onClick={() => setQuickPanel(key)}
+      >
+        {label}
+        {value ? ` · ${value}` : ""}
+      </button>
+    );
+    const chooseLink = (kind: string, id: string) => {
+      setEditableContext((c) => ({
+        ...c,
+        folderId: kind === "folder" ? id : null,
+        projectId: kind === "project" ? id : null,
+        goalId: null,
+        stageId: null,
+      }));
+      setHabitFolder(kind === "folder" ? id : "");
+      setGoalFolderId(kind === "folder" ? id : "");
+    };
+    const frequency =
+      habitCue === "Після пробудження" ? "awakening" : habitRuleKind;
+    return (
+      <>
+        <ModalSheet
+          transitionName="planui-create"
+          quickAdd
+          isOpen={isOpen}
+          title="Швидке додавання"
+          onClose={onClose}
+        >
+          <form className="stage2-quick" onSubmit={handleSave} noValidate>
+            <input
+              key={selectedAction}
+              autoFocus
+              className="quick-title"
+              aria-label="Що потрібно зробити?"
+              placeholder="Що потрібно зробити?"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              data-testid="quick-title"
+            />
+            <PillRow
+              label="Тип запису"
+              value={selectedAction}
+              options={quickKinds.map((value) => ({
+                value,
+                label: labels[value],
+              }))}
+              onChange={(value) => {
+                setSelectedAction(value);
+                if (value === "shift") setEventType("work_shift");
+                else if (value === "event") setEventType("personal");
+                setQuickPanel(null);
+              }}
+            />
+            <div className="quick-options" data-ui="pill-row">
+              {!["wish", "personal_record"].includes(selectedAction) &&
+                chip(
+                  "date",
+                  "Дата й час",
+                  date
+                    ? formatDate(date, { day: "numeric", month: "short" })
+                    : null,
+                )}
+              {["task", "event", "shift"].includes(selectedAction) && (
+                <DurationField
+                  value={taskEstimate ? Number(taskEstimate) : null}
+                  onChange={(v) => {
+                    setTaskEstimate(v === null ? "" : String(v));
+                    if (v && selectedAction !== "task") {
+                      const minutes =
+                        Number(eventStartTime.slice(0, 2)) * 60 +
+                        Number(eventStartTime.slice(3)) +
+                        v;
+                      setEventEndTime(
+                        `${String(Math.floor(minutes / 60) % 24).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`,
+                      );
+                      setEventEndDate(
+                        addDaysToLocalDate(
+                          eventStartDate,
+                          Math.floor(minutes / 1440),
+                        ),
+                      );
+                    }
+                  }}
+                />
+              )}
+              {selectedAction === "task" &&
+                chip(
+                  "effort",
+                  "Зусилля",
+                  taskEffort
+                    ? { small: "•", medium: "••", large: "•••" }[taskEffort]
+                    : null,
+                )}
+              {["task", "goal", "habit"].includes(selectedAction) &&
+                chip(
+                  "link",
+                  "Напрям",
+                  projects.find((p) => p.id === editableContext.projectId)
+                    ?.title ||
+                    folders.find(
+                      (f) =>
+                        f.id ===
+                        (selectedAction === "habit"
+                          ? habitFolder
+                          : editableContext.folderId),
+                    )?.name,
+                )}
+              {!["wish", "shift", "personal_record"].includes(selectedAction) &&
+                chip(
+                  "area",
+                  "Сфера",
+                  lifeAreaQuestions.find((a) => a.id === area)?.questionTextUk,
+                )}
+              {selectedAction === "habit" && (
+                <>
+                  {chip(
+                    "frequency",
+                    "Як часто",
+                    frequency === "awakening"
+                      ? "Після пробудження"
+                      : frequency === "days_off"
+                        ? "У вихідні від роботи"
+                        : frequency === "weekly_frequency"
+                          ? `${habitTimesPerWeek} рази на тиждень`
+                          : "Щодня",
+                  )}
+                  {chip("minimum", "Мінімум", habitMinimum)}
+                  {chip("cue", "Контекст", habitCue)}
+                </>
+              )}
+              {selectedAction === "shift" && (
+                <>
+                  {chip(
+                    "template",
+                    "Шаблон",
+                    shiftTemplates.find((t) => t.id === selectedShiftTemplateId)
+                      ?.name,
+                  )}
+                  {chip(
+                    "days",
+                    "Дні",
+                    quickShiftDays
+                      .map((d) =>
+                        formatDate(d, { day: "numeric", month: "short" }),
+                      )
+                      .join(" · "),
+                  )}
+                </>
+              )}
+              {selectedAction === "wish" && (
+                <>
+                  {chip("price", "Ціна", wishPriceInput)}
+                  {chip(
+                    "category",
+                    "Категорія",
+                    wishlistCategories.find(
+                      (c) => c.id === editableContext.wishlistCategoryId,
+                    )?.name,
+                  )}
+                </>
+              )}
+              {selectedAction === "personal_record" &&
+                chip("state", "Самопочуття")}
+            </div>
+            {errorMessage && <p role="alert">{errorMessage}</p>}
+            {(conflictPreview.hasConflicts || quickBatchConflict) &&
+              ["event", "shift", "task"].includes(selectedAction) && (
+                <Row
+                  title="Є перетин із розкладом"
+                  trailing={
+                    <Toggle
+                      label="Зберегти з перетином"
+                      checked={confirmConsciousOverlap}
+                      onChange={setConfirmConsciousOverlap}
+                    />
+                  }
+                />
+              )}
+            <footer>
+              <ActionMenu
+                label="Додаткові дії"
+                items={[
+                  {
+                    label: "Додаткові поля",
+                    onSelect: () => {
+                      setQuickAdvanced(true);
+                      setQuickPanel("details");
+                    },
+                  },
+                ]}
+              />
+              <button
+                type="submit"
+                className="quick-submit"
+                disabled={isSaving}
+                aria-label="Додати"
+              >
+                ↑ <span>Додати</span>
+              </button>
+            </footer>
+          </form>
+        </ModalSheet>
+        <Sheet
+          title={
+            quickPanel === "date"
+              ? "Дата й час"
+              : quickPanel === "link"
+                ? "Напрям або проєкт"
+                : quickPanel === "frequency"
+                  ? "Як часто"
+                  : quickPanel === "minimum"
+                    ? "Мінімальний варіант"
+                    : quickPanel === "cue"
+                      ? "Контекст і нагадування"
+                      : quickPanel === "area"
+                        ? "Сфера"
+                        : quickPanel === "price"
+                          ? "Ціна"
+                          : quickPanel === "category"
+                            ? "Категорія"
+                            : quickPanel === "days"
+                              ? "Дні змін"
+                              : quickPanel === "template"
+                                ? "Шаблон зміни"
+                                : quickPanel === "effort"
+                                  ? "Зусилля"
+                                  : quickPanel === "state"
+                                    ? "Самопочуття"
+                                    : "Тривалість"
+          }
+          isOpen={isOpen && Boolean(quickPanel)}
+          onClose={() => setQuickPanel(null)}
+        >
+          {quickPanel === "date" && (
+            <Section>
+              <DateField
+                label={selectedAction === "habit" ? "Починаючи з" : "Дата"}
+                value={date || ""}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  if (selectedAction === "task") {
+                    setEditableContext((c) => ({ ...c, targetDate: value }));
+                    setTaskPlanningMode("date_only");
+                  } else if (selectedAction === "habit")
+                    setHabitEffectiveFromDate(value);
+                  else if (selectedAction === "goal") setGoalTargetDate(value);
+                  else {
+                    setEventStartDate(value);
+                    setEventEndDate(
+                      addDaysToLocalDate(
+                        value,
+                        selectedAction === "shift" &&
+                          eventEndTime <= eventStartTime
+                          ? 1
+                          : 0,
+                      ),
+                    );
+                  }
+                }}
+              />
+              {["event", "shift"].includes(selectedAction) && (
+                <>
+                  {selectedAction === "event" && (
+                    <Row
+                      title="Увесь день"
+                      trailing={
+                        <Toggle
+                          label="Увесь день"
+                          checked={eventScheduleKind === "all_day"}
+                          onChange={(v) =>
+                            setEventScheduleKind(v ? "all_day" : "timed")
+                          }
+                        />
+                      }
+                    />
+                  )}
+                  <DateField
+                    label="Дата завершення"
+                    value={eventEndDate}
+                    min={eventStartDate}
+                    onChange={(e) => setEventEndDate(e.target.value)}
+                  />
+                  {eventScheduleKind === "timed" && (
+                    <>
+                      <TimeField
+                        label="Початок"
+                        value={eventStartTime}
+                        onChange={(e) => setEventStartTime(e.target.value)}
+                      />
+                      <TimeField
+                        label="Завершення"
+                        value={eventEndTime}
+                        onChange={(e) => setEventEndTime(e.target.value)}
+                      />
+                    </>
+                  )}
+                </>
+              )}
+              {selectedAction === "task" && (
+                <>
+                  <Row
+                    title="Запланувати час"
+                    trailing={
+                      <Toggle
+                        label="Запланувати час"
+                        checked={taskPlanningMode === "timed"}
+                        onChange={(v) =>
+                          setTaskPlanningMode(v ? "timed" : "date_only")
+                        }
+                      />
+                    }
+                  />
+                  {taskPlanningMode === "timed" && (
+                    <>
+                      <TimeField
+                        label="Початок"
+                        value={taskResStartTime}
+                        onChange={(e) => setTaskResStartTime(e.target.value)}
+                      />
+                      <TimeField
+                        label="Завершення"
+                        value={taskResEndTime}
+                        onChange={(e) => setTaskResEndTime(e.target.value)}
+                      />
+                    </>
+                  )}
+                </>
+              )}
+            </Section>
+          )}
+          {quickPanel === "duration" && (
+            <DurationField
+              value={taskEstimate ? Number(taskEstimate) : null}
+              onChange={(v) => {
+                setTaskEstimate(v === null ? "" : String(v));
+                if (v && selectedAction !== "task") {
+                  const minutes =
+                    Number(eventStartTime.slice(0, 2)) * 60 +
+                    Number(eventStartTime.slice(3)) +
+                    v;
+                  setEventEndTime(
+                    `${String(Math.floor(minutes / 60) % 24).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`,
+                  );
+                  setEventEndDate(
+                    addDaysToLocalDate(
+                      eventStartDate,
+                      Math.floor(minutes / 1440),
+                    ),
+                  );
+                }
+              }}
+            />
+          )}
+          {quickPanel === "effort" && (
+            <PillRow
+              label="Зусилля"
+              value={taskEffort || ""}
+              options={[
+                { value: "", label: "Без оцінки" },
+                { value: "small", label: "•" },
+                { value: "medium", label: "••" },
+                { value: "large", label: "•••" },
+              ]}
+              onChange={(v) => setTaskEffort((v || null) as Task["effort"])}
+            />
+          )}
+          {quickPanel === "link" && (
+            <Section>
+              <Row
+                title="Ні з чим"
+                trailing={
+                  <Button onClick={() => chooseLink("", "")}>Обрати</Button>
+                }
+              />
+              {folders.map((f) => (
+                <Row
+                  key={f.id}
+                  title={f.name}
+                  trailing={
+                    <Button onClick={() => chooseLink("folder", f.id)}>
+                      Обрати
+                    </Button>
+                  }
+                />
+              ))}
+              {projects
+                .filter((p) => !p.archived)
+                .map((p) => (
+                  <Row
+                    key={p.id}
+                    title={p.title}
+                    trailing={
+                      <Button onClick={() => chooseLink("project", p.id)}>
+                        Обрати
+                      </Button>
+                    }
+                  />
+                ))}
+            </Section>
+          )}
+          {quickPanel === "area" && (
+            <SelectField
+              label="Сфера"
+              value={area}
+              onChange={(e) => setArea(e.target.value)}
+              options={[
+                { value: "", label: "Ні з чим" },
+                ...lifeAreaQuestions
+                  .filter((a) => !a.archived && !a.mergedIntoId)
+                  .map((a) => ({ value: a.id, label: a.questionTextUk })),
+              ]}
+            />
+          )}
+          {quickPanel === "frequency" && (
+            <>
+              <SelectField
+                label="Як часто"
+                value={frequency}
+                options={[
+                  { value: "daily", label: "Щодня" },
+                  { value: "weekly_frequency", label: "N разів на тиждень" },
+                  { value: "days_off", label: "У вихідні від роботи" },
+                  { value: "awakening", label: "Після пробудження" },
+                ]}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setHabitRuleKind(
+                    (v === "awakening" ? "daily" : v) as typeof habitRuleKind,
+                  );
+                  setHabitCue(v === "awakening" ? "Після пробудження" : "");
+                }}
+              />
+              {habitRuleKind === "weekly_frequency" && (
+                <InputField
+                  label="Разів на тиждень"
+                  type="number"
+                  min={1}
+                  max={7}
+                  value={habitTimesPerWeek}
+                  onChange={(e) => setHabitTimesPerWeek(e.target.value)}
+                />
+              )}
+            </>
+          )}
+          {quickPanel === "minimum" && (
+            <InputField
+              label="Мінімальний варіант"
+              value={habitMinimum}
+              onChange={(e) => setHabitMinimum(e.target.value)}
+            />
+          )}
+          {quickPanel === "cue" && (
+            <>
+              <InputField
+                label="Зручний контекст"
+                value={habitCue}
+                onChange={(e) => setHabitCue(e.target.value)}
+              />
+              <InputField
+                label="Нагадування для себе"
+                value={habitReminder}
+                onChange={(e) => setHabitReminder(e.target.value)}
+              />
+              <SleepReminderNote
+                reminder={habitReminder}
+                date={habitEffectiveFromDate}
+                zone={lockedEditorZone}
+                events={events}
+              />
+            </>
+          )}
+          {quickPanel === "days" && (
+            <>
+              <DateField
+                label="Додати день зміни"
+                value={quickShiftDay || eventStartDate}
+                onChange={(e) => setQuickShiftDay(e.target.value)}
+              />
+              <button
+                type="button"
+                className="ui-pill"
+                onClick={() => {
+                  const date = quickShiftDay || eventStartDate;
+                  if (date && date !== eventStartDate)
+                    setQuickShiftDays((days) =>
+                      [...new Set([...days, date])].sort(),
+                    );
+                }}
+              >
+                Додати день
+              </button>
+              <Section>
+                <Row
+                  title={formatDate(eventStartDate)}
+                  secondary="Основний день"
+                />
+                {quickShiftDays.map((date) => (
+                  <Row
+                    key={date}
+                    title={formatDate(date)}
+                    trailing={
+                      <button
+                        type="button"
+                        className="ui-pill"
+                        aria-label={`Прибрати ${formatDate(date)}`}
+                        onClick={() =>
+                          setQuickShiftDays((days) =>
+                            days.filter((d) => d !== date),
+                          )
+                        }
+                      >
+                        ×
+                      </button>
+                    }
+                  />
+                ))}
+              </Section>
+            </>
+          )}
+          {quickPanel === "template" && (
+            <div className="space-y-3">
+              {shiftTemplates.map((t) => (
+                <Button
+                  key={t.id}
+                  onClick={() => {
+                    setSelectedShiftTemplateId(t.id);
+                    setEventTitle(t.name);
+                    setShiftCode(t.code);
+                    setEventStartTime(t.startLocalTime);
+                    setEventEndTime(t.endLocalTime);
+                    setEventEndDate(
+                      addDaysToLocalDate(eventStartDate, t.endDateOffsetDays),
+                    );
+                  }}
+                >
+                  {t.name}
+                </Button>
+              ))}
+              {!shiftTemplates.length &&
+                ["Денна", "Нічна"].map((label, i) => (
+                  <Button
+                    key={label}
+                    onClick={() => {
+                      setEventTitle(label + " зміна");
+                      setEventStartTime(i ? "20:00" : "08:00");
+                      setEventEndTime(i ? "08:00" : "20:00");
+                      setEventEndDate(addDaysToLocalDate(eventStartDate, i));
+                    }}
+                  >
+                    {label}
+                  </Button>
+                ))}
+            </div>
+          )}
+          {quickPanel === "price" && (
+            <>
+              <InputField
+                label="Ціна"
+                inputMode="decimal"
+                value={wishPriceInput}
+                onChange={(e) => setWishPriceInput(e.target.value)}
+              />
+              <SelectField
+                label="Валюта"
+                value={wishCurrencyInput}
+                onChange={(e) =>
+                  setWishCurrencyInput(e.target.value as SupportedCurrencyCode)
+                }
+                options={["UAH", "EUR", "USD"].map((value) => ({
+                  value,
+                  label: value,
+                }))}
+              />
+            </>
+          )}
+          {quickPanel === "category" && (
+            <SelectField
+              label="Категорія"
+              value={editableContext.wishlistCategoryId || ""}
+              onChange={(e) =>
+                setEditableContext((c) => ({
+                  ...c,
+                  wishlistCategoryId: e.target.value || null,
+                }))
+              }
+              options={[
+                { value: "", label: "Без категорії" },
+                ...wishlistCategories.map((c) => ({
+                  value: c.id,
+                  label: c.name,
+                })),
+              ]}
+            />
+          )}
+          {quickPanel === "state" && (
+            <>
+              <Slider
+                label="Настрій"
+                value={recordMood ? Number(recordMood) : null}
+                min={1}
+                max={5}
+                onChange={(v) => setRecordMood(v === null ? "" : String(v))}
+              />
+              <Slider
+                label="Енергія"
+                value={recordEnergy ? Number(recordEnergy) : null}
+                min={1}
+                max={5}
+                onChange={(v) => setRecordEnergy(v === null ? "" : String(v))}
+              />
+            </>
+          )}
+          <button
+            type="button"
+            className="ui-primary"
+            onClick={() => setQuickPanel(null)}
+          >
+            Готово
+          </button>
+        </Sheet>
+      </>
+    );
+  }
 
   return (
     <ModalSheet

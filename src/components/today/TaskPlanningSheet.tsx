@@ -27,6 +27,7 @@ import { Button, InputField, TextAreaField } from "../ui/primitives";
 export function TaskPlanningSheet({
   reviewAction,
   initialDate,
+  initialTime,
   task,
   date,
   zone,
@@ -40,6 +41,7 @@ export function TaskPlanningSheet({
 }: {
   reviewAction?: string;
   initialDate?: string;
+  initialTime?: string;
   task: Task;
   date: string;
   zone: string;
@@ -61,9 +63,9 @@ export function TaskPlanningSheet({
   const [editing, setEditing] = useState<TaskReservation | null>(
     original ?? null,
   );
-  const [startDate, setStartDate] = useState(initialStart?.localDate ?? date);
+  const [startDate, setStartDate] = useState(initialStart?.localDate ?? initialDate ?? date);
   const [startTime, setStartTime] = useState(
-    initialStart?.localTime ?? "09:00",
+    initialStart?.localTime ?? initialTime ?? "09:00",
   );
   const [duration, setDuration] = useState(
     original

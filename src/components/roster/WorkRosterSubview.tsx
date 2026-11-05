@@ -1,3 +1,22 @@
+import { CalendarGrid } from "../calendar/CalendarGrid";
+import {
+  Section,
+  Row,
+  Sheet,
+  Segmented,
+  ActionMenu,
+  DateField,
+  TimeField,
+  SelectField,
+  Toggle,
+  RoundButton,
+} from "../../ui";
+import {
+  formatDate,
+  formatMonthYear,
+  formatTimeRange,
+  sentenceCase,
+} from "../../lib/format";
 import {
   Check,
   Clock,
@@ -8,9 +27,9 @@ import {
   Sparkles,
   Sun,
   Trash2,
-} from 'lucide-react';
-import React, { useMemo, useState } from 'react';
-import { formatMinutesCompactUk } from '../../domain/formatting';
+} from "lucide-react";
+import React, { useMemo, useState, useEffect } from "react";
+import { formatMinutesCompactUk } from "../../domain/formatting";
 import {
   MultiDateBatchActionSpec,
   ProposedRosterItem,
@@ -20,13 +39,17 @@ import {
   instantiateWorkShiftFromTemplate,
   parseDeterministicRosterText,
   prepareMultiDateRosterBatch,
-} from '../../domain/roster';
+} from "../../domain/roster";
 import {
   ProjectedMonthCalendarGrid,
   ProjectedMonthCell,
   projectScheduleForDate,
-} from '../../domain/scheduling';
-import { formatUkrainianDateHeading, parseLocalDateParts } from '../../domain/temporal';
+} from "../../domain/scheduling";
+import {
+  formatUkrainianDateHeading,
+  parseLocalDateParts,
+  addMonthsToLocalDate,
+} from "../../domain/temporal";
 import {
   CalendarEvent,
   DayOffAnnotation,
@@ -36,21 +59,50 @@ import {
   ShiftTemplate,
   Task,
   TaskReservation,
-} from '../../domain/types';
-import { ImplementedCreationActionKind } from '../../state/shellStore';
-import { PlanuiRepositories, RosterBatchUndoToken } from '../../storage/repositories';
+} from "../../domain/types";
+import { ImplementedCreationActionKind } from "../../state/shellStore";
+import {
+  PlanuiRepositories,
+  RosterBatchUndoToken,
+} from "../../storage/repositories";
 import {
   Button,
   Card,
   FeedbackBanner,
-  InputField,
+  InputField as LegacyInputField,
   ModalSheet,
   SegmentedControl,
-  SelectField,
   TextAreaField,
-} from '../ui/primitives';
+} from "../ui/primitives";
 
+function InputField(props: React.ComponentProps<typeof LegacyInputField>) {
+  if (props.type === "date" || props.type === "time") {
+    const { type, hint, error, ...field } = props;
+    const Field = type === "date" ? DateField : TimeField;
+    return <Field {...field} value={String(props.value ?? "")} />;
+  }
+  return <LegacyInputField {...props} />;
+}
+function BooleanControl({
+  checked,
+  onChange,
+  ...props
+}: React.InputHTMLAttributes<HTMLInputElement>) {
+  return (
+    <Toggle
+      label={props["aria-label"] ?? "Підтвердити вибір"}
+      checked={Boolean(checked)}
+      onChange={(value) =>
+        onChange?.({
+          target: { checked: value },
+        } as React.ChangeEvent<HTMLInputElement>)
+      }
+    />
+  );
+}
 export interface WorkRosterSubviewProps {
+  stampMode?: boolean;
+  initialTool?: "period" | "text" | null;
   selectedDate: LocalDateString;
   actualTodayDate: LocalDateString;
   displayZone: IanaTimeZone;
@@ -64,59 +116,60 @@ export interface WorkRosterSubviewProps {
   onSelectDate: (nextDate: LocalDateString) => void;
   onInspectEvent: (event: CalendarEvent) => void;
   onCancelEvent: (eventId: EntityId, revision: number) => Promise<void> | void;
-  onOpenGlobalCreation: (preferredAction?: ImplementedCreationActionKind) => void;
+  onOpenGlobalCreation: (
+    preferredAction?: ImplementedCreationActionKind,
+  ) => void;
   onDataChanged: (feedbackMessage?: string) => Promise<void> | void;
   onModalStateChange?: (isOpen: boolean) => void;
 }
 
-type RosterInteractionMode = 'browse' | 'multi_date_edit';
+type RosterInteractionMode = "browse" | "multi_date_edit";
 type BatchActionChoiceKind =
-  | 'template_shift'
-  | 'custom_shift'
-  | 'day_off'
-  | 'clear_date';
-
+  "template_shift" | "custom_shift" | "day_off" | "clear_date";
 
 function createId(): string {
-  return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+  return typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
     ? crypto.randomUUID()
     : `id-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function formatProposedItemSummaryUk(item: ProposedRosterItem): string {
-  if (item.kind === 'clear_date') {
-    return 'Очистити робочі зміни та вихідні на цю дату';
+  if (item.kind === "clear_date") {
+    return "Очистити робочі зміни та вихідні на цю дату";
   }
-  if (item.kind === 'day_off') {
-    const code = item.dayOffToSave?.code ?? 'В';
+  if (item.kind === "day_off") {
+    const code = item.dayOffToSave?.code ?? "В";
     return `Вихідний (${code})`;
   }
-  if (item.eventToSave && item.eventToSave.schedule.kind === 'timed') {
+  if (item.eventToSave && item.eventToSave.schedule.kind === "timed") {
     const iv = item.eventToSave.schedule.interval;
     return `${item.eventToSave.title} (${iv.originStartLocalTime}–${
       iv.originEndLocalTime
-    }${item.isOvernight ? ` → ${iv.originEndLocalDate}` : ''}, ${formatMinutesCompactUk(
-      item.elapsedDurationMinutes
+    }${item.isOvernight ? ` → ${iv.originEndLocalDate}` : ""}, ${formatMinutesCompactUk(
+      item.elapsedDurationMinutes,
     )})`;
   }
-  return 'Робоча зміна';
+  return "Робоча зміна";
 }
 
 const WEEKDAY_OPTIONS_MONDAY_FIRST: ReadonlyArray<{
   index0To6: number;
   shortUk: string;
 }> = [
-  { index0To6: 0, shortUk: 'Пн' },
-  { index0To6: 1, shortUk: 'Вт' },
-  { index0To6: 2, shortUk: 'Ср' },
-  { index0To6: 3, shortUk: 'Чт' },
-  { index0To6: 4, shortUk: 'Пт' },
-  { index0To6: 5, shortUk: 'Сб' },
-  { index0To6: 6, shortUk: 'Нд' },
+  { index0To6: 0, shortUk: "Пн" },
+  { index0To6: 1, shortUk: "Вт" },
+  { index0To6: 2, shortUk: "Ср" },
+  { index0To6: 3, shortUk: "Чт" },
+  { index0To6: 4, shortUk: "Пт" },
+  { index0To6: 5, shortUk: "Сб" },
+  { index0To6: 6, shortUk: "Нд" },
 ];
 
 export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
   selectedDate,
+  stampMode = false,
+  initialTool = null,
   displayZone,
   monthGrid,
   events,
@@ -132,31 +185,47 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
   onDataChanged,
   onModalStateChange,
 }) => {
+  const [stampTab, setStampTab] = useState<"stamp" | "templates">("stamp");
+  const [armed, setArmed] = useState<ShiftTemplate | null>(null);
+  const [dayActions, setDayActions] = useState(false);
+  const [repeatOpen, setRepeatOpen] = useState(false);
+  const [repeatEnd, setRepeatEnd] = useState(selectedDate);
+  const [repeatWork, setRepeatWork] = useState("2"),
+    [repeatRest, setRepeatRest] = useState("2");
+  const [stampBusy, setStampBusy] = useState(false);
+  const [confirmPaint, setConfirmPaint] = useState<RosterBatchPreview | null>(
+    null,
+  );
+  useEffect(() => {
+    if (initialTool === "period") setIsPeriodModalOpen(true);
+    if (initialTool === "text") setIsTextParserModalOpen(true);
+  }, [initialTool]);
   const { year: activeYear, month: activeMonth } = useMemo(
-    () => parseLocalDateParts(selectedDate) ?? { year: 2026, month: 11, day: 1 },
-    [selectedDate]
+    () =>
+      parseLocalDateParts(selectedDate) ?? { year: 2026, month: 11, day: 1 },
+    [selectedDate],
   );
 
   // 8.1 Clear browse vs multi-date edit mode
   const [interactionMode, setInteractionMode] =
-    useState<RosterInteractionMode>('browse');
+    useState<RosterInteractionMode>("browse");
 
   // 8.3 Multi-date batch state
   const [selectedBatchDates, setSelectedBatchDates] = useState<
     LocalDateString[]
   >([]);
   const [batchActionKind, setBatchActionKind] =
-    useState<BatchActionChoiceKind>('template_shift');
-  const [batchTemplateId, setBatchTemplateId] = useState<string>('');
+    useState<BatchActionChoiceKind>("template_shift");
+  const [batchTemplateId, setBatchTemplateId] = useState<string>("");
   const [batchCustomTitle, setBatchCustomTitle] =
-    useState<string>('Робоча зміна');
-  const [batchCustomCode, setBatchCustomCode] = useState<string>('РЗ');
-  const [batchCustomStart, setBatchCustomStart] = useState<string>('08:00');
-  const [batchCustomEnd, setBatchCustomEnd] = useState<string>('20:00');
+    useState<string>("Робоча зміна");
+  const [batchCustomCode, setBatchCustomCode] = useState<string>("РЗ");
+  const [batchCustomStart, setBatchCustomStart] = useState<string>("08:00");
+  const [batchCustomEnd, setBatchCustomEnd] = useState<string>("20:00");
   const [batchCustomOffset, setBatchCustomOffset] = useState<0 | 1>(0);
-  const [batchCustomNote, setBatchCustomNote] = useState<string>('');
-  const [batchDayOffCode, setBatchDayOffCode] = useState<string>('В');
-  const [batchDayOffNote, setBatchDayOffNote] = useState<string>('');
+  const [batchCustomNote, setBatchCustomNote] = useState<string>("");
+  const [batchDayOffCode, setBatchDayOffCode] = useState<string>("В");
+  const [batchDayOffNote, setBatchDayOffNote] = useState<string>("");
   const [batchConfirmConflicts, setBatchConfirmConflicts] =
     useState<boolean>(false);
   const [isApplyingBatch, setIsApplyingBatch] = useState<boolean>(false);
@@ -170,44 +239,44 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
   const [isTemplateModalOpen, setIsTemplateModalOpen] =
     useState<boolean>(false);
   const [editingTemplate, setEditingTemplate] = useState<ShiftTemplate | null>(
-    null
+    null,
   );
-  const [tplName, setTplName] = useState<string>('');
-  const [tplCode, setTplCode] = useState<string>('');
-  const [tplStart, setTplStart] = useState<string>('08:00');
-  const [tplEnd, setTplEnd] = useState<string>('20:00');
+  const [tplName, setTplName] = useState<string>("");
+  const [tplCode, setTplCode] = useState<string>("");
+  const [tplStart, setTplStart] = useState<string>("08:00");
+  const [tplEnd, setTplEnd] = useState<string>("20:00");
   const [tplOffset, setTplOffset] = useState<0 | 1>(0);
-  const [tplNote, setTplNote] = useState<string>('');
+  const [tplNote, setTplNote] = useState<string>("");
   const [tplError, setTplError] = useState<string | null>(null);
 
   // 8.4 Finite period generator modal state
   const [isPeriodModalOpen, setIsPeriodModalOpen] = useState<boolean>(false);
   const [periodStart, setPeriodStart] = useState<LocalDateString>(
-    `${String(activeYear).padStart(4, '0')}-${String(activeMonth).padStart(
+    `${String(activeYear).padStart(4, "0")}-${String(activeMonth).padStart(
       2,
-      '0'
-    )}-01`
+      "0",
+    )}-01`,
   );
   const [periodEnd, setPeriodEnd] = useState<LocalDateString>(
-    `${String(activeYear).padStart(4, '0')}-${String(activeMonth).padStart(
+    `${String(activeYear).padStart(4, "0")}-${String(activeMonth).padStart(
       2,
-      '0'
-    )}-14`
+      "0",
+    )}-14`,
   );
-  const [cyclePattern,setCyclePattern]=useState('');
-  const [cycleEveryDays, setCycleEveryDays] = useState('');
+  const [cyclePattern, setCyclePattern] = useState("");
+  const [cycleEveryDays, setCycleEveryDays] = useState("");
   const [periodWeekdays, setPeriodWeekdays] = useState<number[]>([0, 2, 4]);
   const [periodActionKind, setPeriodActionKind] = useState<
-    'template_shift' | 'custom_shift' | 'day_off'
-  >('template_shift');
-  const [periodTemplateId, setPeriodTemplateId] = useState<string>('');
+    "template_shift" | "custom_shift" | "day_off"
+  >("template_shift");
+  const [periodTemplateId, setPeriodTemplateId] = useState<string>("");
   const [periodCustomTitle, setPeriodCustomTitle] =
-    useState<string>('Зміна за періодом');
-  const [periodCustomCode, setPeriodCustomCode] = useState<string>('ЗП');
-  const [periodCustomStart, setPeriodCustomStart] = useState<string>('09:00');
-  const [periodCustomEnd, setPeriodCustomEnd] = useState<string>('21:00');
+    useState<string>("Зміна за періодом");
+  const [periodCustomCode, setPeriodCustomCode] = useState<string>("ЗП");
+  const [periodCustomStart, setPeriodCustomStart] = useState<string>("09:00");
+  const [periodCustomEnd, setPeriodCustomEnd] = useState<string>("21:00");
   const [periodCustomOffset, setPeriodCustomOffset] = useState<0 | 1>(0);
-  const [periodDayOffCode, setPeriodDayOffCode] = useState<string>('В');
+  const [periodDayOffCode, setPeriodDayOffCode] = useState<string>("В");
   const [periodConfirmConflicts, setPeriodConfirmConflicts] =
     useState<boolean>(false);
   const [periodError, setPeriodError] = useState<string | null>(null);
@@ -215,11 +284,30 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
   // 8.5 Deterministic local text parser modal state
   const [isTextParserModalOpen, setIsTextParserModalOpen] =
     useState<boolean>(false);
-  const [rawRosterText, setRawRosterText] = useState<string>('');
+  const [rawRosterText, setRawRosterText] = useState<string>("");
   const [excludedLineNumbers, setExcludedLineNumbers] = useState<number[]>([]);
   const [parserConfirmConflicts, setParserConfirmConflicts] =
     useState<boolean>(false);
   const [parserError, setParserError] = useState<string | null>(null);
+
+  useEffect(() => {
+    onModalStateChange?.(
+      dayActions ||
+        repeatOpen ||
+        Boolean(confirmPaint) ||
+        isTemplateModalOpen ||
+        isPeriodModalOpen ||
+        isTextParserModalOpen,
+    );
+    return () => onModalStateChange?.(false);
+  }, [
+    dayActions,
+    repeatOpen,
+    Boolean(confirmPaint),
+    isTemplateModalOpen,
+    isPeriodModalOpen,
+    isTextParserModalOpen,
+  ]);
 
   const notifyModalChange = (open: boolean) => {
     onModalStateChange?.(open);
@@ -231,7 +319,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
       shiftTemplates.find((t) => t.id === batchTemplateId) ??
       shiftTemplates[0] ??
       null,
-    [shiftTemplates, batchTemplateId]
+    [shiftTemplates, batchTemplateId],
   );
 
   const effectivePeriodTemplate = useMemo(
@@ -239,7 +327,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
       shiftTemplates.find((t) => t.id === periodTemplateId) ??
       shiftTemplates[0] ??
       null,
-    [shiftTemplates, periodTemplateId]
+    [shiftTemplates, periodTemplateId],
   );
 
   // 8.6 Month Work Summary
@@ -251,19 +339,8 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
         events,
         dayOffAnnotations,
       }),
-    [selectedDate, displayZone, events, dayOffAnnotations]
+    [selectedDate, displayZone, events, dayOffAnnotations],
   );
-
-  const boundaryCrossingNoteUk = useMemo(() => {
-    if (monthSummary.boundaryCrossingShiftCount === 0) return null;
-    return `У місяці є ${
-      monthSummary.boundaryCrossingShiftCount
-    } зміна(и), що перетинають межу сусіднього місяця: у межах поточного місяця враховано ${formatMinutesCompactUk(
-      monthSummary.intersectingWorkMinutes
-    )}, а повна тривалість цих змін разом з усіма змінами становить ${formatMinutesCompactUk(
-      monthSummary.fullShiftsTotalMinutes
-    )}.`;
-  }, [monthSummary]);
 
   // Selected date schedule projection for browse inspector
   const selectedDayProjection = useMemo(
@@ -277,59 +354,52 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
         dayOffAnnotations,
         includeReleasedReservations: false,
       }),
-    [
-      selectedDate,
-      displayZone,
-      events,
-      reservations,
-      tasks,
-      dayOffAnnotations,
-    ]
+    [selectedDate, displayZone, events, reservations, tasks, dayOffAnnotations],
   );
 
   const selectedDateWorkItems = useMemo(
     () =>
       selectedDayProjection.timelineItems.filter(
-        (item) => item.sourceKind === 'work_shift'
+        (item) => item.sourceKind === "work_shift",
       ),
-    [selectedDayProjection]
+    [selectedDayProjection],
   );
 
   const selectedDateRawDayOffs = useMemo(
     () => dayOffAnnotations.filter((a) => a.localDate === selectedDate),
-    [dayOffAnnotations, selectedDate]
+    [dayOffAnnotations, selectedDate],
   );
 
   // Build current MultiDateBatchActionSpec for 8.3 multi-date mode
   const currentBatchActionSpec =
     useMemo<MultiDateBatchActionSpec | null>(() => {
-      if (batchActionKind === 'template_shift') {
+      if (batchActionKind === "template_shift") {
         if (!effectiveBatchTemplate) return null;
         return {
-          kind: 'template_shift',
+          kind: "template_shift",
           template: effectiveBatchTemplate,
         };
       }
-      if (batchActionKind === 'custom_shift') {
+      if (batchActionKind === "custom_shift") {
         return {
-          kind: 'custom_shift',
-          title: batchCustomTitle.trim() || 'Робоча зміна',
+          kind: "custom_shift",
+          title: batchCustomTitle.trim() || "Робоча зміна",
           shiftCode: batchCustomCode.trim() || null,
           startLocalTime: batchCustomStart,
           endLocalTime: batchCustomEnd,
           endDateOffsetDays: batchCustomOffset,
-          color: 'work',
+          color: "work",
           note: batchCustomNote.trim() || null,
         };
       }
-      if (batchActionKind === 'day_off') {
+      if (batchActionKind === "day_off") {
         return {
-          kind: 'day_off',
-          code: batchDayOffCode.trim() || 'В',
+          kind: "day_off",
+          code: batchDayOffCode.trim() || "В",
           note: batchDayOffNote.trim() || null,
         };
       }
-      return { kind: 'clear_date' };
+      return { kind: "clear_date" };
     }, [
       batchActionKind,
       effectiveBatchTemplate,
@@ -346,7 +416,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
   // 8.3 Live preview for multi-date selection
   const multiDateBatchPreview = useMemo<RosterBatchPreview | null>(() => {
     if (
-      interactionMode !== 'multi_date_edit' ||
+      interactionMode !== "multi_date_edit" ||
       selectedBatchDates.length === 0 ||
       !currentBatchActionSpec
     ) {
@@ -360,7 +430,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
         existingEvents: events,
         existingReservations: reservations,
         existingDayOffAnnotations: dayOffAnnotations,
-        nowIso: '2026-11-01T12:00:00.000Z',
+        nowIso: new Date().toISOString(),
       });
     } catch {
       return null;
@@ -383,35 +453,35 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
     if (!isPeriodModalOpen) return { preview: null, errorUk: null };
     let actionSpec: Exclude<
       MultiDateBatchActionSpec,
-      { kind: 'clear_date' }
+      { kind: "clear_date" }
     > | null = null;
-    if (periodActionKind === 'template_shift') {
+    if (periodActionKind === "template_shift") {
       if (!effectivePeriodTemplate) {
         return {
           preview: null,
           errorUk:
-            'Оберіть шаблон зміни або перемкніть дію на «Власний інтервал зміни».',
+            "Оберіть шаблон зміни або перемкніть дію на «Власний інтервал зміни».",
         };
       }
       actionSpec = {
-        kind: 'template_shift',
+        kind: "template_shift",
         template: effectivePeriodTemplate,
       };
-    } else if (periodActionKind === 'custom_shift') {
+    } else if (periodActionKind === "custom_shift") {
       actionSpec = {
-        kind: 'custom_shift',
-        title: periodCustomTitle.trim() || 'Зміна за періодом',
+        kind: "custom_shift",
+        title: periodCustomTitle.trim() || "Зміна за періодом",
         shiftCode: periodCustomCode.trim() || null,
         startLocalTime: periodCustomStart,
         endLocalTime: periodCustomEnd,
         endDateOffsetDays: periodCustomOffset,
-        color: 'work',
+        color: "work",
         note: null,
       };
     } else {
       actionSpec = {
-        kind: 'day_off',
-        code: periodDayOffCode.trim() || 'В',
+        kind: "day_off",
+        code: periodDayOffCode.trim() || "В",
         note: null,
       };
     }
@@ -420,7 +490,17 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
       const preview = generateFinitePeriodRosterPreview({
         startDate: periodStart,
         endDate: periodEnd,
-        cycleTemplateSequence: cyclePattern.trim()?cyclePattern.split(',').map(code=>{const key=code.trim();if(key==='-')return null;const template=shiftTemplates.find(template=>template.code===key);if(!template)throw new Error(`Невідомий код шаблону: ${key}`);return template;}):undefined,
+        cycleTemplateSequence: cyclePattern.trim()
+          ? cyclePattern.split(",").map((code) => {
+              const key = code.trim();
+              if (key === "-") return null;
+              const template = shiftTemplates.find(
+                (template) => template.code === key,
+              );
+              if (!template) throw new Error(`Невідомий код шаблону: ${key}`);
+              return template;
+            })
+          : undefined,
         cycleEveryDays: cycleEveryDays ? Number(cycleEveryDays) : undefined,
         selectedWeekdaysMondayFirst: periodWeekdays,
         action: actionSpec,
@@ -428,7 +508,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
         existingEvents: events,
         existingReservations: reservations,
         existingDayOffAnnotations: dayOffAnnotations,
-        nowIso: '2026-11-01T12:00:00.000Z',
+        nowIso: new Date().toISOString(),
       });
       return { preview, errorUk: null };
     } catch (err) {
@@ -437,7 +517,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
         errorUk:
           err instanceof Error
             ? err.message
-            : 'Некоректний період генерації (максимум 366 днів).',
+            : "Некоректний період генерації (максимум 366 днів).",
       };
     }
   }, [
@@ -475,7 +555,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
       existingReservations: reservations,
       existingDayOffAnnotations: dayOffAnnotations,
       excludedLineNumbers: new Set(excludedLineNumbers),
-      nowIso: '2026-11-01T12:00:00.000Z',
+      nowIso: new Date().toISOString(),
     });
   }, [
     isTextParserModalOpen,
@@ -491,7 +571,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
   ]);
 
   const handleCellClick = (cell: ProjectedMonthCell) => {
-    if (interactionMode === 'browse') {
+    if (interactionMode === "browse") {
       onSelectDate(cell.localDate);
       return;
     }
@@ -500,18 +580,18 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
     setSelectedBatchDates((prev) =>
       prev.includes(cell.localDate)
         ? prev.filter((d) => d !== cell.localDate)
-        : [...prev, cell.localDate].sort()
+        : [...prev, cell.localDate].sort(),
     );
   };
 
   const handleOpenCreateTemplate = () => {
     setEditingTemplate(null);
-    setTplName('');
-    setTplCode('');
-    setTplStart('08:00');
-    setTplEnd('20:00');
+    setTplName("");
+    setTplCode("");
+    setTplStart("08:00");
+    setTplEnd("20:00");
     setTplOffset(0);
-    setTplNote('');
+    setTplNote("");
     setTplError(null);
     setIsTemplateModalOpen(true);
     notifyModalChange(true);
@@ -524,7 +604,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
     setTplStart(tpl.startLocalTime);
     setTplEnd(tpl.endLocalTime);
     setTplOffset(tpl.endDateOffsetDays);
-    setTplNote(tpl.note ?? '');
+    setTplNote(tpl.note ?? "");
     setTplError(null);
     setIsTemplateModalOpen(true);
     notifyModalChange(true);
@@ -542,26 +622,25 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
         startLocalTime: tplStart,
         endLocalTime: tplEnd,
         endDateOffsetDays: tplOffset,
-        color: 'work',
+        color: "work",
         note: tplNote.trim() ? tplNote.trim() : null,
         createdAt: editingTemplate ? editingTemplate.createdAt : nowIso,
         updatedAt: nowIso,
         revision: editingTemplate ? editingTemplate.revision + 1 : 1,
       };
-      await repositories.saveShiftTemplate(
-        record,
-        editingTemplate?.revision
-      );
+      await repositories.saveShiftTemplate(record, editingTemplate?.revision);
       setIsTemplateModalOpen(false);
       notifyModalChange(false);
       await onDataChanged(
         editingTemplate
           ? `Шаблон «${record.name}» (${record.code}) оновлено.`
-          : `Шаблон «${record.name}» (${record.code}) створено.`
+          : `Шаблон «${record.name}» (${record.code}) створено.`,
       );
     } catch (err) {
       setTplError(
-        err instanceof Error ? err.message : 'Не вдалося зберегти шаблон зміни.'
+        err instanceof Error
+          ? err.message
+          : "Не вдалося зберегти шаблон зміни.",
       );
     }
   };
@@ -570,35 +649,11 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
     try {
       await repositories.deleteShiftTemplateTransactionally(tpl.id);
       await onDataChanged(
-        `Шаблон «${tpl.name}» видалено. Усі раніше застосовані зміни в календарі збережено без змін.`
+        `Шаблон «${tpl.name}» видалено. Усі раніше застосовані зміни в календарі збережено без змін.`,
       );
     } catch (err) {
       setBatchError(
-        err instanceof Error ? err.message : 'Не вдалося видалити шаблон.'
-      );
-    }
-  };
-
-  const handleQuickApplyTemplateToSelectedDate = async (tpl: ShiftTemplate) => {
-    setBatchError(null);
-    try {
-      const nowIso = new Date().toISOString();
-      const { event } = instantiateWorkShiftFromTemplate({
-        id: createId(),
-        template: tpl,
-        startLocalDate: selectedDate,
-        zoneId: displayZone,
-        nowIso,
-      });
-      await repositories.saveCalendarEvent(event);
-      await onDataChanged(
-        `Зміну «${tpl.name}» додано на ${formatUkrainianDateHeading(selectedDate)}.`
-      );
-    } catch (err) {
-      setBatchError(
-        err instanceof Error
-          ? err.message
-          : 'Не вдалося застосувати шаблон зміни.'
+        err instanceof Error ? err.message : "Не вдалося видалити шаблон.",
       );
     }
   };
@@ -608,9 +663,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
     setBatchError(null);
 
     if (!multiDateBatchPreview.canCommit) {
-      setBatchError(
-        'Виправте параметри дії перед пакетним збереженням.'
-      );
+      setBatchError("Виправте параметри дії перед пакетним збереженням.");
       return;
     }
 
@@ -619,7 +672,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
       !batchConfirmConflicts
     ) {
       setBatchError(
-        'Підтвердьте свідоме застосування попри конфлікти розкладу або змініть вибір дат.'
+        "Підтвердьте свідоме застосування попри конфлікти розкладу або змініть вибір дат.",
       );
       return;
     }
@@ -641,13 +694,13 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
       setSelectedBatchDates([]);
       setBatchConfirmConflicts(false);
       await onDataChanged(
-        `Пакетно оновлено графік для ${appliedCount} дат(и). Доступна безпечна відміна.`
+        `Пакетно оновлено графік для ${appliedCount} дат(и). Доступна безпечна відміна.`,
       );
     } catch (err) {
       setBatchError(
         err instanceof Error
           ? err.message
-          : 'Не вдалося виконати пакетне збереження.'
+          : "Не вдалося виконати пакетне збереження.",
       );
     } finally {
       setIsApplyingBatch(false);
@@ -658,24 +711,23 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
     if (!lastUndoToken) return;
     setBatchError(null);
     try {
-      const res = await repositories.undoRosterBatchTransactionally(
-        lastUndoToken
-      );
+      const res =
+        await repositories.undoRosterBatchTransactionally(lastUndoToken);
       setLastUndoToken(null);
       if (res.preservedLaterEditsCount > 0) {
         await onDataChanged(
-          `Скасовано пакетне внесення (${res.restoredEventsCount} змін, ${res.restoredDayOffsCount} вихідних). Збережено ${res.preservedLaterEditsCount} запис(ів), які були змінені пізніше.`
+          `Скасовано пакетне внесення (${res.restoredEventsCount} змін, ${res.restoredDayOffsCount} вихідних). Збережено ${res.preservedLaterEditsCount} запис(ів), які були змінені пізніше.`,
         );
       } else {
         await onDataChanged(
-          `Пакетне внесення скасовано (${res.restoredEventsCount} змін, ${res.restoredDayOffsCount} вихідних).`
+          `Пакетне внесення скасовано (${res.restoredEventsCount} змін, ${res.restoredDayOffsCount} вихідних).`,
         );
       }
     } catch (err) {
       setBatchError(
         err instanceof Error
           ? err.message
-          : 'Не вдалося скасувати пакетне внесення.'
+          : "Не вдалося скасувати пакетне внесення.",
       );
     }
   };
@@ -690,15 +742,14 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
     setPeriodError(null);
 
     if (preview.activeItems.length === 0) {
-      setPeriodError('У вибраному періоді немає дат для зазначених днів тижня.');
+      setPeriodError(
+        "У вибраному періоді немає дат для зазначених днів тижня.",
+      );
       return;
     }
-    if (
-      preview.requiresConflictConfirmation &&
-      !periodConfirmConflicts
-    ) {
+    if (preview.requiresConflictConfirmation && !periodConfirmConflicts) {
       setPeriodError(
-        'Підтвердьте свідоме створення змін попри перетини в розкладі.'
+        "Підтвердьте свідоме створення змін попри перетини в розкладі.",
       );
       return;
     }
@@ -715,13 +766,13 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
       notifyModalChange(false);
       setPeriodConfirmConflicts(false);
       await onDataChanged(
-        `Згенеровано незалежні записи на період для ${preview.activeItems.length} дат(и).`
+        `Згенеровано незалежні записи на період для ${preview.activeItems.length} дат(и).`,
       );
     } catch (err) {
       setPeriodError(
         err instanceof Error
           ? err.message
-          : 'Не вдалося застосувати генерацію на період.'
+          : "Не вдалося застосувати генерацію на період.",
       );
     }
   };
@@ -732,7 +783,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
 
     if (!textParserPreview.canCommit) {
       setParserError(
-        'Виправте або позначте для пропуску всі рядки з помилками перед збереженням.'
+        "Виправте або позначте для пропуску всі рядки з помилками перед збереженням.",
       );
       return;
     }
@@ -741,7 +792,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
       !parserConfirmConflicts
     ) {
       setParserError(
-        'Підтвердьте свідоме збереження змін попри перетини у розкладі.'
+        "Підтвердьте свідоме збереження змін попри перетини у розкладі.",
       );
       return;
     }
@@ -758,17 +809,17 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
       setLastUndoToken(res.undoToken);
       setIsTextParserModalOpen(false);
       notifyModalChange(false);
-      setRawRosterText('');
+      setRawRosterText("");
       setExcludedLineNumbers([]);
       setParserConfirmConflicts(false);
       await onDataChanged(
-        `Розпізнано та збережено графік (${textParserPreview.eventsToSave.length} змін, ${textParserPreview.dayOffAnnotationsToSave.length} вихідних).`
+        `Розпізнано та збережено графік (${textParserPreview.eventsToSave.length} змін, ${textParserPreview.dayOffAnnotationsToSave.length} вихідних).`,
       );
     } catch (err) {
       setParserError(
         err instanceof Error
           ? err.message
-          : 'Не вдалося зберегти розпізнаний графік.'
+          : "Не вдалося зберегти розпізнаний графік.",
       );
     }
   };
@@ -776,1051 +827,697 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
   const handleRemoveDayOff = async (annotationId: EntityId) => {
     try {
       await repositories.deleteDayOffAnnotationTransactionally(annotationId);
-      await onDataChanged('Позначку вихідного знято.');
+      await onDataChanged("Позначку вихідного знято.");
     } catch (err) {
       setBatchError(
         err instanceof Error
           ? err.message
-          : 'Не вдалося зняти позначку вихідного.'
+          : "Не вдалося зняти позначку вихідного.",
       );
     }
   };
 
+  const startPeriod = () => {
+    setPeriodStart(selectedDate.slice(0, 7) + "-01");
+    setPeriodEnd(selectedDate.slice(0, 7) + "-14");
+    setPeriodError(null);
+    setIsPeriodModalOpen(true);
+    notifyModalChange(true);
+  };
+  const builtins: ShiftTemplate[] = [
+    {
+      id: "preset-day",
+      name: "Денна",
+      code: "Д",
+      startLocalTime: "08:00",
+      endLocalTime: "20:00",
+      endDateOffsetDays: 0,
+      color: "work",
+      note: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      revision: 1,
+    },
+    {
+      id: "preset-night",
+      name: "Нічна",
+      code: "Н",
+      startLocalTime: "20:00",
+      endLocalTime: "08:00",
+      endDateOffsetDays: 1,
+      color: "work",
+      note: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      revision: 1,
+    },
+  ];
+  const arm = async (template: ShiftTemplate) => {
+    try {
+      if (template.id.startsWith("preset-")) {
+        const saved = { ...template, id: createId() };
+        await repositories.saveShiftTemplate(saved);
+        setArmed(saved);
+        await onDataChanged();
+      } else setArmed(template);
+    } catch {
+      setBatchError("Не вдалося обрати шаблон.");
+    }
+  };
+  const commitPaint = async (preview: RosterBatchPreview) => {
+    setStampBusy(true);
+    try {
+      const result = await repositories.applyRosterBatchTransactionally({
+        eventsToSave: preview.eventsToSave,
+        dayOffAnnotationsToSave: preview.dayOffAnnotationsToSave,
+        eventIdsToDelete: preview.eventIdsToDelete,
+        dayOffAnnotationIdsToDelete: preview.dayOffAnnotationIdsToDelete,
+      });
+      setLastUndoToken(result.undoToken);
+      setConfirmPaint(null);
+      await onDataChanged();
+    } catch {
+      setBatchError("Не вдалося зберегти зміни.");
+    } finally {
+      setStampBusy(false);
+    }
+  };
+  const paint = async (
+    dates: string[],
+    action: MultiDateBatchActionSpec = armed
+      ? { kind: "template_shift", template: armed }
+      : { kind: "day_off", code: "В", note: null },
+  ) => {
+    if (stampBusy) return;
+    try {
+      const preview = prepareMultiDateRosterBatch({
+        selectedDates: dates,
+        action,
+        lockedZoneId: displayZone,
+        existingEvents: events,
+        existingReservations: reservations,
+        existingDayOffAnnotations: dayOffAnnotations,
+        nowIso: new Date().toISOString(),
+      });
+      if (!preview.canCommit) {
+        setBatchError("Перевірте обрані дати.");
+        return;
+      }
+      if (preview.requiresConflictConfirmation) setConfirmPaint(preview);
+      else await commitPaint(preview);
+    } catch {
+      setBatchError("Не вдалося підготувати зміни.");
+    }
+  };
+  const choose = (cell: ProjectedMonthCell) => {
+    if (!stampMode) {
+      handleCellClick(cell);
+      setDayActions(interactionMode === "browse");
+      return;
+    }
+    onSelectDate(cell.localDate);
+    if (cell.markerCounts.workShiftsCount || cell.hasExplicitDayOff)
+      setDayActions(true);
+    else if (armed) void paint([cell.localDate]);
+    else setDayActions(true);
+  };
+  const summary = [
+    monthSummary.intersectingShiftCount
+      ? `${monthSummary.intersectingShiftCount} зміни`
+      : null,
+    monthSummary.explicitDayOffCount
+      ? `${monthSummary.explicitDayOffCount} вихідні`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   return (
-    <div className="space-y-4" data-testid="work-roster-subview">
-      <details className="roster-tools"><summary>{monthSummary.intersectingShiftCount > 0 ? `${monthSummary.intersectingShiftCount} змін · ` : ''}Інструменти графіка</summary>
-      {/* 8.6 Month Work Summary Card */}
-      <Card
-        data-testid="roster-month-summary"
-        className="space-y-3"
-      >
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div>
-            <p
-              className="text-[11px] font-semibold  tracking-wider"
-              style={{ color: 'var(--text-secondary)' }}
-            >
-              Підсумок робочого графіка за місяць
-            </p>
-            <h2
-              className="text-lg font-bold capitalize sm:text-xl"
-              style={{ color: 'var(--text-primary)' }}
-            >
-              {monthGrid.monthHeadingUk}
-            </h2>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                setPeriodStart(
-                  `${String(activeYear).padStart(4, '0')}-${String(
-                    activeMonth
-                  ).padStart(2, '0')}-01`
-                );
-                setPeriodEnd(
-                  `${String(activeYear).padStart(4, '0')}-${String(
-                    activeMonth
-                  ).padStart(2, '0')}-14`
-                );
-                setPeriodError(null);
-                setIsPeriodModalOpen(true);
-                notifyModalChange(true);
-              }}
-              data-testid="open-period-generator-button"
-            >
-              <Sparkles className="h-4 w-4" aria-hidden="true" />
-              <span>Генерація на період</span>
-            </Button>
-
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                setParserError(null);
-                setExcludedLineNumbers([]);
-                setIsTextParserModalOpen(true);
-                notifyModalChange(true);
-              }}
-              data-testid="open-text-parser-button"
-            >
-              <FileText className="h-4 w-4" aria-hidden="true" />
-              <span>Текстове внесення</span>
-            </Button>
-          </div>
-        </div>
-
-        <div
-          className="grid grid-cols-2 gap-2.5 rounded-xl p-3 text-xs sm:grid-cols-4"
-          style={{ backgroundColor: 'var(--bg-elevated)' }}
-        >
-          <div>
-            <span
-              className="block text-[11px]"
-              style={{ color: 'var(--text-secondary)' }}
-            >
-              ◆ Кількість робочих змін
-            </span>
-            <span
-              data-testid="roster-summary-shift-count"
-              className="text-base font-bold"
-              style={{ color: 'var(--color-work-text)' }}
-            >
-              {monthSummary.intersectingShiftCount}
-            </span>
-            <span
-              className="block text-[10px]"
-              style={{ color: 'var(--text-secondary)' }}
-            >
-              Зміни враховано один раз
-            </span>
-          </div>
-
-          <div>
-            <span
-              className="block text-[11px]"
-              style={{ color: 'var(--text-secondary)' }}
-            >
-              Робочий час у межах місяця
-            </span>
-            <span
-              data-testid="roster-summary-intersecting-duration"
-              className="text-base font-bold"
-              style={{ color: 'var(--text-primary)' }}
-            >
-              {formatMinutesCompactUk(monthSummary.intersectingWorkMinutes)}
-            </span>
-            {monthSummary.boundaryCrossingShiftCount > 0 && (
-              <span
-                className="block text-[10px]"
-                style={{ color: 'var(--text-secondary)' }}
-              >
-                Повна тривалість змін:{' '}
-                {formatMinutesCompactUk(monthSummary.fullShiftsTotalMinutes)}
-              </span>
-            )}
-          </div>
-
-          <div>
-            <span
-              className="block text-[11px]"
-              style={{ color: 'var(--text-secondary)' }}
-            >
-              ○ Підтверджені вихідні
-            </span>
-            <span
-              data-testid="roster-summary-dayoff-count"
-              className="text-base font-bold"
-              style={{ color: 'var(--color-dayoff-text)' }}
-            >
-              {monthSummary.explicitDayOffCount}
-            </span>
-            {monthSummary.mixedDayOffCarryoverCount > 0 && (
-              <span
-                className="block text-[10px]"
-                style={{ color: 'var(--color-work-text)' }}
-              >
-                З них із переходом ночі:{' '}
-                {monthSummary.mixedDayOffCarryoverCount}
-              </span>
-            )}
-          </div>
-
-          <div>
-            <span
-              className="block text-[11px]"
-              style={{ color: 'var(--text-secondary)' }}
-            >
-              Шаблони змін
-            </span>
-            <span
-              className="text-base font-bold"
-              style={{ color: 'var(--text-primary)' }}
-            >
-              {shiftTemplates.length}
-            </span>
-            <span
-              className="block text-[10px]"
-              style={{ color: 'var(--text-secondary)' }}
-            >
-              Зміни зберігаються окремо від шаблону
-            </span>
-          </div>
-        </div>
-
-        {boundaryCrossingNoteUk && (
-          <p
-            data-testid="roster-boundary-crossing-note"
-            className="rounded-xl px-3 py-2 text-xs"
-            style={{
-              backgroundColor: 'var(--color-work-tint)',
-              color: 'var(--color-work-text)',
-            }}
-          >
-            {boundaryCrossingNoteUk}
-          </p>
-        )}
-      </Card>
-
-      {/* Revision-safe Undo Banner (8.3) */}
-      {lastUndoToken && (
-        <div
-          data-testid="roster-undo-banner"
-          className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border px-3.5 py-2.5 text-xs"
-          style={{
-            backgroundColor: 'var(--bg-elevated)',
-            borderColor: 'var(--color-work)',
-            color: 'var(--text-primary)',
-          }}
-        >
-          <span>
-            Пакетне внесення збережено. Ви можете безпечно скасувати його (пізніші ручні зміни не будуть перезаписані).
-          </span>
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={handleUndoLastBatch}
-              data-testid="roster-undo-button"
-            >
-              <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
-              <span>Скасувати пакетне внесення</span>
-            </Button>
-            <Button
-              type="button"
-              variant="subtle"
-              size="sm"
-              onClick={() => setLastUndoToken(null)}
-            >
-              Приховати
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {batchError && (
-        <FeedbackBanner
-          tone="error"
-          message={batchError}
-          onDismiss={() => setBatchError(null)}
+    <div className="roster-stage3" data-testid="work-roster-subview">
+      {stampMode ? (
+        <Segmented
+          label="Розділ штампа"
+          value={stampTab}
+          onChange={setStampTab}
+          options={[
+            { value: "stamp", label: "Штамп" },
+            { value: "templates", label: "Шаблони" },
+          ]}
         />
-      )}
-
-      {/* 8.1 & 8.3 Explicit Browse vs Multi-Date Edit Mode Bar */}
-      <Card
-        data-testid="roster-interaction-mode-bar"
-        className="space-y-3"
-      >
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="min-w-[260px] flex-1 sm:max-w-md">
-            <SegmentedControl<RosterInteractionMode>
-              ariaLabel="Режим роботи з графіком"
+      ) : (
+        <>
+          <p className="roster-summary" data-testid="roster-month-summary">
+            {sentenceCase(formatDate(selectedDate, { month: "long" }))}
+            {summary ? `: ${summary}` : ""}
+          </p>
+          <div className="roster-mode">
+            <Segmented
+              label="Робота з графіком"
               value={interactionMode}
-              onChange={(nextMode) => {
-                setInteractionMode(nextMode);
-                setBatchError(null);
-                if (nextMode === 'browse') {
-                  setSelectedBatchDates([]);
-                }
+              onChange={(v) => {
+                setInteractionMode(v);
+                setSelectedBatchDates([]);
               }}
               options={[
+                { value: "browse", label: "Перегляд" },
+                { value: "multi_date_edit", label: "Пакетний вибір" },
+              ]}
+            />
+            <ActionMenu
+              label="Інструменти графіка"
+              items={[
+                { label: "Генерація на період", onSelect: startPeriod },
                 {
-                  value: 'browse',
-                  label: 'Перегляд',
+                  label: "Текстове внесення",
+                  onSelect: () => {
+                    setIsTextParserModalOpen(true);
+                    notifyModalChange(true);
+                  },
                 },
-                {
-                  value: 'multi_date_edit',
-                  label: 'Обрати дати',
-                },
+                { label: "Шаблони", onSelect: () => setStampTab("templates") },
               ]}
             />
           </div>
-
-          <p
-            className="text-xs"
-            style={{ color: 'var(--text-secondary)' }}
-          >
-            {interactionMode === 'browse'
-              ? 'У режимі перегляду натискання на клітинку лише відкриває деталі дати без випадкового внесення змін.'
-              : `Режим пакетного вибору: обрано дат — ${selectedBatchDates.length}. Невибрані дати залишаються без змін.`}
-          </p>
-        </div>
-
-        {/* 8.3 Multi-Date Batch Configuration & Preview */}
-        {interactionMode === 'multi_date_edit' && (
-          <div
-            data-testid="roster-multi-date-panel"
-            className="space-y-3 border-t pt-3"
-            style={{ borderColor: 'var(--border-subtle)' }}
-          >
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <SelectField
-                label="Дія для вибраних дат"
-                value={batchActionKind}
-                onChange={(e) => {
-                  setBatchActionKind(e.target.value as BatchActionChoiceKind);
-                  setBatchConfirmConflicts(false);
-                }}
-                options={[
-                  {
-                    value: 'template_shift',
-                    label: 'Застосувати шаблон робочої зміни',
-                  },
-                  {
-                    value: 'custom_shift',
-                    label: 'Власний інтервал зміни (без шаблону)',
-                  },
-                  {
-                    value: 'day_off',
-                    label: 'Позначити явний вихідний (В)',
-                  },
-                  {
-                    value: 'clear_date',
-                    label: 'Очистити зміни та вихідні на вибрані дати',
-                  },
-                ]}
-                data-testid="roster-batch-action-kind"
+        </>
+      )}
+      {batchError && <p role="alert">{batchError}</p>}
+      {stampTab === "templates" ? (
+        <>
+          <Section title="Шаблони змін">
+            {shiftTemplates.map((t) => (
+              <Row
+                key={t.id}
+                title={t.name}
+                secondary={formatTimeRange(t.startLocalTime, t.endLocalTime)}
+                trailing={
+                  <ActionMenu
+                    label={`Шаблон: ${t.name}`}
+                    items={[
+                      {
+                        label: "Редагувати",
+                        onSelect: () => handleOpenEditTemplate(t),
+                      },
+                      {
+                        label: "Видалити",
+                        onSelect: () => void handleDeleteTemplate(t),
+                      },
+                    ]}
+                  />
+                }
               />
-
-              {batchActionKind === 'template_shift' && (
-                <div>
-                  {shiftTemplates.length === 0 ? (
-                    <div
-                      className="rounded-xl p-3 text-xs"
-                      style={{
-                        backgroundColor: 'var(--bg-elevated)',
-                        color: 'var(--text-secondary)',
-                      }}
-                    >
-                      Ще немає створених шаблонів. Створіть шаблон нижче або оберіть «Власний інтервал зміни».
-                    </div>
-                  ) : (
-                    <SelectField
-                      label="Шаблон зміни"
-                      value={effectiveBatchTemplate?.id ?? ''}
-                      onChange={(e) => setBatchTemplateId(e.target.value)}
-                      options={shiftTemplates.map((t) => ({
-                        value: t.id,
-                        label: `${t.code} — ${t.name} (${t.startLocalTime}–${
-                          t.endLocalTime
-                        }${t.endDateOffsetDays === 1 ? ' +1 доба' : ''})`,
-                      }))}
-                      data-testid="roster-batch-template-select"
-                    />
-                  )}
-                </div>
+            ))}
+            <Row
+              title="+ Новий шаблон"
+              trailing={
+                <RoundButton
+                  aria-label="Новий шаблон"
+                  onClick={handleOpenCreateTemplate}
+                >
+                  +
+                </RoundButton>
+              }
+            />
+          </Section>
+          <p className="roster-footnote">
+            Редагування шаблону не змінює вже створені зміни
+          </p>
+          {!stampMode && (
+            <button
+              className="ui-pill"
+              type="button"
+              onClick={() => setStampTab("stamp")}
+            >
+              До графіка
+            </button>
+          )}
+        </>
+      ) : (
+        <>
+          {stampMode && (
+            <div
+              className="ui-pill-row"
+              data-ui="pill-row"
+              role="group"
+              aria-label="Шаблон для штампа"
+            >
+              {[
+                ...shiftTemplates,
+                ...builtins.filter(
+                  (b) =>
+                    !shiftTemplates.some(
+                      (t) =>
+                        t.code === b.code ||
+                        (t.startLocalTime === b.startLocalTime &&
+                          t.endLocalTime === b.endLocalTime &&
+                          t.endDateOffsetDays === b.endDateOffsetDays),
+                    ),
+                ),
+              ].map((t) => (
+                <button
+                  type="button"
+                  className="ui-pill"
+                  key={t.id}
+                  aria-pressed={armed?.id === t.id || armed?.code === t.code}
+                  onClick={() => void arm(t)}
+                >
+                  {t.name} {formatTimeRange(t.startLocalTime, t.endLocalTime)}
+                </button>
+              ))}
+              <button
+                type="button"
+                className="ui-pill"
+                onClick={handleOpenCreateTemplate}
+              >
+                + Нова
+              </button>
+            </div>
+          )}
+          {stampMode && (
+            <div className="stamp-period">
+              <RoundButton
+                aria-label="Попередній місяць штампа"
+                onClick={() =>
+                  onSelectDate(addMonthsToLocalDate(selectedDate, -1))
+                }
+              >
+                ‹
+              </RoundButton>
+              <span>
+                {sentenceCase(formatMonthYear(selectedDate)).replace(
+                  / р\.$/,
+                  "",
+                )}
+              </span>
+              <RoundButton
+                aria-label="Наступний місяць штампа"
+                onClick={() =>
+                  onSelectDate(addMonthsToLocalDate(selectedDate, 1))
+                }
+              >
+                ›
+              </RoundButton>
+            </div>
+          )}
+          <CalendarGrid
+            grid={{ ...monthGrid, secondaryFilter: "work" }}
+            compact={stampMode}
+            markedDates={selectedBatchDates}
+            onSelect={choose}
+            onPaint={
+              stampMode && armed ? (dates) => void paint(dates) : undefined
+            }
+          />
+          {!stampMode && interactionMode === "multi_date_edit" && (
+            <Section>
+              <SelectField
+                label="Дія"
+                value={batchActionKind}
+                onChange={(e) =>
+                  setBatchActionKind(e.target.value as BatchActionChoiceKind)
+                }
+                options={[
+                  { value: "template_shift", label: "Зміна за шаблоном" },
+                  { value: "custom_shift", label: "Власна зміна" },
+                  { value: "day_off", label: "Вихідний" },
+                  { value: "clear_date", label: "Очистити дату" },
+                ]}
+              />
+              {batchActionKind === "template_shift" && (
+                <SelectField
+                  label="Шаблон"
+                  value={effectiveBatchTemplate?.id ?? ""}
+                  onChange={(e) => setBatchTemplateId(e.target.value)}
+                  options={shiftTemplates.map((t) => ({
+                    value: t.id,
+                    label: t.name,
+                  }))}
+                />
               )}
-
-              {batchActionKind === 'day_off' && (
-                <div className="grid grid-cols-2 gap-2">
+              {batchActionKind === "custom_shift" && (
+                <>
+                  <InputField
+                    label="Код зміни"
+                    value={batchCustomCode}
+                    onChange={(e) => setBatchCustomCode(e.target.value)}
+                  />
+                  <TextAreaField
+                    label="Нотатка"
+                    value={batchCustomNote}
+                    onChange={(e) => setBatchCustomNote(e.target.value)}
+                  />
+                  <SelectField
+                    label="Завершення зміни"
+                    value={String(batchCustomOffset)}
+                    options={[
+                      { value: "0", label: "Того ж дня" },
+                      { value: "1", label: "Наступного дня" },
+                    ]}
+                    onChange={(e) =>
+                      setBatchCustomOffset(Number(e.target.value) as 0 | 1)
+                    }
+                  />
+                  <InputField
+                    label="Назва зміни"
+                    value={batchCustomTitle}
+                    onChange={(e) => setBatchCustomTitle(e.target.value)}
+                  />
+                  <TimeField
+                    label="Початок"
+                    value={batchCustomStart}
+                    onChange={(e) => setBatchCustomStart(e.target.value)}
+                  />
+                  <TimeField
+                    label="Завершення"
+                    value={batchCustomEnd}
+                    onChange={(e) => {
+                      setBatchCustomEnd(e.target.value);
+                      setBatchCustomOffset(
+                        e.target.value < batchCustomStart ? 1 : 0,
+                      );
+                    }}
+                  />
+                </>
+              )}
+              {batchActionKind === "day_off" && (
+                <>
                   <InputField
                     label="Код вихідного"
                     value={batchDayOffCode}
                     onChange={(e) => setBatchDayOffCode(e.target.value)}
-                    data-testid="roster-batch-dayoff-code"
                   />
-                  <InputField
-                    label="Нотатка"
-                    placeholder="Вихідний"
+                  <TextAreaField
+                    label="Нотатка вихідного"
                     value={batchDayOffNote}
                     onChange={(e) => setBatchDayOffNote(e.target.value)}
-                    data-testid="roster-batch-dayoff-note"
                   />
-                </div>
+                </>
               )}
-            </div>
-
-            {batchActionKind === 'custom_shift' && (
-              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-5">
-                <InputField
-                  label="Назва зміни"
-                  value={batchCustomTitle}
-                  onChange={(e) => setBatchCustomTitle(e.target.value)}
-                  data-testid="roster-batch-custom-title"
-                />
-                <InputField
-                  label="Код"
-                  value={batchCustomCode}
-                  onChange={(e) => setBatchCustomCode(e.target.value)}
-                  data-testid="roster-batch-custom-code"
-                />
-                <InputField
-                  label="Початок"
-                  type="time"
-                  value={batchCustomStart}
-                  onChange={(e) => setBatchCustomStart(e.target.value)}
-                  data-testid="roster-batch-custom-start"
-                />
-                <InputField
-                  label="Завершення"
-                  type="time"
-                  value={batchCustomEnd}
-                  onChange={(e) => setBatchCustomEnd(e.target.value)}
-                  data-testid="roster-batch-custom-end"
-                />
-                <SelectField
-                  label="Завершення дати"
-                  value={String(batchCustomOffset)}
-                  onChange={(e) =>
-                    setBatchCustomOffset(Number(e.target.value) as 0 | 1)
-                  }
-                  options={[
-                    { value: '0', label: 'Того ж дня (+0)' },
-                    { value: '1', label: 'Наступної доби (+1)' },
-                  ]}
-                  data-testid="roster-batch-custom-offset"
-                />
-              </div>
-            )}
-
-            {/* Selected dates & preview */}
-            <div
-              className="rounded-xl p-3 text-xs space-y-2"
-              style={{
-                backgroundColor: 'var(--bg-elevated)',
-                border: '1px solid var(--border-subtle)',
-              }}
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="font-semibold">
-                  Обрані дати ({selectedBatchDates.length}):{' '}
-                  {selectedBatchDates.length === 0
-                    ? 'натисніть на потрібні дати в сітці місяця нижче'
-                    : selectedBatchDates.join(', ')}
-                </span>
-                {selectedBatchDates.length > 0 && (
-                  <Button
-                    type="button"
-                    variant="subtle"
-                    size="sm"
-                    onClick={() => setSelectedBatchDates([])}
-                    data-testid="roster-batch-clear-selection"
-                  >
-                    Очистити вибір
-                  </Button>
-                )}
-              </div>
-
-              {multiDateBatchPreview &&
-                multiDateBatchPreview.activeItems.length > 0 && (
-                  <div
-                    data-testid="roster-batch-preview-list"
-                    className="space-y-1.5 pt-1"
-                  >
-                    {multiDateBatchPreview.activeItems.map((item) => (
-                      <div
-                        key={item.previewKey}
-                        className="flex flex-wrap items-center justify-between gap-2 rounded-lg px-2.5 py-1.5"
-                        style={{ backgroundColor: 'var(--bg-surface)' }}
-                      >
-                        <span className="font-medium">
-                          {item.localDate}: {formatProposedItemSummaryUk(item)}
-                        </span>
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          {item.isMixedDayOffCarryover && (
-                            <span
-                              className="rounded px-1.5 py-0.5 text-[11px] font-semibold"
-                              style={{
-                                backgroundColor: 'var(--color-work-tint)',
-                                color: 'var(--color-work-text)',
-                              }}
-                            >
-                              ◆ Перехід із попередньої ночі
-                            </span>
-                          )}
-                          {item.diagnostics.map((d, idx) => (
-                            <span
-                              key={idx}
-                              className="rounded px-1.5 py-0.5 text-[11px]"
-                              style={{
-                                backgroundColor:
-                                  d.severity === 'error' ||
-                                  d.severity === 'warning'
-                                    ? 'var(--color-brand-tint)'
-                                    : 'var(--bg-elevated)',
-                                color:
-                                  d.severity === 'error' ||
-                                  d.severity === 'warning'
-                                    ? 'var(--color-brand-text)'
-                                    : 'var(--text-secondary)',
-                              }}
-                            >
-                              {d.messageUk}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
               {multiDateBatchPreview?.requiresConflictConfirmation && (
-                <label className="flex items-center gap-2 pt-1 font-medium cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={batchConfirmConflicts}
-                    onChange={(e) =>
-                      setBatchConfirmConflicts(e.target.checked)
-                    }
-                    className="h-4 w-4 accent-[#B93E4B]"
-                    data-testid="roster-batch-confirm-conflicts"
-                  />
-                  <span>
-                    Я підтверджую свідоме застосування попри перетин із наявними записами
-                  </span>
-                </label>
+                <Row
+                  title="Є перетин із розкладом"
+                  trailing={
+                    <Toggle
+                      label="Застосувати з перетином"
+                      checked={batchConfirmConflicts}
+                      onChange={setBatchConfirmConflicts}
+                    />
+                  }
+                />
               )}
-
-              <div className="flex justify-end pt-1">
-                <Button
-                  type="button"
-                  variant="primary"
-                  size="sm"
-                  disabled={
-                    isApplyingBatch ||
-                    selectedBatchDates.length === 0 ||
-                    !multiDateBatchPreview ||
-                    !multiDateBatchPreview.canCommit
-                  }
-                  onClick={handleCommitMultiDateBatch}
-                  data-testid="roster-batch-commit-button"
-                >
-                  <Check className="h-4 w-4" aria-hidden="true" />
-                  <span>
-                    Застосувати до вибраних дат ({selectedBatchDates.length})
-                  </span>
-                </Button>
-              </div>
+              <Row
+                title={
+                  selectedBatchDates.length ? "Дати обрано" : "Оберіть дати"
+                }
+                trailing={
+                  <button
+                    type="button"
+                    className="ui-primary"
+                    disabled={!multiDateBatchPreview || isApplyingBatch}
+                    onClick={() => void handleCommitMultiDateBatch()}
+                  >
+                    Застосувати
+                  </button>
+                }
+              />
+            </Section>
+          )}
+          {(stampMode || interactionMode === "browse") &&
+            !selectedDateWorkItems.length &&
+            !selectedDateRawDayOffs.length && (
+              <p className="calendar-muted-day">Немає запису</p>
+            )}
+          {stampMode && (
+            <div className="stamp-dock">
+              <Row
+                title={
+                  armed
+                    ? `${armed.name} · ${formatTimeRange(armed.startLocalTime, armed.endLocalTime)} · Повтор`
+                    : "Оберіть шаблон"
+                }
+                trailing={
+                  <ActionMenu
+                    label="Дії штампа"
+                    items={[
+                      {
+                        label: "Прибрати штамп",
+                        onSelect: () => setArmed(null),
+                      },
+                      { label: "Генерація на період", onSelect: startPeriod },
+                      {
+                        label: "Текстове внесення",
+                        onSelect: () => setIsTextParserModalOpen(true),
+                      },
+                    ]}
+                  />
+                }
+              />
+              <Row
+                title="Повтор циклу"
+                trailing={
+                  <RoundButton
+                    aria-label="Повтор циклу"
+                    disabled={!armed}
+                    onClick={() => {
+                      setRepeatEnd(selectedDate);
+                      setRepeatOpen(true);
+                    }}
+                  >
+                    ›
+                  </RoundButton>
+                }
+              />
             </div>
-          </div>
-        )}
-      </Card>
-
-      </details>
-      {/* Main Two-Column Layout: Month Roster Grid + Templates & Selected Date Inspector */}
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,1fr)] xl:items-start">
-        {/* Month Grid with Browse or Multi-Date Selection */}
-        <Card className="!p-2 sm:!p-4 space-y-2.5">
-          <div className="flex flex-wrap items-center justify-between gap-2 px-1">
-            <span
-              className="text-xs font-semibold"
-              style={{ color: 'var(--text-secondary)' }}
-            >
-              {interactionMode === 'browse'
-                ? 'Зміни та вихідні'
-                : 'Сітка графіка (натискайте на дати для пакетного вибору)'}
-            </span>
-            <span
-              className="text-[11px]"
-              style={{ color: 'var(--text-secondary)' }}
-            >
-              ◆ зміна · ○ вихідний
-            </span>
-          </div>
-
-          <div
-            className="grid grid-cols-7 gap-1 text-center"
-            aria-hidden="true"
-          >
-            {monthGrid.weekdayHeadersUk.map((dayLabel) => (
-              <div
-                key={dayLabel}
-                className="py-1 text-xs font-semibold"
-                style={{ color: 'var(--text-secondary)' }}
-              >
-                {dayLabel}
-              </div>
-            ))}
-          </div>
-
-          <div
-            role="group"
-            aria-label="Сітка графіка роботи за місяць"
-            data-testid="roster-month-grid"
-            className="grid grid-cols-7 gap-1 sm:gap-1.5"
-          >
-            {monthGrid.cells.map((cell) => {
-              const isBatchSelected = selectedBatchDates.includes(
-                cell.localDate
-              );
-              const isBrowseSelected =
-                interactionMode === 'browse' && cell.isSelected;
-              const isToday = cell.isToday;
-              const inMonth = cell.inActiveMonth;
-
-              return (
-                <button
-                  key={cell.localDate}
-                  type="button"
-                  onClick={() => handleCellClick(cell)}
-                  aria-label={`${cell.dayNumber} ${cell.visibleBadges.map(badge => badge.nonColorSymbol + badge.compactLabel.replace(/:00/g, '')).join(' ')} ${cell.overflowCount ? '+' + cell.overflowCount : ''}. ${cell.accessibleSummaryUk}`}
-                  aria-pressed={
-                    interactionMode === 'multi_date_edit'
-                      ? isBatchSelected
-                      : isBrowseSelected
-                  }
-                  data-testid={`roster-month-cell-${cell.localDate}`}
-                  data-batch-selected={isBatchSelected ? 'true' : 'false'}
-                  data-is-neutral={
-                    cell.isNeutralUnknownDate ? 'true' : 'false'
-                  }
-                  className="group relative flex min-h-[52px] sm:min-h-[72px] w-full min-w-0 flex-col justify-between rounded-xl p-1 sm:p-1.5 text-left transition-colors focus:outline-none"
-                  style={{
-                    backgroundColor: isBatchSelected
-                      ? 'var(--color-work-tint)'
-                      : isBrowseSelected
-                      ? 'var(--color-brand-tint)'
-                      : isToday
-                      ? 'var(--bg-elevated)'
-                      : inMonth
-                      ? 'transparent'
-                      : 'transparent',
-                    border: isBatchSelected
-                      ? '2px solid var(--color-work)'
-                      : isBrowseSelected
-                      ? '2px solid var(--color-brand)'
-                      : isToday
-                      ? '1.5px solid var(--color-brand)'
-                      : inMonth
-                      ? '1px solid transparent'
-                      : '1px solid transparent',
-                    opacity:
-                      1,
-                  }}
-                >
-                  <div className="flex w-full items-center justify-between gap-0.5">
-                    <span
-                      className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-md px-1 text-xs font-bold leading-none sm:h-6 sm:min-w-[24px] sm:text-sm"
-                      style={
-                        isBatchSelected
-                          ? {
-                              backgroundColor: 'var(--color-work)',
-                              color: '#FFFFFF',
-                            }
-                          : isBrowseSelected
-                          ? {
-                              backgroundColor: 'var(--color-brand)',
-                              color: '#FFFFFF',
-                            }
-                          : {
-                              color: inMonth
-                                ? 'var(--text-primary)'
-                                : 'var(--text-secondary)',
-                            }
+          )}
+        </>
+      )}
+      {lastUndoToken && (
+        <button
+          className="ui-pill"
+          type="button"
+          onClick={() => void handleUndoLastBatch()}
+        >
+          Скасувати внесення
+        </button>
+      )}
+      <Sheet
+        title={formatDate(selectedDate)}
+        isOpen={dayActions}
+        onClose={() => setDayActions(false)}
+      >
+        <Section>
+          {!selectedDateWorkItems.length && !selectedDateRawDayOffs.length && (
+            <Row title="Немає запису" />
+          )}
+          {selectedDateWorkItems.map((item) => (
+            <React.Fragment key={item.sourceId}>
+              <Row
+                title={item.title}
+                secondary={formatTimeRange(
+                  item.segment.displayStartLocalTime,
+                  item.segment.displayEndLocalTime,
+                )}
+              />
+              <Row
+                title="Змінити тільки цей день"
+                trailing={
+                  <RoundButton
+                    aria-label="Змінити тільки цей день"
+                    onClick={() => {
+                      const event = events.find((e) => e.id === item.sourceId);
+                      if (event) {
+                        setDayActions(false);
+                        onInspectEvent(event);
                       }
-                    >
-                      {cell.dayNumber}
-                    </span>
-
-                    {isBatchSelected && (
-                      <span
-                        className="rounded px-1 py-0.5 text-[10px] font-bold"
-                        style={{
-                          backgroundColor: 'var(--color-work)',
-                          color: '#FFFFFF',
-                        }}
-                      >
-                        ✓
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Badges */}
-                  <div className="my-0.5 flex w-full min-w-0 flex-col gap-0.5 overflow-hidden">
-                    {cell.visibleBadges.map((badge) => {
-                      const badgeStyle =
-                        badge.semanticRole === 'work'
-                          ? {
-                              backgroundColor: 'var(--color-work-tint)',
-                              color: 'var(--color-work-text)',
-                            }
-                          : badge.semanticRole === 'dayoff'
-                          ? {
-                              backgroundColor: 'var(--color-dayoff-tint)',
-                              color: 'var(--color-dayoff-text)',
-                            }
-                          : {
-                              backgroundColor: 'var(--bg-elevated)',
-                              color: 'var(--text-secondary)',
-                            };
-                      const mobileShortLabel = badge.compactLabel.replace(/:00/g, '');
-                      return (
-                        <span
-                          key={badge.id}
-                          aria-hidden="true"
-                          className="block w-full overflow-hidden whitespace-nowrap rounded px-0.5 sm:px-1 py-0.5 text-[10px] font-semibold leading-tight tracking-tight"
-                          style={{ color: badgeStyle.color }}
-                        >
-                          <span className="sm:hidden">
-                            {badge.nonColorSymbol}
-                            {mobileShortLabel}
-                          </span>
-                          <span className="hidden sm:inline">
-                            {badge.nonColorSymbol} {badge.compactLabel}
-                          </span>
-                        </span>
-                      );
-                    })}
-                  </div>
-
-                  {/* Thin local-clock work strip */}
-                  <div className="mt-auto w-full pt-0.5" aria-hidden="true" hidden={cell.workStripSegments.length === 0}>
-                    <div
-                      className="relative h-1.5 w-full overflow-hidden rounded-full"
-                      style={{
-                        backgroundColor: 'var(--bg-elevated)',
-                        border: '1px solid var(--border-subtle)',
-                      }}
-                    >
-                      <div
-                        className="absolute inset-y-0 left-1/2 w-px"
-                        style={{ backgroundColor: 'var(--border-strong)' }}
-                      />
-                      {cell.workStripSegments.map((seg) => (
-                        <div
-                          key={seg.segmentKey}
-                          className="absolute inset-y-0 rounded-full"
-                          style={{
-                            backgroundColor: 'var(--color-work)',
-                            left: `${seg.leftPercent}%`,
-                            width: `${Math.max(4, seg.widthPercent)}%`,
-                          }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </Card>
-
-        {/* Right Column: Selected Date Roster Inspector & Shift Templates Manager */}
-        <div className="space-y-4">
-          {/* Selected Date Roster Inspector */}
-          <Card
-            data-testid="roster-selected-date-card"
-            className="space-y-3"
-          >
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div>
-                <p
-                  className="text-[11px] font-semibold  tracking-wider"
-                  style={{ color: 'var(--text-secondary)' }}
-                >
-                  Обрана дата в графіку
-                </p>
-                <h3
-                  className="text-base font-bold capitalize"
-                  style={{ color: 'var(--text-primary)' }}
-                >
-                  {formatUkrainianDateHeading(selectedDate)}
-                </h3>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-1.5">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => onOpenGlobalCreation('shift')}
-                  data-testid="roster-add-shift-button"
-                >
-                  <Clock className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>Додати зміну</span>
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => onOpenGlobalCreation('day_off')}
-                  data-testid="roster-add-dayoff-button"
-                >
-                  <Sun className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>Вихідний</span>
-                </Button>
-              </div>
-            </div>
-
-            {/* Day-off annotations on selected date */}
-            {selectedDateRawDayOffs.length > 0 && (
-              <div className="space-y-1.5">
-                {selectedDateRawDayOffs.map((ann) => (
-                  <div
-                    key={ann.id}
-                    data-testid={`roster-dayoff-item-${ann.localDate}`}
-                    className="flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-xs"
-                    style={{
-                      backgroundColor: 'var(--color-dayoff-tint)',
-                      border: '1px solid var(--color-dayoff)',
-                      color: 'var(--text-primary)',
                     }}
                   >
-                    <div>
-                      <span
-                        className="font-semibold"
-                        style={{ color: 'var(--color-dayoff-text)' }}
-                      >
-                        ○ Позначено вихідний ({ann.code ?? 'В'})
-                      </span>
-                      {ann.note && (
-                        <p
-                          className="mt-0.5 text-[11px]"
-                          style={{ color: 'var(--text-secondary)' }}
-                        >
-                          {ann.note}
-                        </p>
-                      )}
-                      {selectedDateWorkItems.length > 0 && (
-                        <p
-                          className="mt-0.5 text-[11px] font-medium"
-                          style={{ color: 'var(--color-work-text)' }}
-                        >
-                          ◆ Змішаний стан: на цю дату також припадає частина робочої зміни (наприклад, перехід після нічної зміни).
-                        </p>
-                      )}
-                    </div>
-                    <Button
-                      type="button"
-                      variant="subtle"
-                      size="sm"
-                      onClick={() => handleRemoveDayOff(ann.id)}
-                      data-testid={`remove-day-off-${ann.id}`}
-                    >
-                      Зняти
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Work shifts on selected date */}
-            {selectedDateWorkItems.length === 0 ? (
-              <p
-                className="rounded-xl border border-dashed px-3 py-2.5 text-xs"
-                style={{
-                  borderColor: 'var(--border-subtle)',
-                  color: 'var(--text-secondary)',
-                }}
-              >
-                {selectedDateRawDayOffs.length > 0
-                  ? 'На цю дату немає робочих змін (підтверджений вихідний).'
-                  : 'Невідомо / без записів робочих змін чи вихідного на цю дату. Порожня дата не вважається автоматичним вихідним.'}
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {selectedDateWorkItems.map((item) => {
-                  const ev = events.find((e) => e.id === item.sourceId);
-                  return (
-                    <div
-                      key={item.itemKey}
-                      data-testid={`roster-shift-item-${item.sourceId}`}
-                      className="flex flex-wrap items-center justify-between gap-2 rounded-xl p-3 text-xs"
-                      style={{
-                        backgroundColor: 'var(--bg-elevated)',
-                        borderLeft: '4px solid var(--color-work)',
-                      }}
-                    >
-                      <div className="space-y-0.5">
-                        <div className="flex flex-wrap items-center gap-1.5 font-bold">
-                          <span>
-                            ◆ {item.segment.displayStartLocalTime}–
-                            {item.segment.displayEndLocalTime}
-                          </span>
-                          <span
-                            className="rounded px-1.5 py-0.5 text-[11px] font-normal"
-                            style={{
-                              backgroundColor: 'var(--bg-surface)',
-                              color: 'var(--text-secondary)',
-                            }}
-                          >
-                            {formatMinutesCompactUk(
-                              item.segment.elapsedDurationMinutes
-                            )}
-                          </span>
-                        </div>
-                        <p className="text-sm font-semibold">{item.title}</p>
-                        {(item.segment.continuesBeforeDayStart ||
-                          item.segment.continuesAfterDayEnd) && (
-                          <p
-                            className="text-[11px]"
-                            style={{ color: 'var(--color-work-text)' }}
-                          >
-                            Повний інтервал зміни:{' '}
-                            {item.segment.originClockRangeLabel}
-                          </p>
-                        )}
-                      </div>
-
-                      {ev && (
-                        <div className="flex items-center gap-1.5">
-                          <Button
-                            type="button"
-                            variant="subtle"
-                            size="sm"
-                            onClick={() => onInspectEvent(ev)}
-                            data-testid={`roster-edit-shift-${ev.id}`}
-                          >
-                            Редагувати
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="subtle"
-                            size="sm"
-                            onClick={() => onCancelEvent(ev.id, ev.revision)}
-                            data-testid={`roster-cancel-shift-${ev.id}`}
-                          >
-                            Скасувати
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </Card>
-
-          {/* 8.2 Shift Templates Manager */}
-          <Card
-            data-testid="roster-templates-section"
-            className="space-y-3"
-          >
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <h3
-                  className="text-base font-bold"
-                  style={{ color: 'var(--text-primary)' }}
-                >
-                  Шаблони змін
-                </h3>
-                <p
-                  className="text-xs"
-                  style={{ color: 'var(--text-secondary)' }}
-                >
-                  Редагування або видалення шаблону ніколи не перезаписує вже створені зміни.
-                </p>
-              </div>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={handleOpenCreateTemplate}
-                data-testid="roster-create-template-button"
-              >
-                <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-                <span>Новий шаблон</span>
-              </Button>
-            </div>
-
-            {shiftTemplates.length === 0 ? (
-              <p
-                className="rounded-xl border border-dashed px-3 py-3 text-xs"
-                style={{
-                  borderColor: 'var(--border-subtle)',
-                  color: 'var(--text-secondary)',
-                }}
-              >
-                Немає шаблонів змін. Створіть шаблон (наприклад, «Д1» 08:00–20:00 або «Н1» 20:00–08:00 +1 доба) для швидкого заповнення графіка.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {shiftTemplates.map((tpl) => (
-                  <div
-                    key={tpl.id}
-                    data-testid={`shift-template-card-${tpl.code}`}
-                    className="flex flex-wrap items-center justify-between gap-2 rounded-xl p-3 text-xs"
-                    style={{
-                      backgroundColor: 'var(--bg-elevated)',
-                      border: '1px solid var(--border-subtle)',
+                    ›
+                  </RoundButton>
+                }
+              />
+              <Row
+                title="Вихідний"
+                trailing={
+                  <RoundButton
+                    aria-label="Вихідний"
+                    onClick={() => {
+                      void paint([selectedDate], {
+                        kind: "day_off",
+                        code: "В",
+                        note: null,
+                      });
+                      setDayActions(false);
                     }}
                   >
-                    <div className="space-y-0.5">
-                      <div className="flex items-center gap-1.5">
-                        <span
-                          className="rounded px-1.5 py-0.5 font-bold"
-                          style={{
-                            backgroundColor: 'var(--color-work-tint)',
-                            color: 'var(--color-work-text)',
-                          }}
-                        >
-                          {tpl.code}
-                        </span>
-                        <span className="text-sm font-semibold">
-                          {tpl.name}
-                        </span>
-                      </div>
-                      <p style={{ color: 'var(--text-secondary)' }}>
-                        {tpl.startLocalTime}–{tpl.endLocalTime}
-                        {tpl.endDateOffsetDays === 1
-                          ? ' (+1 доба, нічний перехід)'
-                          : ' (того ж дня)'}
-                      </p>
-                      {tpl.note && (
-                        <p
-                          className="text-[11px]"
-                          style={{ color: 'var(--text-secondary)' }}
-                        >
-                          {tpl.note}
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        onClick={() =>
-                          handleQuickApplyTemplateToSelectedDate(tpl)
-                        }
-                        data-testid={`apply-template-to-selected-date-${tpl.code}`}
-                      >
-                        На {selectedDate.slice(8, 10)}.{selectedDate.slice(5, 7)}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="subtle"
-                        size="sm"
-                        onClick={() => handleOpenEditTemplate(tpl)}
-                        data-testid={`edit-template-${tpl.code}`}
-                      >
-                        <Edit3 className="h-3.5 w-3.5" aria-hidden="true" />
-                        <span>Змінити</span>
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="subtle"
-                        size="sm"
-                        onClick={() => handleDeleteTemplate(tpl)}
-                        data-testid={`delete-template-${tpl.code}`}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                        <span>Видалити</span>
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
-        </div>
-      </div>
+                    ○
+                  </RoundButton>
+                }
+              />
+              <Row
+                title="Видалити"
+                trailing={
+                  <RoundButton
+                    aria-label="Видалити зміну"
+                    onClick={() => {
+                      const event = events.find((e) => e.id === item.sourceId);
+                      if (event) void onCancelEvent(event.id, event.revision);
+                      setDayActions(false);
+                    }}
+                  >
+                    ×
+                  </RoundButton>
+                }
+              />
+            </React.Fragment>
+          ))}
+          {selectedDateRawDayOffs.map((off) => (
+            <Row
+              key={off.id}
+              title="Вихідний"
+              trailing={
+                <RoundButton
+                  aria-label="Видалити вихідний"
+                  onClick={() => void handleRemoveDayOff(off.id)}
+                >
+                  ×
+                </RoundButton>
+              }
+            />
+          ))}
+          <Row
+            title="Позначити вихідний"
+            trailing={
+              <RoundButton
+                aria-label="Позначити вихідний"
+                onClick={() => {
+                  void paint([selectedDate], {
+                    kind: "day_off",
+                    code: "В",
+                    note: null,
+                  });
+                  setDayActions(false);
+                }}
+              >
+                ○
+              </RoundButton>
+            }
+          />
+          <Row
+            title="Власна зміна або блок відновлення"
+            trailing={
+              <RoundButton
+                aria-label="Створити запис"
+                onClick={() => {
+                  setDayActions(false);
+                  onOpenGlobalCreation("event");
+                }}
+              >
+                +
+              </RoundButton>
+            }
+          />
+        </Section>
+      </Sheet>
+      <Sheet
+        title="Зберегти з перетином?"
+        isOpen={Boolean(confirmPaint)}
+        onClose={() => setConfirmPaint(null)}
+      >
+        <p className="review-amber">Обрані дні мають перетин із розкладом.</p>
+        <button
+          type="button"
+          className="ui-primary"
+          disabled={stampBusy}
+          onClick={() => {
+            if (confirmPaint) void commitPaint(confirmPaint);
+          }}
+        >
+          Застосувати
+        </button>
+      </Sheet>
+      <Sheet
+        title="Повтор циклу"
+        isOpen={repeatOpen}
+        onClose={() => setRepeatOpen(false)}
+      >
+        <Section>
+          <InputField
+            label="Робочих днів"
+            type="number"
+            min={1}
+            max={31}
+            value={repeatWork}
+            onChange={(e) => setRepeatWork(e.target.value)}
+          />
+          <InputField
+            label="Днів перерви"
+            type="number"
+            min={0}
+            max={31}
+            value={repeatRest}
+            onChange={(e) => setRepeatRest(e.target.value)}
+          />
+          <DateField
+            label="До дати"
+            value={repeatEnd}
+            min={selectedDate}
+            onChange={(e) => setRepeatEnd(e.target.value)}
+          />
+        </Section>
+        <button
+          type="button"
+          className="ui-primary"
+          disabled={stampBusy}
+          onClick={() => {
+            if (!armed) return;
+            try {
+              const work = Number(repeatWork),
+                rest = Number(repeatRest);
+              if (
+                !Number.isInteger(work) ||
+                work < 1 ||
+                work > 31 ||
+                !Number.isInteger(rest) ||
+                rest < 0 ||
+                rest > 31
+              )
+                throw Error();
+              const preview = generateFinitePeriodRosterPreview({
+                startDate: selectedDate,
+                endDate: repeatEnd,
+                cycleTemplateSequence: [
+                  ...Array(work).fill(armed),
+                  ...Array(rest).fill(null),
+                ],
+                selectedWeekdaysMondayFirst: [0, 1, 2, 3, 4, 5, 6],
+                action: { kind: "template_shift", template: armed },
+                lockedZoneId: displayZone,
+                existingEvents: events,
+                existingReservations: reservations,
+                existingDayOffAnnotations: dayOffAnnotations,
+                nowIso: new Date().toISOString(),
+              });
+              if (!preview.canCommit) throw Error();
+              setRepeatOpen(false);
+              if (preview.requiresConflictConfirmation)
+                setConfirmPaint(preview);
+              else void commitPaint(preview);
+            } catch {
+              setBatchError("Перевірте період і цикл.");
+            }
+          }}
+        >
+          Повторити цикл
+        </button>
+      </Sheet>
 
       {/* 8.2 Modal: Create / Edit Shift Template */}
-      <ModalSheet
+      <Sheet
         isOpen={isTemplateModalOpen}
         title={
           editingTemplate
-            ? 'Редагувати шаблон зміни'
-            : 'Новий шаблон робочої зміни'
+            ? "Редагувати шаблон зміни"
+            : "Новий шаблон робочої зміни"
         }
-        subtitle="Зміни, створені за шаблоном, зберігаються як незалежні події."
+
         isDirty={tplName.trim().length > 0 || tplCode.trim().length > 0}
         onClose={() => {
           setIsTemplateModalOpen(false);
@@ -1879,8 +1576,8 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
               value={String(tplOffset)}
               onChange={(e) => setTplOffset(Number(e.target.value) as 0 | 1)}
               options={[
-                { value: '0', label: 'Того ж дня (+0)' },
-                { value: '1', label: 'Наступної доби (+1)' },
+                { value: "0", label: "Того ж дня (+0)" },
+                { value: "1", label: "Наступної доби (+1)" },
               ]}
               data-testid="template-offset-select"
             />
@@ -1904,16 +1601,6 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
 
           <div className="flex justify-end gap-2 pt-2">
             <Button
-              type="button"
-              variant="secondary"
-              onClick={() => {
-                setIsTemplateModalOpen(false);
-                notifyModalChange(false);
-              }}
-            >
-              Скасувати
-            </Button>
-            <Button
               type="submit"
               variant="primary"
               data-testid="template-save-button"
@@ -1922,10 +1609,10 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
             </Button>
           </div>
         </form>
-      </ModalSheet>
+      </Sheet>
 
       {/* 8.4 Modal: Finite Period Generator */}
-      <ModalSheet
+      <Sheet
         isOpen={isPeriodModalOpen}
         title="Генерація графіка на скінченний період"
         subtitle="Додайте зміни лише на вибрані дати."
@@ -1935,10 +1622,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
           notifyModalChange(false);
         }}
       >
-        <div
-          className="space-y-4"
-          data-testid="roster-period-generator-modal"
-        >
+        <div className="space-y-4" data-testid="roster-period-generator-modal">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <InputField
               label="Початок періоду"
@@ -1974,7 +1658,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                       setPeriodWeekdays((prev) =>
                         prev.includes(w.index0To6)
                           ? prev.filter((d) => d !== w.index0To6)
-                          : [...prev, w.index0To6].sort()
+                          : [...prev, w.index0To6].sort(),
                       )
                     }
                     data-testid={`period-weekday-toggle-${w.index0To6 + 1}`}
@@ -1982,12 +1666,12 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                     style={
                       active
                         ? {
-                            backgroundColor: 'var(--color-work)',
-                            color: '#FFFFFF',
+                            backgroundColor: "var(--color-work)",
+                            color: "#FFFFFF",
                           }
                         : {
-                            backgroundColor: 'var(--bg-elevated)',
-                            color: 'var(--text-secondary)',
+                            backgroundColor: "var(--bg-elevated)",
+                            color: "var(--text-secondary)",
                           }
                     }
                   >
@@ -1998,37 +1682,50 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
             </div>
           </div>
 
-          <InputField label="Послідовність циклу" value={cyclePattern} onChange={e=>setCyclePattern(e.target.value)} hint="Коди ваших шаблонів через кому; - означає вихідний. Наприклад: Д,Н,-,-. Повторюється лише в обраному періоді." />
-          <InputField label="Повтор кожні N днів (необов’язково)" type="number" min="1" max="366" value={cycleEveryDays} onChange={e => setCycleEveryDays(e.target.value)} hint="Цикл розгортається лише в обраному періоді. Редагування однієї зміни не змінює решту." />
+          <InputField
+            label="Послідовність циклу"
+            value={cyclePattern}
+            onChange={(e) => setCyclePattern(e.target.value)}
+            hint="Коди ваших шаблонів через кому; - означає вихідний. Наприклад: Д,Н,-,-. Повторюється лише в обраному періоді."
+          />
+          <InputField
+            label="Повтор кожні N днів (необов’язково)"
+            type="number"
+            min="1"
+            max="366"
+            value={cycleEveryDays}
+            onChange={(e) => setCycleEveryDays(e.target.value)}
+            hint="Цикл розгортається лише в обраному періоді. Редагування однієї зміни не змінює решту."
+          />
           <SelectField
             label="Дія для відібраних дат періоду"
             value={periodActionKind}
             onChange={(e) =>
               setPeriodActionKind(
-                e.target.value as 'template_shift' | 'custom_shift' | 'day_off'
+                e.target.value as "template_shift" | "custom_shift" | "day_off",
               )
             }
             options={[
               {
-                value: 'template_shift',
-                label: 'Застосувати шаблон зміни',
+                value: "template_shift",
+                label: "Застосувати шаблон зміни",
               },
               {
-                value: 'custom_shift',
-                label: 'Власний інтервал зміни',
+                value: "custom_shift",
+                label: "Власний інтервал зміни",
               },
               {
-                value: 'day_off',
-                label: 'Позначити вихідні дні (В)',
+                value: "day_off",
+                label: "Позначити вихідні дні (В)",
               },
             ]}
             data-testid="period-action-kind-select"
           />
 
-          {periodActionKind === 'template_shift' && (
+          {periodActionKind === "template_shift" && (
             <SelectField
               label="Шаблон зміни"
-              value={effectivePeriodTemplate?.id ?? ''}
+              value={effectivePeriodTemplate?.id ?? ""}
               onChange={(e) => setPeriodTemplateId(e.target.value)}
               options={shiftTemplates.map((t) => ({
                 value: t.id,
@@ -2038,7 +1735,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
             />
           )}
 
-          {periodActionKind === 'custom_shift' && (
+          {periodActionKind === "custom_shift" && (
             <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
               <InputField
                 label="Назва"
@@ -2067,15 +1764,15 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                   setPeriodCustomOffset(Number(e.target.value) as 0 | 1)
                 }
                 options={[
-                  { value: '0', label: 'Того ж дня (+0)' },
-                  { value: '1', label: 'Наступної доби (+1)' },
+                  { value: "0", label: "Того ж дня (+0)" },
+                  { value: "1", label: "Наступної доби (+1)" },
                 ]}
                 data-testid="period-custom-offset"
               />
             </div>
           )}
 
-          {periodActionKind === 'day_off' && (
+          {periodActionKind === "day_off" && (
             <InputField
               label="Код вихідного"
               value={periodDayOffCode}
@@ -2089,12 +1786,12 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
             data-testid="period-generator-preview"
             className="rounded-xl p-3 text-xs space-y-2"
             style={{
-              backgroundColor: 'var(--bg-elevated)',
-              border: '1px solid var(--border-subtle)',
+              backgroundColor: "var(--bg-elevated)",
+              border: "1px solid var(--border-subtle)",
             }}
           >
             {periodPreviewState.errorUk ? (
-              <p style={{ color: 'var(--color-brand-text)' }}>
+              <p style={{ color: "var(--color-brand-text)" }}>
                 {periodPreviewState.errorUk}
               </p>
             ) : periodPreviewState.preview ? (
@@ -2102,7 +1799,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                 <div className="flex items-center justify-between font-semibold">
                   <span>
                     Попередній перегляд (
-                    {periodPreviewState.preview.activeItems.length} дат у поясі{' '}
+                    {periodPreviewState.preview.activeItems.length} дат у поясі{" "}
                     {periodPreviewState.preview.lockedZoneId}):
                   </span>
                 </div>
@@ -2111,13 +1808,13 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                     <div
                       key={item.previewKey}
                       className="flex flex-wrap items-center justify-between gap-2 rounded px-2 py-1"
-                      style={{ backgroundColor: 'var(--bg-surface)' }}
+                      style={{ backgroundColor: "var(--bg-surface)" }}
                     >
                       <span>
                         {item.localDate}: {formatProposedItemSummaryUk(item)}
                       </span>
                       {item.hasConflictWarning && (
-                        <span style={{ color: 'var(--color-brand-text)' }}>
+                        <span style={{ color: "var(--color-brand-text)" }}>
                           ! Конфлікт
                         </span>
                       )}
@@ -2129,18 +1826,14 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
 
             {periodPreviewState.preview?.requiresConflictConfirmation && (
               <label className="flex items-center gap-2 pt-1 font-medium cursor-pointer">
-                <input
+                <BooleanControl
                   type="checkbox"
                   checked={periodConfirmConflicts}
-                  onChange={(e) =>
-                    setPeriodConfirmConflicts(e.target.checked)
-                  }
+                  onChange={(e) => setPeriodConfirmConflicts(e.target.checked)}
                   className="h-4 w-4 accent-[#B93E4B]"
                   data-testid="period-confirm-conflicts-checkbox"
                 />
-                <span>
-                  Я підтверджую свідоме створення змін попри перетини
-                </span>
+                <span>Я підтверджую свідоме створення змін попри перетини</span>
               </label>
             )}
           </div>
@@ -2156,16 +1849,6 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
           <div className="flex justify-end gap-2 pt-2">
             <Button
               type="button"
-              variant="secondary"
-              onClick={() => {
-                setIsPeriodModalOpen(false);
-                notifyModalChange(false);
-              }}
-            >
-              Скасувати
-            </Button>
-            <Button
-              type="button"
               variant="primary"
               onClick={handleCommitPeriodGenerator}
               data-testid="period-generator-commit-button"
@@ -2174,30 +1857,27 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
             </Button>
           </div>
         </div>
-      </ModalSheet>
+      </Sheet>
 
       {/* 8.5 Modal: Deterministic Local Text Parser */}
-      <ModalSheet
+      <Sheet
         isOpen={isTextParserModalOpen}
         title="Детерміноване текстове внесення графіка"
         subtitle={`Цільовий місяць: ${monthGrid.monthHeadingUk} (${activeYear}-${String(
-          activeMonth
-        ).padStart(2, '0')}) • Часовий пояс: ${displayZone}`}
+          activeMonth,
+        ).padStart(2, "0")}) • Часовий пояс: ${displayZone}`}
         isDirty={rawRosterText.trim().length > 0}
         onClose={() => {
           setIsTextParserModalOpen(false);
           notifyModalChange(false);
         }}
       >
-        <div
-          className="space-y-4"
-          data-testid="roster-text-parser-modal"
-        >
+        <div className="space-y-4" data-testid="roster-text-parser-modal">
           <div
             className="rounded-xl p-3 text-xs space-y-1.5"
             style={{
-              backgroundColor: 'var(--bg-elevated)',
-              border: '1px solid var(--border-subtle)',
+              backgroundColor: "var(--bg-elevated)",
+              border: "1px solid var(--border-subtle)",
             }}
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -2209,9 +1889,9 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                 variant="subtle"
                 size="sm"
                 onClick={() => {
-                  const firstCode = shiftTemplates[0]?.code ?? '08:00-20:00';
+                  const firstCode = shiftTemplates[0]?.code ?? "08:00-20:00";
                   setRawRosterText(
-                    `5 ${firstCode}\n6 20:00-08:00\n7 В\n10 09:00-18:00 Зміна у відділенні`
+                    `5 ${firstCode}\n6 20:00-08:00\n7 В\n10 09:00-18:00 Зміна у відділенні`,
                   );
                   setExcludedLineNumbers([]);
                 }}
@@ -2222,19 +1902,19 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
             </div>
             <ul
               className="list-disc pl-4 space-y-0.5"
-              style={{ color: 'var(--text-secondary)' }}
+              style={{ color: "var(--text-secondary)" }}
             >
               <li>
-                <strong>День + код шаблону:</strong> <code>5 Д1</code> або{' '}
+                <strong>День + код шаблону:</strong> <code>5 Д1</code> або{" "}
                 <code>12 Н1</code>
               </li>
               <li>
-                <strong>День + ручний інтервал:</strong>{' '}
-                <code>7 08:00-20:00</code> або нічний перехід{' '}
+                <strong>День + ручний інтервал:</strong>{" "}
+                <code>7 08:00-20:00</code> або нічний перехід{" "}
                 <code>8 20:00-08:00</code> (або явно <code>+1</code>)
               </li>
               <li>
-                <strong>День + код вихідного:</strong> <code>4 В</code> або{' '}
+                <strong>День + код вихідного:</strong> <code>4 В</code> або{" "}
                 <code>9 ВИХ</code>
               </li>
             </ul>
@@ -2242,7 +1922,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
 
           <TextAreaField
             label="Рядки графіка на поточний місяць"
-            placeholder={'5 Д1\n6 20:00-08:00\n7 В'}
+            placeholder={"5 Д1\n6 20:00-08:00\n7 В"}
             value={rawRosterText}
             onChange={(e) => {
               setRawRosterText(e.target.value);
@@ -2257,16 +1937,18 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
               data-testid="text-parser-preview-container"
               className="space-y-2.5 rounded-xl p-3 text-xs"
               style={{
-                backgroundColor: 'var(--bg-elevated)',
-                border: '1px solid var(--border-subtle)',
+                backgroundColor: "var(--bg-elevated)",
+                border: "1px solid var(--border-subtle)",
               }}
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="font-semibold">
-                  Розібрано рядків: {textParserPreview.items.length} (дієвих:{' '}
-                  {textParserPreview.activeItems.filter(
-                    (i) => !i.hasBlockingError
-                  ).length}
+                  Розібрано рядків: {textParserPreview.items.length} (дієвих:{" "}
+                  {
+                    textParserPreview.activeItems.filter(
+                      (i) => !i.hasBlockingError,
+                    ).length
+                  }
                   , з помилками: {textParserPreview.blockingErrorCount})
                 </span>
                 {textParserPreview.blockingErrorCount > 0 && (
@@ -2279,11 +1961,11 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                         .filter(
                           (r) =>
                             r.hasBlockingError &&
-                            r.sourceLineNumber !== undefined
+                            r.sourceLineNumber !== undefined,
                         )
                         .map((r) => r.sourceLineNumber!);
                       setExcludedLineNumbers((prev) =>
-                        Array.from(new Set([...prev, ...errLines]))
+                        Array.from(new Set([...prev, ...errLines])),
                       );
                     }}
                     data-testid="text-parser-exclude-error-rows-button"
@@ -2299,27 +1981,30 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                   const isExcluded = Boolean(row.excluded);
                   const isValid = !row.hasBlockingError;
                   const errorDiagnostics = row.diagnostics.filter(
-                    (d) => d.severity === 'error'
+                    (d) => d.severity === "error",
                   );
                   const warnDiagnostics = row.diagnostics.filter(
                     (d) =>
-                      d.severity !== 'error' &&
-                      !(row.isMixedDayOffCarryover && d.code === 'MIXED_DAY_OFF_WITH_OVERNIGHT_CARRYOVER')
+                      d.severity !== "error" &&
+                      !(
+                        row.isMixedDayOffCarryover &&
+                        d.code === "MIXED_DAY_OFF_WITH_OVERNIGHT_CARRYOVER"
+                      ),
                   );
 
                   return (
                     <div
                       key={row.previewKey}
                       data-testid={`text-parser-row-${lineNum}`}
-                      data-row-valid={isValid ? 'true' : 'false'}
-                      data-row-excluded={isExcluded ? 'true' : 'false'}
+                      data-row-valid={isValid ? "true" : "false"}
+                      data-row-excluded={isExcluded ? "true" : "false"}
                       className="rounded-lg p-2.5 space-y-1"
                       style={{
-                        backgroundColor: 'var(--bg-surface)',
+                        backgroundColor: "var(--bg-surface)",
                         border:
                           !isValid && !isExcluded
-                            ? '1.5px solid var(--color-brand)'
-                            : '1px solid var(--border-subtle)',
+                            ? "1.5px solid var(--color-brand)"
+                            : "1px solid var(--border-subtle)",
                         opacity: isExcluded ? 0.55 : 1,
                       }}
                     >
@@ -2327,22 +2012,22 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                         <div className="flex flex-wrap items-center gap-2">
                           <span
                             className="rounded px-1.5 py-0.5 font-mono text-[11px]"
-                            style={{ backgroundColor: 'var(--bg-elevated)' }}
+                            style={{ backgroundColor: "var(--bg-elevated)" }}
                           >
                             #{lineNum}: {row.rawLineText}
                           </span>
                           {isValid ? (
                             <span
                               className="font-semibold"
-                              style={{ color: 'var(--text-primary)' }}
+                              style={{ color: "var(--text-primary)" }}
                             >
-                              {row.localDate}:{' '}
+                              {row.localDate}:{" "}
                               {formatProposedItemSummaryUk(row)}
                             </span>
                           ) : (
                             <span
                               className="font-semibold"
-                              style={{ color: 'var(--color-brand-text)' }}
+                              style={{ color: "var(--color-brand-text)" }}
                             >
                               Помилка рядка
                             </span>
@@ -2350,7 +2035,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                         </div>
 
                         <label className="flex items-center gap-1.5 text-[11px] cursor-pointer">
-                          <input
+                          <BooleanControl
                             type="checkbox"
                             checked={isExcluded}
                             onChange={(e) => {
@@ -2358,7 +2043,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                               setExcludedLineNumbers((prev) =>
                                 checked
                                   ? [...prev, lineNum]
-                                  : prev.filter((n) => n !== lineNum)
+                                  : prev.filter((n) => n !== lineNum),
                               );
                             }}
                             data-testid={`text-parser-exclude-row-${lineNum}`}
@@ -2370,9 +2055,10 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                       {row.isAutoNextDaySuggested && (
                         <p
                           className="text-[11px]"
-                          style={{ color: 'var(--color-work-text)' }}
+                          style={{ color: "var(--color-work-text)" }}
                         >
-                          ◆ Автоматично визначено перехід на наступну добу (+1 доба).
+                          ◆ Автоматично визначено перехід на наступну добу (+1
+                          доба).
                         </p>
                       )}
 
@@ -2380,9 +2066,10 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                         <p
                           data-testid={`text-parser-mixed-carryover-${lineNum}`}
                           className="text-[11px] font-medium"
-                          style={{ color: 'var(--color-work-text)' }}
+                          style={{ color: "var(--color-work-text)" }}
                         >
-                          ◆ Змішаний стан: вихідний у день, куди переходить завершення попередньої нічної зміни (дозволено).
+                          ◆ Змішаний стан: вихідний у день, куди переходить
+                          завершення попередньої нічної зміни (дозволено).
                         </p>
                       )}
 
@@ -2390,7 +2077,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                         <p
                           key={idx}
                           className="text-[11px] font-semibold"
-                          style={{ color: 'var(--color-brand-text)' }}
+                          style={{ color: "var(--color-brand-text)" }}
                         >
                           ✕ {errDiag.messageUk}
                         </p>
@@ -2400,7 +2087,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                         <p
                           key={idx}
                           className="text-[11px]"
-                          style={{ color: 'var(--text-secondary)' }}
+                          style={{ color: "var(--text-secondary)" }}
                         >
                           ! {warnDiag.messageUk}
                         </p>
@@ -2412,7 +2099,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
 
               {textParserPreview.requiresConflictConfirmation && (
                 <label className="flex items-center gap-2 pt-1 font-medium cursor-pointer">
-                  <input
+                  <BooleanControl
                     type="checkbox"
                     checked={parserConfirmConflicts}
                     onChange={(e) =>
@@ -2440,16 +2127,6 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
           <div className="flex justify-end gap-2 pt-2">
             <Button
               type="button"
-              variant="secondary"
-              onClick={() => {
-                setIsTextParserModalOpen(false);
-                notifyModalChange(false);
-              }}
-            >
-              Скасувати
-            </Button>
-            <Button
-              type="button"
               variant="primary"
               disabled={!textParserPreview || !textParserPreview.canCommit}
               onClick={handleCommitTextParser}
@@ -2459,7 +2136,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
             </Button>
           </div>
         </div>
-      </ModalSheet>
+      </Sheet>
     </div>
   );
 };

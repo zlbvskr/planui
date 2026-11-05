@@ -1,3 +1,5 @@
+import {DeferredTasks} from './DeferredTasks';
+import {minimumDayTasks} from './minimumDayPresentation';
 import React, { useState } from "react";
 import { Clock, Check } from "lucide-react";
 import {
@@ -60,8 +62,10 @@ export function TodayTasksPanel({
   const [filter, setFilter] = useState<"today" | "all">("today");
   const [error, setError] = useState("");
   const [placement, setPlacement] = useState<Task | null>(null);
+  const [deferredOpen,setDeferredOpen]=useState(false);
   const [busy, setBusy] = useState(false);
   const projection = projectTodayTasks(tasks, reservations, date, zone, plan);
+  if(plan.minimalDay)projection.visible=minimumDayTasks(projection.relevant,plan);
   const inbox = tasks.filter(
     (t) =>
       !t.plannedDate &&
@@ -170,7 +174,7 @@ export function TodayTasksPanel({
         ]}
       />
       {error && <p role="alert">{error}</p>}
-      {plan.minimalDay&&projection.relevant.filter(t=>!projection.visible.includes(t)).length>0&&<Section title="Можна відкласти">{projection.relevant.filter(t=>!projection.visible.includes(t)).map(task=><div className="ui-row" key={task.id}><span className="flex-1">{task.title}</span><button type="button" className="ui-pill" onClick={async()=>{try{await repositories.setTaskDateOnlyPlanningTransactionally(task.id,null,new Date().toISOString(),task.revision);await onChanged();}catch{setError('Не вдалося повернути справу до списку.');}}}>До списку</button><button type="button" className="ui-pill" onClick={()=>onPlan(task,'Перенести')}>Перенести</button></div>)}</Section>}
+      {plan.minimalDay&&<DeferredTasks tasks={projection.relevant.filter(t=>!projection.visible.includes(t))} repositories={repositories} onChanged={onChanged} onPlan={task=>onPlan(task,'Перенести')}/>}
       {!visible.length && (
         <EmptyState
           text="Поки немає завдань."

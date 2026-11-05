@@ -1,0 +1,130 @@
+[
+  {
+    "route": "weekly",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "weekly-step-2",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "weekly-step-3",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "weekly-step-4",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "weekly",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "weekly-step-2",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "weekly-step-3",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "weekly-step-4",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "weekly",
+    "theme": "light",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "weekly-step-2",
+    "theme": "light",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "weekly-step-3",
+    "theme": "light",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "weekly-step-4",
+    "theme": "light",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "weekly",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "weekly-step-2",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "weekly-step-3",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "weekly-step-4",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  }
+]

@@ -1,0 +1,815 @@
+[
+  {
+    "route": "today-day",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "today-day-midnight",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "today-tasks",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "today-habits",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "quick-task",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "quick-event",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "quick-habit",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "triage",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "weekly",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "weekly-step-2",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "weekly-step-3",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "weekly-step-4",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "directions-root",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "directions-folder",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "directions-goal",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "directions-project",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "directions-roadmap",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "directions-goal-roadmap",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "directions-filters",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "calendar-month",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "calendar-week",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "calendar-day",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "calendar-roster",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "calendar-stamp",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "calendar-templates",
+    "theme": "dark",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "today-day",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "today-day-midnight",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "today-tasks",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "today-habits",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "quick-task",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "quick-event",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "quick-habit",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "triage",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "weekly",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "weekly-step-2",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "weekly-step-3",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "weekly-step-4",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "directions-root",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "directions-folder",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "directions-goal",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "directions-project",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "directions-roadmap",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "directions-goal-roadmap",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "directions-filters",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "calendar-month",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "calendar-week",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "calendar-day",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "calendar-roster",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "calendar-stamp",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "calendar-templates",
+    "theme": "dark",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "today-day",
+    "theme": "light",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "today-day-midnight",
+    "theme": "light",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "today-tasks",
+    "theme": "light",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "today-habits",
+    "theme": "light",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "quick-task",
+    "theme": "light",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "quick-event",
+    "theme": "light",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "quick-habit",
+    "theme": "light",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "triage",
+    "theme": "light",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "weekly",
+    "theme": "light",
+    "variant": "filled",
+    "total": 2,
+    "counts": {
+      "axe:color-contrast": 2
+    },
+    "findings": [
+      {
+        "rule": "axe:color-contrast",
+        "target": ".ui-row[data-ui=\"row\"]:nth-child(4) > .ui-row-text > small",
+        "detail": "Fix any of the following:\n  Element has insufficient color contrast of 4.48 (foreground color: #646973, background color: #e6e8eb, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1"
+      },
+      {
+        "rule": "axe:color-contrast",
+        "target": ".ui-row[data-ui=\"row\"]:nth-child(5) > .ui-row-text > small",
+        "detail": "Fix any of the following:\n  Element has insufficient color contrast of 4.48 (foreground color: #646973, background color: #e6e8eb, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1"
+      }
+    ]
+  },
+  {
+    "route": "weekly-step-2",
+    "theme": "light",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "weekly-step-3",
+    "theme": "light",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "weekly-step-4",
+    "theme": "light",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "directions-root",
+    "theme": "light",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "directions-folder",
+    "theme": "light",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "directions-goal",
+    "theme": "light",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "directions-project",
+    "theme": "light",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "directions-roadmap",
+    "theme": "light",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "directions-goal-roadmap",
+    "theme": "light",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "directions-filters",
+    "theme": "light",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "calendar-month",
+    "theme": "light",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "calendar-week",
+    "theme": "light",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "calendar-day",
+    "theme": "light",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "calendar-roster",
+    "theme": "light",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "calendar-stamp",
+    "theme": "light",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "calendar-templates",
+    "theme": "light",
+    "variant": "filled",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "today-day",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "today-day-midnight",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "today-tasks",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "today-habits",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "quick-task",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "quick-event",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "quick-habit",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "triage",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "weekly",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "weekly-step-2",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "weekly-step-3",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "weekly-step-4",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "directions-root",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "directions-folder",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "directions-goal",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "directions-project",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "directions-roadmap",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "directions-goal-roadmap",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "directions-filters",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "calendar-month",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "calendar-week",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "calendar-day",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "calendar-roster",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "calendar-stamp",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  },
+  {
+    "route": "calendar-templates",
+    "theme": "light",
+    "variant": "empty",
+    "total": 0,
+    "counts": {},
+    "findings": []
+  }
+]

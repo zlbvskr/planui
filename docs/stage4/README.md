@@ -30,6 +30,6 @@ Tap outside, Escape and the sheet close control dismiss it without duplicating s
 
 Validation: `npm run lint`, `npm run build`, `npm test` (214 passing), and `npm run test:stage4` (WebKit 390×844) passed.
 Focused hygiene: 28/28 dark/light × filled/empty cases pass, including axe; see hygiene.json and screenshots.
-Full-suite results are recorded in full-hygiene.json after the final run.
+Full hygiene: 98/100 cases passed. Two light/filled Weekly Review secondary labels reported contrast 4.48:1 (required 4.5:1); all Stage 4 cases passed. See full-hygiene.json. The unchanged Weekly Review is tracked as an out-of-stage baseline finding, not suppressed. A focused repeat of all 16 Weekly Review cases passed (weekly-recheck.json), so the contrast finding is intermittent.
 
 Risks: no persistence schema or domain logic changed. Existing records support one direct life-area link, so chips select one area and canonical inheritance remains intact. Optional if–then metadata exists on goals only. Empty fixture drill-down routes remain at the empty root because no owner exists. The existing Vite bundle-size warning remains. Secondary full editors retain existing behavior; they are outside the focused screenshot routes.

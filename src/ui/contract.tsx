@@ -1,3 +1,5 @@
+import {AnimatedList, SelectionThumb} from './Motion';
+import {animate, springFrames, useReducedMotion} from './motion';
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { Icon, ChevronLeft, ChevronRight, Info, MoreHorizontal } from './icons';
 import { ModalSheet, ModalSheetProps } from './legacy';
@@ -18,22 +20,23 @@ export function RoundButton({className='',...props}:React.ButtonHTMLAttributes<H
   return <button type="button" {...props} className={`ui-round planui-floating-capsule ${className}`} />;
 }
 export function PageHeader({title,subtitle,actions,children}:{title:string;subtitle?:string;actions?:React.ReactNode;children?:React.ReactNode}) {
-  const sentinel=useRef<HTMLDivElement>(null);const [compact,setCompact]=useState(false);
-  useEffect(()=>{const observer=new IntersectionObserver(([entry])=>setCompact(!entry.isIntersecting));if(sentinel.current)observer.observe(sentinel.current);return()=>observer.disconnect();},[]);
-  return <><div ref={sentinel} style={{height:1,marginBottom:-1}} /><header data-ui="page-header" data-compact={compact}><div className="ui-page-title"><div><h1>{title}</h1>{subtitle&&<p>{subtitle}</p>}</div><div>{actions}</div></div>{children}</header></>;
+  const sentinel=useRef<HTMLDivElement>(null),header=useRef<HTMLElement>(null);const [compact,setCompact]=useState(false);const reduced=useReducedMotion();
+  useEffect(()=>{let frame=0;const update=()=>{const amount=Math.max(0,Math.min(1,scrollY/100));setCompact(amount>=1);cancelAnimationFrame(frame);frame=requestAnimationFrame(()=>header.current?.style.setProperty('--collapse',String(reduced?0:amount)));};update();window.addEventListener('scroll',update,{passive:true});return()=>{cancelAnimationFrame(frame);window.removeEventListener('scroll',update);};},[reduced]);
+  return <><div ref={sentinel} style={{height:1,marginBottom:-1}} /><header ref={header} data-ui="page-header" data-compact={compact}><div className="ui-page-title"><div><h1>{title}</h1>{subtitle&&<p>{subtitle}</p>}</div><div>{actions}</div></div>{children}</header></>;
+
 }
 export function SubHeader({title,onBack,actions}:{title:string;onBack:()=>void;actions?:React.ReactNode}) {
   return <header className="ui-sub-header"><RoundButton aria-label="Назад" onClick={onBack}><ChevronLeft aria-hidden="true" size={20}/></RoundButton><h1>{title}</h1>{actions}</header>;
 }
 export function Segmented<T extends string>({value,options,onChange,label}:{value:T;options:readonly {value:T;label:string}[];onChange:(value:T)=>void;label:string}) {
   if(options.length>4)throw new Error('Segmented supports at most four options');
-  return <div className="ui-segmented" role="group" aria-label={label} onKeyDown={e=>moveGroupFocus(e,options,onChange)}>{options.map(o=><button type="button" key={o.value} aria-pressed={o.value===value} onClick={()=>onChange(o.value)}>{o.label}</button>)}</div>;
+  return <SelectionThumb value={value} className="ui-segmented" role="group" aria-label={label} onKeyDown={e=>moveGroupFocus(e,options,onChange)}>{options.map(o=><button type="button" key={o.value} aria-pressed={o.value===value} onClick={()=>onChange(o.value)}>{o.label}</button>)}</SelectionThumb>;
 }
 export function PillRow<T extends string>({label,value,options,onChange}:{label:string;value:T;options:readonly {value:T;label:string;testId?:string;count?:number;isDefault?:boolean}[];onChange:(v:T)=>void}) {
-  return <div className="ui-pill-row" data-ui="pill-row" role="group" aria-label={label} onKeyDown={e=>moveGroupFocus(e,options,onChange)}>{options.map(o=><button className="ui-pill" type="button" key={o.value} data-testid={o.testId} aria-pressed={o.value===value} onClick={()=>onChange(o.value)}>{o.label}{o.count&&o.count>0&&!o.isDefault&&options[0]!==o?<small>{o.count}</small>:null}</button>)}</div>;
+  return <SelectionThumb value={value} className="ui-pill-row" data-ui="pill-row" role="group" aria-label={label} onKeyDown={e=>moveGroupFocus(e,options,onChange)}>{options.map(o=><button className="ui-pill" type="button" key={o.value} data-testid={o.testId} aria-pressed={o.value===value} onClick={()=>onChange(o.value)}>{o.label}{o.count&&o.count>0&&!o.isDefault&&options[0]!==o?<small>{o.count}</small>:null}</button>)}</SelectionThumb>;
 }
 export function Section({title,children}:{title?:string;children:React.ReactNode}) {
-  const id=useId();return <section className="ui-section ui-contract-section" aria-labelledby={title?id:undefined}>{title&&<h2 id={id} className="ui-section-label">{title}</h2>}<div className="ui-surface" data-ui="group">{children}</div></section>;
+  const id=useId();return <section className="ui-section ui-contract-section" aria-labelledby={title?id:undefined}>{title&&<h2 id={id} className="ui-section-label">{title}</h2>}<div className="ui-surface" data-ui="group"><AnimatedList>{children}</AnimatedList></div></section>;
 }
 type RowProps=Omit<React.HTMLAttributes<HTMLDivElement>,'title'> & {title?:React.ReactNode;secondary?:string;leading?:React.ReactNode;trailing?:React.ReactNode;value?:string|null};
 export function Row({title,secondary,leading,trailing,value,children,className='',...props}:RowProps) {
@@ -43,7 +46,9 @@ export function ItemCard({hue='var(--color-personal)',className='',style,height,
   return <article {...props} data-ui="item-card" data-density={height===undefined?undefined:height<44?'compact':height<=72?'medium':'tall'} className={`ui-item-card ${className}`} style={{'--item-hue':hue,...style} as React.CSSProperties}>{title?<><h3 data-user-content>{title}{height!==undefined&&height<44&&meta?` · ${meta}`:''}</h3>{(height===undefined||height>72)&&step&&<p>{step}</p>}{(height===undefined||height>=44)&&meta&&<span className="ui-item-meta">{meta}</span>}</>:children}</article>;
 }
 export function Toggle({label,checked,onChange,disabled=false,testId}:{label:string;checked:boolean;onChange:(v:boolean)=>void;disabled?:boolean;testId?:string}) {
-  return <button type="button" data-testid={testId} className="ui-toggle" role="switch" aria-label={label} aria-checked={checked} disabled={disabled} onClick={()=>onChange(!checked)}><span aria-hidden="true"/></button>;
+  const ref=useRef<HTMLButtonElement>(null);const reduced=useReducedMotion();
+  useEffect(()=>{void animate(ref.current?.querySelector("span")??null,springFrames(checked?0:16,checked?16:0,"press","transform",n=>`translateX(${n}px)`),{duration:600});},[checked,reduced]);
+  return <button ref={ref} type="button" data-motion="idle" data-testid={testId} className="ui-toggle" role="switch" aria-label={label} aria-checked={checked} disabled={disabled} onClick={()=>onChange(!checked)}><span aria-hidden="true"/></button>;
 }
 export function ActionMenu({label='Дії',items,children,testId}:{label?:string;items:readonly {label:string;onSelect:()=>void;disabled?:boolean}[];children?:React.ReactNode;testId?:string}) {
   const [open,setOpen]=useState(false);const ref=useRef<HTMLDivElement>(null);const trigger=useRef<HTMLButtonElement>(null);const id=useId();

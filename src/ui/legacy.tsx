@@ -1,3 +1,6 @@
+import {animate, cancelMotion, reducedMotion, springFrames, useReducedMotion} from './motion';
+import {useLayoutEffect} from 'react';
+import {creationOrigin} from '../components/shell/creationTransition';
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, AlertCircle, CheckCircle2, Info } from './icons';
@@ -292,7 +295,25 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
   children,
 }) => {
   const [viewport, setViewport] = useState({ height: 0, bottom: 0 });
-  const dragStart = useRef<number | null>(null);
+  const reduced=useReducedMotion();
+  const [present,setPresent]=useState(isOpen);
+  const scrimRef=useRef<HTMLDivElement>(null);
+  const drag=useRef<{y:number;last:number;time:number;velocity:number;height:number;offset:number}|null>(null);
+  const origin=useRef<DOMRect|null>(null);
+  useLayoutEffect(()=>{if(isOpen&&!present){setPresent(true);return;}const el=dialogRef.current;if(!el)return;
+    const box=el.getBoundingClientRect();
+    if(isOpen)origin.current=transitionName?creationOrigin:null;
+    const orb=origin.current;
+    const orbTransform=orb?`translate(${orb.left-box.left}px,${orb.top-box.top}px) scale(${orb.width/box.width},${orb.height/box.height})`:'translateY(100%)';
+    const start=isOpen?orbTransform:(getComputedStyle(el).transform==='none'?'translateY(0px)':getComputedStyle(el).transform);
+    const end=isOpen?'translateY(0px)':orbTransform;
+    const frames=orb?[{transform:start,clipPath:isOpen?'inset(0 round 50%)':'inset(0 round 28px)'},{transform:end,clipPath:isOpen?'inset(0 round 28px)':'inset(0 round 50%)'}]:isOpen?springFrames(100,0,'sheet','transform',n=>`translateY(${n}%)`):[{transform:start},{transform:end}];
+    void animate(el,frames,{duration:isOpen?600:360}).then(()=>{if(!isOpen)setPresent(false);});
+    void animate(scrimRef.current,[{opacity:isOpen?0:1},{opacity:isOpen?1:0}],{duration:220});
+    if(isOpen)void animate(el.querySelector('.ui-sheet-body'),[{opacity:0},{opacity:1}],{duration:140,delay:80});
+    const background=document.querySelector<HTMLElement>('[data-testid=shell-background-root]');
+    if(background){background.style.transform=isOpen&&!reduced?'scale(.97)':'';background.style.opacity=isOpen?'.75':'1';void animate(background,[{transform:reduced?'none':isOpen?'scale(1)':'scale(.97)',opacity:isOpen?1:.75},{transform:reduced?'none':isOpen?'scale(.97)':'scale(1)',opacity:isOpen?.75:1}],{duration:360});}
+  },[isOpen,present,reduced]);
   useEffect(() => {
     if (!isOpen) return;
     const update = () => {
@@ -403,17 +424,20 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, isDirty, showDirtyConfirm, onClose]);
 
-  if (!isOpen) return null;
+  if (!isOpen && !present) return null;
 
-  const handleSwipeEnd = (endY: number) => {
-    if (dragStart.current !== null && endY - dragStart.current > 48) {
-      requestClose();
-    }
-    dragStart.current = null;
+  const beginDrag=(y:number,target:EventTarget|null)=>{
+    const el=dialogRef.current;if(!el||!isOpen||reduced)return false;
+    const element=target as Element;if(element.closest('button,input,textarea,select,a'))return false;
+    const body=element.closest('.ui-sheet-body');if(body&&body.scrollTop>0)return false;
+    cancelMotion(el);drag.current={y,last:y,time:performance.now(),velocity:0,height:el.getBoundingClientRect().height,offset:0};el.dataset.motion='running';el.style.willChange='transform';return true;
   };
+  const moveDrag=(y:number)=>{const d=drag.current,el=dialogRef.current;if(!d||!el)return;const now=performance.now();d.velocity=(y-d.last)/Math.max(1,now-d.time);d.last=y;d.time=now;const delta=y-d.y;d.offset=delta<0?-Math.sqrt(-delta)*3:delta;el.style.transform=`translateY(${d.offset}px)`;};
+  const endDrag=()=>{const d=drag.current,el=dialogRef.current;if(!d||!el)return;drag.current=null;if(d.offset>d.height*.3||(d.offset>0&&d.velocity>.5)){requestClose();}el.style.transform='';void animate(el,springFrames(d.offset,0,'sheet'),{duration:600});};
 
   const modalContent = (
     <div
+      ref={scrimRef} data-motion="idle"
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
       style={{
         backgroundColor: 'rgba(0, 0, 0, 0.35)',
@@ -432,6 +456,13 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
     >
       <div
         ref={dialogRef}
+        data-motion="idle"
+        onPointerDown={e=>{if(e.pointerType!=='touch'&&beginDrag(e.clientY,e.target))e.currentTarget.setPointerCapture(e.pointerId);}}
+        onPointerMove={e=>{if(e.pointerType!=='touch')moveDrag(e.clientY);}}
+        onPointerUp={endDrag} onPointerCancel={endDrag}
+        onTouchStart={e=>{beginDrag(e.touches[0].clientY,e.target);}}
+        onTouchMove={e=>{if(drag.current){if(e.cancelable)e.preventDefault();moveDrag(e.touches[0].clientY);}}}
+        onTouchEnd={endDrag} onTouchCancel={endDrag}
         data-quick-add={quickAdd || undefined}
         data-ui="sheet"
         role="dialog"
@@ -449,25 +480,12 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
       >
         <div
           className="quick-grabber"
-          onTouchStart={(e) => {
-            dragStart.current = e.touches[0].clientY;
-          }}
-          onTouchEnd={(e) => handleSwipeEnd(e.changedTouches[0].clientY)}
-          onPointerDown={(e) => {
-            dragStart.current = e.clientY;
-            e.currentTarget.setPointerCapture(e.pointerId);
-          }}
-          onPointerUp={(e) => handleSwipeEnd(e.clientY)}
         >
           <i />
         </div>
         <header
           className="flex items-start justify-between gap-3 px-5 py-4 border-b shrink-0"
           style={{ borderColor: 'var(--border-subtle)' }}
-          onTouchStart={(e) => {
-            dragStart.current = e.touches[0].clientY;
-          }}
-          onTouchEnd={(e) => handleSwipeEnd(e.changedTouches[0].clientY)}
         >
           <div>
             <h2

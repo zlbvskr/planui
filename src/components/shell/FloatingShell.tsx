@@ -1,3 +1,4 @@
+import {AmbientCanvas,MotionScreen,SelectionThumb} from '../../ui/Motion';
 import React, { useEffect, useState } from 'react';
 import {
   Calendar,
@@ -111,6 +112,7 @@ export const FloatingShell: React.FC<FloatingShellProps> = ({
       aria-hidden={isBackgroundInert ? 'true' : undefined}
       data-testid="shell-background-root"
     >
+      <AmbientCanvas/>
       <svg aria-hidden="true" width="0" height="0" className="absolute pointer-events-none">
         <defs><filter id="planui-edge-refraction" x="-10%" y="-10%" width="120%" height="120%" colorInterpolationFilters="sRGB"><feTurbulence type="fractalNoise" baseFrequency="0.025" numOctaves="1" seed="7" result="rim-map" /><feDisplacementMap in="SourceGraphic" in2="rim-map" scale="5" xChannelSelector="R" yChannelSelector="G" /></filter></defs>
       </svg>
@@ -225,7 +227,7 @@ export const FloatingShell: React.FC<FloatingShellProps> = ({
         }}
         data-testid="main-scroll-container"
       >
-        {children}
+        <MotionScreen id={activeDestination}>{children}</MotionScreen>
       </main>
 
       {/* Mobile & Tablet Floating Controls (< 1024px) — C17 */}
@@ -259,7 +261,7 @@ export const FloatingShell: React.FC<FloatingShellProps> = ({
             </button>
 
             {/* Inset Floating Navigation Capsule (4 equal columns for 4 destinations) */}
-            <nav
+            <SelectionThumb value={activeDestination}
               aria-label={UK_STRINGS.app.mainNavigationAria}
               data-testid="mobile-floating-capsule"
               data-collapsed={collapsed}
@@ -267,7 +269,7 @@ export const FloatingShell: React.FC<FloatingShellProps> = ({
               style={{ position: 'relative' }}
               className="pointer-events-auto w-full min-h-[64px] px-1.5 py-1.5 rounded-full planui-floating-capsule grid grid-cols-4 items-stretch gap-1"
             >
-              <span aria-hidden="true" className="planui-selection" style={{ transform: `translateX(${PRIMARY_NAV_ITEMS.findIndex(item => item.id === activeDestination) * 100}%)` }} />
+
               {PRIMARY_NAV_ITEMS.map((item) => {
                 const Icon = NAV_ICONS[item.id];
                 const isActive = activeDestination === item.id;
@@ -301,7 +303,7 @@ export const FloatingShell: React.FC<FloatingShellProps> = ({
                   </button>
                 );
               })}
-            </nav>
+            </SelectionThumb>
           </div>
         </div>
       )}

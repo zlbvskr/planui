@@ -1,6 +1,9 @@
+import {installPressMotion} from './ui/motion';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
+
+installPressMotion();
 
 const cancelGesture = (event: Event) => event.preventDefault();
 for (const name of ['gesturestart', 'gesturechange', 'gestureend']) {

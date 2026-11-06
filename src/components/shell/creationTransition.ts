@@ -1,11 +1,7 @@
-import { flushSync } from 'react-dom';
-
-/** Shared-element morph where supported; normal React update elsewhere. */
-export function transitionCreation(update: () => void): void {
-  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches || document.documentElement.dataset.reducedMotion === 'true';
-  const doc = document as Document & { startViewTransition?: (update: () => void) => { finished: Promise<void> } };
-  if (!reduced && doc.startViewTransition) {
-    const transition = doc.startViewTransition(() => flushSync(update));
-    void transition.finished.catch(() => { /* Rendering may skip snapshots, but update has still committed. */ });
-  } else update();
+export let creationOrigin:DOMRect|null=null;
+/** Capture before React removes the orb; Sheet uses transform + clip-path only. */
+export function transitionCreation(update:()=>void):void {
+ const orb=document.querySelector<HTMLElement>(innerWidth<1024?'[data-testid=mobile-global-create-button]':'[data-testid=desktop-global-create-button]');
+ if(orb)creationOrigin=orb.getBoundingClientRect();
+ update();
 }

@@ -83,7 +83,7 @@
   /* Radius & Geometry Tokens */
   --radius-small: 12px;
   --radius-section: 20px;
-  --radius-card: 24px;
+  --radius-card: 20px;
   --radius-pill: 999px;
   --tab-bar-height: 88px;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -215,8 +215,8 @@ main {
 @supports ((backdrop-filter: blur(16px)) or (-webkit-backdrop-filter: blur(16px))) {
   .planui-floating-capsule {
     background-color: var(--glass-bg);
-    backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
   }
 }
 
@@ -544,8 +544,8 @@ input[type="range"]:active {
 @supports (backdrop-filter: blur(1px)) {
   [data-ui="page-header"][data-compact="true"] {
     background: var(--glass-bg);
-    backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
   }
 }
 
@@ -642,8 +642,8 @@ input[type="range"]:active {
 @supports (backdrop-filter: blur(1px)) {
   .ui-segmented {
     background: var(--glass-bg);
-    backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
   }
 }
 
@@ -1064,8 +1064,8 @@ html:not(.dark) [data-testid="mobile-floating-capsule"] button[data-active="true
   border-radius: 20px;
   padding: 8px;
   box-shadow: var(--glass-shadow);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
   background: var(--glass-bg);
 }
 

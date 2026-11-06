@@ -2686,3 +2686,8 @@ button:active,.ui-disclosure:active {filter: brightness(.88);}
 [data-ui="sheet"] {touch-action:pan-x pan-y;}
 .ui-button[data-variant="tertiary"] {color:var(--color-brand-text) !important;}
 .today-deadline {max-width:calc(100% - 16px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.ui-toggle[aria-checked="true"] {background:var(--text-primary);}
+.ui-toggle[aria-checked="true"] > span {background:var(--bg-canvas);}
+.timeline-meta {display:flex;align-items:center;gap:4px;min-width:0;}
+.timeline-meta > span:first-child {min-width:0;overflow:hidden;text-overflow:ellipsis;}
+.ui-effort {display:inline-flex;align-items:center;gap:2px;flex-shrink:0;}

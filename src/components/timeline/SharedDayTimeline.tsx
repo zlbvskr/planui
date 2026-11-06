@@ -145,9 +145,9 @@ const TimelineItem = memo(function TimelineItem({
   const hue = task
     ? dir.hue
     : ev?.type === "work_shift"
-      ? "var(--hue-work)"
+      ? (ev.schedule.kind==='timed'&&ev.schedule.interval.originStartLocalDate!==ev.schedule.interval.originEndLocalDate?"var(--color-night-shift)":"var(--color-day-shift)")
       : ev?.type === "sleep"
-        ? "var(--color-personal)"
+        ? "var(--color-sleep)"
         : "var(--hue-relationships)";
   const inspect = () => {
     const current = shared.current;
@@ -185,15 +185,15 @@ const TimelineItem = memo(function TimelineItem({
         <h3>{item.title}{reminder?` · ${formatTime(item.segment.displayStartLocalTime)}`:null}</h3>
         {cardHeight > 72 && task?.description && <p>{task.description}</p>}
         {!reminder && (
-          <div className="ui-item-meta">
-            {formatTimeRange(
+          <div className="ui-item-meta timeline-meta">
+            <span data-user-content>{formatTimeRange(
               item.segment.displayStartLocalTime,
               item.segment.displayEndLocalTime,
             )}{" "}
-            · {task ? dir.name : item.title}{" "}
+            · {task ? dir.name : item.title}</span>
             {task?.effort && (
               <>
-                · <Effort effort={task.effort} />
+                <Effort effort={task.effort} />
               </>
             )}
           </div>

@@ -478,7 +478,7 @@ export function HabitsWorkspaceView({
                       data-minimum={minimum && !done}
                       onClick={() => void record("complete")}
                     >
-                      {done || minimum ? "✓" : "○"}
+                      <Icon name={done||minimum?"check":"circle"}/>
                       {minimum && !done && <small>мінімум</small>}
                     </button>
                     {habit.minimumVersionUk && (
@@ -644,6 +644,7 @@ export function HabitsWorkspaceView({
                   title="На паузі"
                   trailing={
                     <Button
+                      aria-label="Показати звички на паузі"
                       aria-expanded={pausedOpen}
                       onClick={() => setPausedOpen(!pausedOpen)}
                     >

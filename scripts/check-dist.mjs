@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, stat, readdir } from 'node:fs/promises';
 import { Script } from 'node:vm';
 const base = '/planui/';
 const origin = 'https://zlbvskr.github.io';
@@ -26,3 +26,10 @@ assert(refs.some(url => url.endsWith('.css')), 'No stylesheet');
 assert(urls.includes(base) && urls.includes(`${base}index.html`));
 assert(urls.some(url => url.endsWith('.js')) && urls.some(url => url.endsWith('.css')));
 console.log(`PASS: dist shell, manifest, icons and ${urls.length} precache URLs stay inside ${base}`);
+
+for (const file of await readdir('dist/assets')) {
+  if (!/\.(js|css)$/.test(file)) continue;
+  const source=await readFile(`dist/assets/${file}`,'utf8');
+  assert(!source.includes('dev-gallery')&&!source.includes('Сторінку видно крізь скло.'),'DEV gallery leaked into production');
+}
+console.log('PASS: DEV gallery excluded from production assets');

@@ -2761,3 +2761,8 @@ button:active,.ui-disclosure:active {filter: brightness(.88);}
 .ui-slider[data-dragging=true] .motion-slider-thumb i {opacity:1;transform:scale(1.15);}
 [data-ui=sheet],.motion-thumb {transition:none;}
 [data-testid=mobile-floating-capsule] button[data-active=true] {color:var(--selection-fg)!important;}
+@media(prefers-reduced-motion:reduce) {.ui-slider[data-dragging=true] .motion-slider-thumb i {transform:none;}}
+:root[data-reduced-motion=true] .ui-slider[data-dragging=true] .motion-slider-thumb i {transform:none;}
+.ui-toast {width:max-content;max-width:calc(100vw - 32px);}
+.ui-toast > span {min-width:0;flex:1;}
+.ui-toast button {flex-shrink:0;}

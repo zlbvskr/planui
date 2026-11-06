@@ -24,9 +24,9 @@ let skipUntil=0;
 if(typeof window!=='undefined')window.addEventListener('popstate',()=>{skipUntil=performance.now()+500;});
 export function MotionScreen({id,kind='tab',direction=1,children}:{id:string;kind?:'tab'|'push'|'calendar'|'view';direction?:number;children:React.ReactNode}) {
  const ref=useRef<HTMLDivElement>(null),host=useRef<HTMLDivElement>(null),snapshot=useRef<HTMLElement|null>(null),previous=useRef(id);const reduced=useReducedMotion();
- useLayoutEffect(()=>{const el=ref.current;if(!el)return;if(performance.now()<skipUntil){cancelMotion(el);previous.current=id;snapshot.current=el.cloneNode(true) as HTMLElement;return;}const changed=previous.current!==id;previous.current=id;
+ useLayoutEffect(()=>{const el=ref.current;if(!el)return;if(performance.now()<skipUntil){cancelMotion(el);previous.current=id;snapshot.current=kind==='push'?el.cloneNode(true) as HTMLElement:null;return;}const changed=previous.current!==id;previous.current=id;
  if(changed&&kind==='push'&&!reduced&&snapshot.current&&host.current){const old=snapshot.current;old.inert=true;old.setAttribute('aria-hidden','true');old.removeAttribute('data-motion');old.querySelectorAll('[id],[data-testid],[data-motion]').forEach(node=>{node.removeAttribute('id');node.removeAttribute('data-testid');node.removeAttribute('data-motion');});Object.assign(old.style,{position:'absolute',inset:'0',pointerEvents:'none',transform:'none'});host.current.appendChild(old);void animate(old,[{transform:direction>0?'translateX(0px)':'translateX(100%)',opacity:1},{transform:direction>0?'translateX(-28%)':'translateX(100%)',opacity:.4}],{duration:320,easing:easings.emphasized}).then(()=>old.remove());}
- snapshot.current=el.cloneNode(true) as HTMLElement;
+ snapshot.current=kind==='push'?el.cloneNode(true) as HTMLElement:null;
  const transform=kind==='push'?`translateX(${direction>0?'100%':'-28%'})`:kind==='calendar'?`translateX(${direction*24}px)`:kind==='view'?'scale(.985)':'translateY(6px)';
  void animate(el,[{opacity:0,...(!reduced?{transform}:{})},{opacity:1,...(!reduced?{transform:'none'}:{})}],{duration:changed?(kind==='push'?320:kind==='tab'?180:220):160,easing:kind==='push'?easings.emphasized:easings.out});
  },[id,kind,direction,reduced]);

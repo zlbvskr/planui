@@ -312,7 +312,8 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
     void animate(scrimRef.current,[{opacity:isOpen?0:1},{opacity:isOpen?1:0}],{duration:220});
     if(isOpen)void animate(el.querySelector('.ui-sheet-body'),[{opacity:0},{opacity:1}],{duration:140,delay:80});
     const background=document.querySelector<HTMLElement>('[data-testid=shell-background-root]');
-    if(background){background.style.transform=isOpen&&!reduced?'scale(.97)':'';background.style.opacity=isOpen?'.75':'1';void animate(background,[{transform:reduced?'none':isOpen?'scale(1)':'scale(.97)',opacity:isOpen?1:.75},{transform:reduced?'none':isOpen?'scale(.97)':'scale(1)',opacity:isOpen?.75:1}],{duration:360});}
+    const pageOpen=Boolean(document.querySelector('[data-ui="sheet"][data-open="true"]'));
+    if(background){background.style.transform=pageOpen&&!reduced?'scale(.97)':'';background.style.opacity=pageOpen?'.75':'1';void animate(background,[{transform:reduced?'none':isOpen?'scale(1)':'scale(.97)',opacity:isOpen?1:.75},{transform:reduced?'none':isOpen?'scale(.97)':'scale(1)',opacity:isOpen?.75:1}],{duration:360});}
   },[isOpen,present,reduced]);
   useEffect(() => {
     if (!isOpen) return;
@@ -466,6 +467,7 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
         onTouchStart={e=>{beginDrag(e.touches[0].clientY,e.target);}}
         onTouchMove={e=>{if(drag.current){moveDrag(e.touches[0].clientY);}}}
         onTouchEnd={endDrag} onTouchCancel={endDrag}
+        data-open={isOpen}
         data-quick-add={quickAdd || undefined}
         data-ui="sheet"
         role="dialog"

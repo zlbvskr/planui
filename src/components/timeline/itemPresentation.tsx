@@ -1,3 +1,4 @@
+import {Icon} from "../../ui/icons";
 import React from "react";
 import type { Folder, Project, Task } from "../../domain/types";
 export function directionFor(
@@ -39,10 +40,10 @@ export const effortDots = (effort: Task["effort"]) =>
 export function Effort({ effort }: { effort: Task["effort"] }) {
   return effort ? (
     <span
-      role="img"
+      className="ui-effort" role="img"
       aria-label={`Зусилля: ${{ small: "малі", medium: "середні", large: "значні" }[effort]}`}
     >
-      {effortDots(effort)}
+      {[0,1,2].map(index=><Icon key={index} name="circle" size={8} fill={index<({small:1,medium:2,large:3}[effort])?'currentColor':'none'}/>)}
     </span>
   ) : null;
 }

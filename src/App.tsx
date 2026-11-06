@@ -6,6 +6,7 @@ import { FloatingShell } from './components/shell/FloatingShell';
 import { transitionCreation } from './components/shell/creationTransition';
 import { EventDetailSheet } from './components/timeline/EventDetailSheet';
 import { GapTaskPickerSheet } from './components/timeline/GapTaskPickerSheet';
+import {Toast} from './ui/feedback';
 import { FeedbackBanner } from './components/ui/primitives';
 import { selectAmbientContext } from './domain/projections';
 import type { UnoccupiedTimeGap } from './domain/scheduling';
@@ -470,8 +471,7 @@ export function App() {
           </div>}
           <PwaStatusBanner pwaState={pwaState} />
           {toastMessage && (
-            <FeedbackBanner
-              tone="success"
+            <Toast
               message={toastMessage}
               onDismiss={() => setToastMessage(null)}
             />

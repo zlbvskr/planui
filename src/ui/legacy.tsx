@@ -1,25 +1,28 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, AlertCircle, CheckCircle2, Info } from 'lucide-react';
+import { X, AlertCircle, CheckCircle2, Info } from './icons';
 import { UK_STRINGS } from '../i18n/uk';
 import { DateField, PillRow, Segmented, SelectField, TimeField } from './contract';
 
 export { SelectField };
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'subtle' | 'danger';
+  variant?: 'primary' | 'secondary' | 'subtle' | 'danger' | 'tertiary' | 'destructive';
   size?: 'md' | 'sm' | 'icon';
   fullWidth?: boolean;
+  busy?: boolean;
 }
 
 export const Button: React.FC<ButtonProps> = ({
   variant = 'secondary',
   size = 'md',
   fullWidth = false,
+  busy = false,
   className = '',
   children,
   ...props
 }) => {
+  const dismissLabel = typeof children === 'string' && ['Закрити','Скасувати'].includes(children.trim()) ? children.trim() : undefined;
   const baseClasses =
     'inline-flex items-center justify-center gap-2 font-medium rounded-xl planui-transition-micro select-none disabled:opacity-50 disabled:pointer-events-none cursor-pointer';
 
@@ -27,8 +30,8 @@ export const Button: React.FC<ButtonProps> = ({
     size === 'icon'
       ? 'min-w-[44px] min-h-[44px] p-2.5'
       : size === 'sm'
-      ? 'min-h-[40px] px-3.5 py-2 text-[15px]'
-      : 'min-h-[44px] px-4 py-2.5 text-[16px]';
+      ? 'min-h-[40px] px-3.5 py-2 text-[0.9375rem]'
+      : 'min-h-[44px] px-4 py-2.5 text-[1rem]';
 
   const variantStyle: React.CSSProperties =
     variant === 'primary'
@@ -37,13 +40,13 @@ export const Button: React.FC<ButtonProps> = ({
           color: 'var(--btn-primary-fg)',
           border: '1px solid transparent',
         }
-      : variant === 'danger'
+      : (variant === 'danger' || variant === 'destructive')
       ? {
           backgroundColor: 'var(--color-brand-tint)',
           color: 'var(--color-brand-text)',
           border: '1px solid var(--border-subtle)',
         }
-      : variant === 'subtle'
+      : (variant === 'subtle' || variant === 'tertiary')
       ? {
           backgroundColor: 'transparent',
           color: 'var(--text-primary)',
@@ -58,11 +61,15 @@ export const Button: React.FC<ButtonProps> = ({
   return (
     <button
       type="button"
-      className={`${baseClasses} ${sizeClasses} ${fullWidth ? 'w-full' : ''} active:scale-[0.98] ${className}`}
+      aria-label={dismissLabel}
+      aria-busy={busy || undefined}
+      data-variant={variant}
+      className={`ui-button ${baseClasses} ${sizeClasses} ${fullWidth ? 'w-full' : ''} active:scale-[0.98] ${className}`}
       style={variantStyle}
       {...props}
+      disabled={busy || props.disabled}
     >
-      {children}
+      {busy ? 'Зачекайте…' : dismissLabel ? <X/> : children}
     </button>
   );
 };
@@ -94,7 +101,7 @@ export const InputField: React.FC<InputFieldProps> = ({
     <div className={`flex flex-col gap-1.5 ${className}`}>
       <label
         htmlFor={inputId}
-        className="text-[15px] font-medium"
+        className="text-[0.9375rem] font-medium"
         style={{ color: 'var(--text-primary)' }}
       >
         {label}
@@ -102,7 +109,7 @@ export const InputField: React.FC<InputFieldProps> = ({
       <input
         id={inputId}
         type={type}
-        className="w-full min-h-[44px] px-3.5 py-2.5 rounded-xl text-[16px] planui-transition-micro"
+        className="w-full min-h-[44px] px-3.5 py-2.5 rounded-xl text-[1rem] planui-transition-micro"
         style={{
           backgroundColor: 'var(--bg-elevated)',
           color: 'var(--text-primary)',
@@ -114,14 +121,14 @@ export const InputField: React.FC<InputFieldProps> = ({
         {...props}
       />
       {hint && !error && (
-        <span className="text-[13px]" style={{ color: 'var(--text-secondary)' }}>
+        <span className="text-[0.8125rem]" style={{ color: 'var(--text-secondary)' }}>
           {hint}
         </span>
       )}
       {error && (
         <span
           role="alert"
-          className="text-[13px] font-medium flex items-center gap-1.5"
+          className="text-[0.8125rem] font-medium flex items-center gap-1.5"
           style={{ color: 'var(--color-brand-text)' }}
         >
           <AlertCircle className="w-4 h-4 shrink-0" aria-hidden="true" />
@@ -152,7 +159,7 @@ export const TextAreaField: React.FC<TextAreaFieldProps> = ({
     <div className={`flex flex-col gap-1.5 ${className}`}>
       <label
         htmlFor={fieldId}
-        className="text-[15px] font-medium"
+        className="text-[0.9375rem] font-medium"
         style={{ color: 'var(--text-primary)' }}
       >
         {label}
@@ -160,7 +167,7 @@ export const TextAreaField: React.FC<TextAreaFieldProps> = ({
       <textarea
         id={fieldId}
         rows={3}
-        className="w-full px-3.5 py-2.5 rounded-xl text-[16px] planui-transition-micro resize-y"
+        className="w-full px-3.5 py-2.5 rounded-xl text-[1rem] planui-transition-micro resize-y"
         style={{
           backgroundColor: 'var(--bg-elevated)',
           color: 'var(--text-primary)',
@@ -169,7 +176,7 @@ export const TextAreaField: React.FC<TextAreaFieldProps> = ({
         {...props}
       />
       {hint && (
-        <span className="text-[13px]" style={{ color: 'var(--text-secondary)' }}>
+        <span className="text-[0.8125rem]" style={{ color: 'var(--text-secondary)' }}>
           {hint}
         </span>
       )}
@@ -238,12 +245,12 @@ export const FeedbackBanner: React.FC<FeedbackBannerProps> = ({
   return (
     <div
       role={tone === 'error' ? 'alert' : 'status'}
-      className="rounded-xl px-4 py-3 border flex items-start justify-between gap-3 text-[15px]"
+      className="ui-inline-banner rounded-xl px-4 py-3 border flex items-start justify-between gap-3 text-[0.9375rem]"
       style={toneStyles}
     >
       <div className="flex items-start gap-2.5">
         <Icon className="w-5 h-5 shrink-0 mt-0.5" aria-hidden="true" />
-        <span className="leading-snug">{message}</span>
+        <span className="ui-banner-text leading-snug">{message}</span>
       </div>
       {onDismiss && (
         <button
@@ -267,6 +274,7 @@ export interface ModalSheetProps {
   quickAdd?: boolean;
   contract?: boolean;
   isDirty?: boolean;
+  footer?: React.ReactNode;
   onClose: () => void;
   children: React.ReactNode;
 }
@@ -279,13 +287,14 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
   quickAdd = false,
   contract = false,
   isDirty = false,
+  footer,
   onClose,
   children,
 }) => {
   const [viewport, setViewport] = useState({ height: 0, bottom: 0 });
   const dragStart = useRef<number | null>(null);
   useEffect(() => {
-    if (!isOpen || !quickAdd) return;
+    if (!isOpen) return;
     const update = () => {
       const v = window.visualViewport;
       if (v) {
@@ -407,8 +416,8 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
     <div
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
       style={{
-        backgroundColor: 'rgba(0, 0, 0, 0.48)',
-        bottom: quickAdd ? viewport.bottom : undefined,
+        backgroundColor: 'rgba(0, 0, 0, 0.35)',
+        bottom: viewport.bottom,
       }}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) {
@@ -424,7 +433,7 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
       <div
         ref={dialogRef}
         data-quick-add={quickAdd || undefined}
-        data-ui={contract ? 'sheet' : undefined}
+        data-ui="sheet"
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
@@ -432,8 +441,8 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
         className="planui-floating-capsule w-full sm:max-w-[540px] max-h-[92dvh] flex flex-col rounded-t-3xl sm:rounded-3xl overflow-hidden planui-transition-modal"
         style={{
           viewTransitionName: transitionName,
-          maxHeight: quickAdd && viewport.height ? viewport.height * 0.92 : undefined,
-          backgroundColor: 'var(--glass-bg)',
+          maxHeight: viewport.height ? viewport.height * 0.92 : undefined,
+          backgroundColor: 'var(--sheet-bg)',
           border: '1px solid var(--border-strong)',
           boxShadow: 'var(--glass-shadow)',
         }}
@@ -446,6 +455,7 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
           onTouchEnd={(e) => handleSwipeEnd(e.changedTouches[0].clientY)}
           onPointerDown={(e) => {
             dragStart.current = e.clientY;
+            e.currentTarget.setPointerCapture(e.pointerId);
           }}
           onPointerUp={(e) => handleSwipeEnd(e.clientY)}
         >
@@ -462,14 +472,14 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
           <div>
             <h2
               id={titleId}
-              className="text-[19px] font-semibold m-0 leading-snug"
+              className="text-[1.1875rem] font-semibold m-0 leading-snug"
               style={{ color: 'var(--text-primary)' }}
             >
               {title}
             </h2>
             {subtitle && (
               <p
-                className="text-[14px] m-0 mt-0.5"
+                className="text-[0.875rem] m-0 mt-0.5"
                 style={{ color: 'var(--text-secondary)' }}
               >
                 {subtitle}
@@ -478,17 +488,18 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
           </div>
           <Button
             variant="secondary"
-            size="sm"
+            size="icon"
             onClick={requestClose}
             aria-label={UK_STRINGS.app.closeButton}
             data-testid="modal-close-button"
           >
             <X className="w-4 h-4" aria-hidden="true" />
-            <span>{UK_STRINGS.app.closeButton}</span>
+            
           </Button>
         </header>
 
-        <div className="p-5 overflow-y-auto space-y-4">{children}</div>
+        <div className="ui-sheet-body p-5 overflow-y-auto space-y-4">{children}</div>
+        {footer&&<footer className="ui-sheet-footer">{footer}</footer>}
 
         {showDirtyConfirm && (
           <div
@@ -503,13 +514,13 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
           >
             <div className="space-y-1">
               <p
-                className="text-[15px] font-semibold m-0"
+                className="text-[0.9375rem] font-semibold m-0"
                 style={{ color: 'var(--text-primary)' }}
               >
                 {UK_STRINGS.creation.dirtyConfirm.title}
               </p>
               <p
-                className="text-[14px] m-0"
+                className="text-[0.875rem] m-0"
                 style={{ color: 'var(--text-secondary)' }}
               >
                 {UK_STRINGS.creation.dirtyConfirm.message}

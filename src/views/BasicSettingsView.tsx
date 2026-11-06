@@ -1,3 +1,4 @@
+import {Icon} from '../ui/icons';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   PlanuiDomainSnapshot,
@@ -977,8 +978,8 @@ export const BasicSettingsView: React.FC<BasicSettingsViewProps> = ({
                   disabled={isBusyBackup}
                   data-testid="cancel-import-preview-button"
                   className="min-h-[44px] px-4 rounded-full bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-xs font-medium"
-                >
-                  Скасувати
+                 aria-label="Скасувати">
+                  <Icon name="x"/>
                 </button>
               </div>
             </div>
@@ -1079,7 +1080,7 @@ export const BasicSettingsView: React.FC<BasicSettingsViewProps> = ({
                         data-testid={`delete-recovery-snapshot-${snap.id}`}
                         className="min-h-[44px] px-2.5 rounded-xl text-xs font-medium text-[var(--color-danger)]"
                       >
-                        ×
+                        <Icon name="x"/>
                       </button>
                     </div>
                   </div>
@@ -1105,8 +1106,8 @@ export const BasicSettingsView: React.FC<BasicSettingsViewProps> = ({
                           type="button"
                           onClick={() => setConfirmRestoreSnapshotId(null)}
                           className="min-h-[44px] px-3 rounded-xl text-xs"
-                        >
-                          Скасувати
+                         aria-label="Скасувати">
+                          <Icon name="x"/>
                         </button>
                       </div>
                     </div>
@@ -1133,8 +1134,8 @@ export const BasicSettingsView: React.FC<BasicSettingsViewProps> = ({
                           type="button"
                           onClick={() => setConfirmDeleteOnlySnapshotId(null)}
                           className="min-h-[44px] px-3 rounded-xl text-xs"
-                        >
-                          Скасувати
+                         aria-label="Скасувати">
+                          <Icon name="x"/>
                         </button>
                       </div>
                     </div>

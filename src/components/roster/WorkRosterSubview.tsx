@@ -1,3 +1,4 @@
+import {Icon} from '../../ui/icons';
 import { CalendarGrid } from "../calendar/CalendarGrid";
 import {
   Section,
@@ -1058,7 +1059,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                   onSelectDate(addMonthsToLocalDate(selectedDate, -1))
                 }
               >
-                ‹
+                <Icon name="chevron-left"/>
               </RoundButton>
               <span>
                 {sentenceCase(formatMonthYear(selectedDate)).replace(
@@ -1072,7 +1073,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                   onSelectDate(addMonthsToLocalDate(selectedDate, 1))
                 }
               >
-                ›
+                <Icon name="chevron-right"/>
               </RoundButton>
             </div>
           )}
@@ -1240,7 +1241,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                       setRepeatOpen(true);
                     }}
                   >
-                    ›
+                    <Icon name="chevron-right"/>
                   </RoundButton>
                 }
               />
@@ -1288,7 +1289,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                       }
                     }}
                   >
-                    ›
+                    <Icon name="chevron-right"/>
                   </RoundButton>
                 }
               />
@@ -1321,7 +1322,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                       setDayActions(false);
                     }}
                   >
-                    ×
+                    <Icon name="x"/>
                   </RoundButton>
                 }
               />
@@ -1336,7 +1337,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                   aria-label="Видалити вихідний"
                   onClick={() => void handleRemoveDayOff(off.id)}
                 >
-                  ×
+                  <Icon name="x"/>
                 </RoundButton>
               }
             />
@@ -1962,7 +1963,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex flex-wrap items-center gap-2">
                           <span
-                            className="rounded px-1.5 py-0.5 font-mono text-[11px]"
+                            className="rounded px-1.5 py-0.5 font-mono text-[0.6875rem]"
                             style={{ backgroundColor: "var(--bg-elevated)" }}
                           >
                             #{lineNum}: {row.rawLineText}
@@ -1985,7 +1986,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                           )}
                         </div>
 
-                        <div className="flex items-center gap-1.5 text-[11px]">
+                        <div className="flex items-center gap-1.5 text-[0.6875rem]">
                           <Toggle
                             label="Пропустити рядок"
                             checked={isExcluded}
@@ -2004,7 +2005,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
 
                       {row.isAutoNextDaySuggested && (
                         <p
-                          className="text-[11px]"
+                          className="text-[0.6875rem]"
                           style={{ color: "var(--color-work-text)" }}
                         >
                           ◆ Автоматично визначено перехід на наступну добу (+1
@@ -2015,7 +2016,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                       {row.isMixedDayOffCarryover && (
                         <p
                           data-testid={`text-parser-mixed-carryover-${lineNum}`}
-                          className="text-[11px] font-medium"
+                          className="text-[0.6875rem] font-medium"
                           style={{ color: "var(--color-work-text)" }}
                         >
                           ◆ Змішаний стан: вихідний у день, куди переходить
@@ -2026,7 +2027,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                       {errorDiagnostics.map((errDiag, idx) => (
                         <p
                           key={idx}
-                          className="text-[11px] font-semibold"
+                          className="text-[0.6875rem] font-semibold"
                           style={{ color: "var(--color-brand-text)" }}
                         >
                           ✕ {errDiag.messageUk}
@@ -2036,7 +2037,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                       {warnDiagnostics.map((warnDiag, idx) => (
                         <p
                           key={idx}
-                          className="text-[11px]"
+                          className="text-[0.6875rem]"
                           style={{ color: "var(--text-secondary)" }}
                         >
                           ! {warnDiag.messageUk}

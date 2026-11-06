@@ -2,7 +2,7 @@
 <html lang="uk">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <title>PLANUI — Особистий локальний планувальник</title>
     <meta name="description" content="Приватний локальний планувальник розкладу, справ, змін, звичок та особистого простору." />
     <meta property="og:title" content="PLANUI — Особистий локальний планувальник" />
@@ -33,7 +33,7 @@
           if (reducedTransparency) root.setAttribute('data-reduced-transparency', 'true');
           var metaTheme = document.getElementById('planui-theme-color');
           if (metaTheme) {
-            metaTheme.setAttribute('content', resolved === 'dark' ? '#000000' : '#F5F5F7');
+            metaTheme.setAttribute('content', resolved === 'dark' ? '#05060A' : '#F5F5F7');
           }
         } catch (e) {}
       })();

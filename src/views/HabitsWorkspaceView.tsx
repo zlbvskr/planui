@@ -1,3 +1,4 @@
+import {Icon} from '../ui/icons';
 import { HabitPresentationContext } from "../components/habits/presentation";
 import { SleepReminderNote } from "../components/habits/SleepReminderNote";
 import {
@@ -12,7 +13,7 @@ import {
 } from "../ui";
 import { formatDate, formatDuration } from "../lib/format";
 import React, { useMemo, useState, useEffect, useContext } from "react";
-import { Repeat } from "lucide-react";
+import { Repeat } from "../ui/icons";
 import {
   CalendarEvent,
   EntityId,
@@ -477,7 +478,7 @@ export function HabitsWorkspaceView({
                       data-minimum={minimum && !done}
                       onClick={() => void record("complete")}
                     >
-                      {done || minimum ? "✓" : "○"}
+                      <Icon name={done||minimum?"check":"circle"}/>
                       {minimum && !done && <small>мінімум</small>}
                     </button>
                     {habit.minimumVersionUk && (
@@ -643,10 +644,11 @@ export function HabitsWorkspaceView({
                   title="На паузі"
                   trailing={
                     <Button
+                      aria-label="Показати звички на паузі"
                       aria-expanded={pausedOpen}
                       onClick={() => setPausedOpen(!pausedOpen)}
                     >
-                      ⌄
+                      <Icon name="chevron-down"/>
                     </Button>
                   }
                 />
@@ -666,7 +668,7 @@ export function HabitsWorkspaceView({
                 aria-label="Усі звички та історія"
                 onClick={() => setHistory(true)}
               >
-                ›
+                <Icon name="chevron-right"/>
               </Button>
             }
           />

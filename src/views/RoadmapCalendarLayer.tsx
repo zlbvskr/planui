@@ -1,3 +1,4 @@
+import {Icon} from '../ui/icons';
 import React, { useState } from "react";
 import { Section, Row, ActionMenu, Sheet, RoundButton } from "../ui";
 import { formatShortDate } from "../lib/format";
@@ -89,7 +90,7 @@ export function RoadmapCalendarLayer({
                   aria-label={`Переглянути: ${marker.labelUk}`}
                   onClick={() => setEditing(marker.item)}
                 >
-                  ›
+                  <Icon name="chevron-right"/>
                 </RoundButton>
               }
             />

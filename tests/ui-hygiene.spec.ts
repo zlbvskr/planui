@@ -32,6 +32,19 @@ export function inspectUiHygiene():Finding[] {
   const target=(e:Element)=>e.getAttribute('data-testid')||e.id||`${e.tagName.toLowerCase()}${e.className&&typeof e.className==='string'?'.'+e.className.split(' ').filter(Boolean).slice(0,2).join('.'):''}`;
   const add=(rule:string,e:Element,detail:string)=>findings.push({rule,target:target(e),detail});
   const rendered=(e:Element)=>{const rect=e.getBoundingClientRect();if(!rect.width||(!rect.height&&!e.matches('[data-ui="content-start"]')))return false;if(e.classList.contains('sr-only')&&document.activeElement!==e)return false;for(let a:Element|null=e;a;a=a.parentElement){const s=getComputedStyle(a);if(s.display==='none'||s.visibility==='hidden'||s.opacity==='0')return false;if(a.tagName==='DETAILS'&&!a.hasAttribute('open')&&a!==e&&!a.querySelector('summary')?.contains(e))return false;}return true;};
+  const meta=document.querySelector('meta[name="viewport"]');
+  for(const token of ['width=device-width','initial-scale=1','minimum-scale=1','maximum-scale=1','user-scalable=no','viewport-fit=cover'])if(!meta?.getAttribute('content')?.split(',').map(v=>v.trim()).includes(token))add('viewport-meta',document.documentElement,token);
+  const root=document.getElementById('root');
+  if(root&&getComputedStyle(root).touchAction!=='pan-x pan-y')add('root-touch-action',root,getComputedStyle(root).touchAction);
+  const gesture=new Event('gesturestart',{cancelable:true,bubbles:true});document.dispatchEvent(gesture);
+  if(!gesture.defaultPrevented)add('gesture-zoom',document.documentElement,'gesturestart was not cancelled');
+  for(const input of document.querySelectorAll('input,textarea,select'))if(parseFloat(getComputedStyle(input).fontSize)<16)add('focus-zoom',input,getComputedStyle(input).fontSize);
+  for(const toast of document.querySelectorAll('[data-ui="toast"]'))if(getComputedStyle(toast).position!=='fixed')add('toast-flow',toast,'Toast must float');
+  for(const slider of document.querySelectorAll('.ui-slider[data-unset="true"]'))if(getComputedStyle(slider).getPropertyValue('--slider-fill').trim()!=='0%')add('unset-slider-fill',slider,'Unset track must have zero fill');
+  for(const sheet of document.querySelectorAll('[data-ui="sheet"]')) {
+    for(const button of sheet.querySelectorAll('button'))if(['Закрити','Скасувати'].includes(button.textContent?.trim()??''))add('sheet-text-dismiss',button,button.textContent??'');
+    for(const button of sheet.querySelectorAll('.ui-primary,[data-variant="primary"]'))if(rendered(button)&&button.parentElement&&button.getBoundingClientRect().width<button.parentElement.clientWidth-parseFloat(getComputedStyle(button.parentElement).paddingLeft)-parseFloat(getComputedStyle(button.parentElement).paddingRight)-2)add('sheet-primary-width',button,'Primary must fill its container');
+  }
   const pillRow=(e:Element)=>e.closest('[data-ui="pill-row"],.ui-pill-row,.quick-options,.ui-topbar-actions');
   if(document.documentElement.scrollWidth>width+1)add('page-overflow',document.documentElement,`${document.documentElement.scrollWidth} > ${width}`);
   const headings=Array.from(document.querySelectorAll('h1')).filter(rendered);
@@ -44,6 +57,7 @@ export function inspectUiHygiene():Finding[] {
     if(getComputedStyle(e).textTransform==='uppercase')add('uppercase',e,'Computed text-transform: uppercase');
     const ownText=Array.from(e.childNodes).filter(n=>n.nodeType===Node.TEXT_NODE).map(n=>n.textContent).join(' ').replace(/\s+/g,' ').trim();
     if(ownText){
+      if(/\p{Extended_Pictographic}/u.test(ownText)&&!e.closest('[data-user-content],.user-content,input,textarea,blockquote'))add('emoji-icon',e,ownText);
       if(/\d{4}-\d{2}-\d{2}/.test(ownText))add('iso-date',e,ownText);
       if(!settings&&ownText.includes('Europe/Kyiv'))add('timezone',e,ownText);
       if(/\(0\)\s*$/.test(ownText))add('zero-counter',e,ownText);

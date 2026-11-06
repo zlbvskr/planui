@@ -1,7 +1,8 @@
+import {Icon} from '../../ui/icons';
 import {DeferredTasks} from './DeferredTasks';
 import {minimumDayTasks} from './minimumDayPresentation';
 import React, { useState } from "react";
-import { Clock, Check } from "lucide-react";
+import { Clock, Check } from "../../ui/icons";
 import {
   formatDuration,
   formatInstant,
@@ -206,7 +207,7 @@ export function TodayTasksPanel({
                   <button className="task-copy" onClick={() => onPlan(task)}>
                     <span>
                       {plan.focusTaskIds.includes(task.id) && (
-                        <span aria-label="Фокус дня">★ </span>
+                        <span aria-label="Фокус дня"><Icon name="star" size={14}/> </span>
                       )}
                       {task.title}
                     </span>

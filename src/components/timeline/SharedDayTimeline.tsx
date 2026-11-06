@@ -1,3 +1,4 @@
+import {Icon} from '../../ui/icons';
 import {projectTodayTasks} from '../../domain/today';
 import {minimumDayTasks} from '../today/minimumDayPresentation';
 import React, {
@@ -8,7 +9,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { ArrowDown, ArrowUp, ChevronDown, Moon } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, Moon } from "../../ui/icons";
 import type {
   CalendarEvent,
   DailyPlan,
@@ -43,7 +44,7 @@ import {
   formatTimeRange,
   sentenceCase,
 } from "../../lib/format";
-import { ActionMenu, ItemCard, Pill } from "../ui/design";
+import { ActionMenu, ItemCard, Pill, Sheet, Row } from "../ui/design";
 import { directionFor, Effort } from "./itemPresentation";
 import { dayOffset, futureGaps, minutePixels } from "./viewport";
 export interface SharedDayTimelineProps {
@@ -130,6 +131,7 @@ const TimelineItem = memo(function TimelineItem({
   height: number;
   shared: React.RefObject<SharedDayTimelineProps>;
 }) {
+  const [detailOpen,setDetailOpen] = useState(false);
   const props = shared.current;
   const { tasks, events, reservations } = props;
   const folders = props.folders ?? EMPTY,
@@ -138,13 +140,14 @@ const TimelineItem = memo(function TimelineItem({
     task = tasks.find((t) => t.id === item.taskId),
     ev = events.find((e) => e.id === item.sourceId),
     dir = directionFor(task, folders, projects);
-  const reminder = item.segment.elapsedDurationMinutes < 10;
+  const cardHeight = Math.max(32,(p.heightPercent / 100) * height - (item.segment.continuesAfterDayEnd ? 0 : 4));
+  const reminder = cardHeight < 44;
   const hue = task
     ? dir.hue
     : ev?.type === "work_shift"
-      ? "var(--hue-work)"
+      ? (ev.schedule.kind==='timed'&&ev.schedule.interval.originStartLocalDate!==ev.schedule.interval.originEndLocalDate?"var(--color-night-shift)":"var(--color-day-shift)")
       : ev?.type === "sleep"
-        ? "var(--color-personal)"
+        ? "var(--color-sleep)"
         : "var(--hue-relationships)";
   const inspect = () => {
     const current = shared.current;
@@ -153,10 +156,11 @@ const TimelineItem = memo(function TimelineItem({
   };
   const before = item.segment.continuesBeforeDayStart,
     after = item.segment.continuesAfterDayEnd;
-  return (
+  return (<>
     <ItemCard
       key={item.itemKey}
       hue={hue}
+      height={cardHeight}
       data-source={item.sourceId}
       data-collision={p.hasConflict}
       data-continues-before={before}
@@ -164,10 +168,7 @@ const TimelineItem = memo(function TimelineItem({
       className={`today-time-item ${reminder ? "today-reminder" : ""}`}
       style={{
         top: `${p.topPercent}%`,
-        height: Math.max(
-          44,
-          (p.heightPercent / 100) * height - (after ? 0 : 4),
-        ),
+        height: cardHeight,
         left: `calc(52px + (100% - 52px) * ${p.laneIndex / p.totalLanes})`,
         width: `calc((100% - 52px) / ${p.totalLanes} - 2px)`,
         borderTopLeftRadius: before ? 0 : undefined,
@@ -178,34 +179,29 @@ const TimelineItem = memo(function TimelineItem({
     >
       <button
         className="today-item-open"
-        onClick={inspect}
+        onClick={()=>setDetailOpen(true)}
         aria-label={`Відкрити: ${item.title}`}
       >
-        <h3>{item.title}</h3>
-        {!reminder && task?.description && <p>{task.description}</p>}
+        <h3>{item.title}{reminder?` · ${formatTime(item.segment.displayStartLocalTime)}`:null}</h3>
+        {cardHeight > 72 && task?.description && <p>{task.description}</p>}
         {!reminder && (
-          <div className="ui-item-meta">
-            {formatTimeRange(
+          <div className="ui-item-meta timeline-meta">
+            <span data-user-content>{formatTimeRange(
               item.segment.displayStartLocalTime,
               item.segment.displayEndLocalTime,
             )}{" "}
-            · {task ? dir.name : item.title}{" "}
+            · {task ? dir.name : item.title}</span>
             {task?.effort && (
               <>
-                · <Effort effort={task.effort} />
+                <Effort effort={task.effort} />
               </>
             )}
           </div>
         )}
-        {reminder && (
-          <span className="ui-item-meta">
-            {formatTime(item.segment.displayStartLocalTime)}
-          </span>
-        )}
       </button>
       {!reminder && plan.focusTaskIds.includes(task?.id ?? "") && (
-        <span className="today-star" aria-label="Фокус дня">
-          ★
+        <span className="today-star" role="img" aria-label="Фокус дня">
+          <Icon name="star" size={14}/>
         </span>
       )}
       {task?.deadline?.kind === "date_only" && (
@@ -213,48 +209,16 @@ const TimelineItem = memo(function TimelineItem({
           до {formatDeadline(task.deadline.localDate)}
         </span>
       )}
-      <div className="timeline-item-actions">
-        <ActionMenu
-          label={`Дії: ${item.title}`}
-          items={[
-            { label: "Редагувати", onSelect: inspect },
-            ...(task
-              ? [
-                  {
-                    label:
-                      task.state === "completed"
-                        ? "Відкрити знову"
-                        : "Завершити",
-                    onSelect: () =>
-                      void shared.current.onToggleTaskState(task.id),
-                  },
-                ]
-              : []),
-            ...(ev
-              ? [
-                  {
-                    label: "Скасувати подію",
-                    onSelect: () =>
-                      void shared.current.onCancelEvent(ev.id, ev.revision),
-                  },
-                ]
-              : []),
-            ...(reservations.find((r) => r.id === item.sourceId)
-              ?.habitOccurrence
-              ? [
-                  {
-                    label: "Запис звички",
-                    onSelect: () =>
-                      shared.current.onInspectHabitSession?.(
-                        reservations.find((r) => r.id === item.sourceId)!,
-                      ),
-                  },
-                ]
-              : []),
-          ]}
-        />
-      </div>
+
     </ItemCard>
+    <Sheet title={item.title} isOpen={detailOpen} onClose={()=>setDetailOpen(false)}>
+      <p className="ui-item-meta">{formatTimeRange(item.segment.displayStartLocalTime,item.segment.displayEndLocalTime)}</p>
+      <button type="button" className="ui-disclosure" onClick={()=>{setDetailOpen(false);inspect();}}><Row title="Редагувати"/></button>
+      {task&&<button type="button" className="ui-disclosure" onClick={()=>{setDetailOpen(false);void shared.current.onToggleTaskState(task.id);}}><Row title={task.state==='completed'?'Відкрити знову':'Завершити'}/></button>}
+      {ev&&<button type="button" className="ui-disclosure" onClick={()=>{setDetailOpen(false);void shared.current.onCancelEvent(ev.id,ev.revision);}}><Row title="Скасувати подію"/></button>}
+      {reservations.find(r=>r.id===item.sourceId)?.habitOccurrence&&<button type="button" className="ui-disclosure" onClick={()=>{setDetailOpen(false);shared.current.onInspectHabitSession?.(reservations.find(r=>r.id===item.sourceId)!);}}><Row title="Запис звички"/></button>}
+    </Sheet>
+    </>
   );
 });
 

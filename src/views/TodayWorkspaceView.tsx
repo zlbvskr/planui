@@ -1,10 +1,11 @@
+import {Icon} from '../ui/icons';
 import {minimumDayTasks} from '../components/today/minimumDayPresentation';
 import {DeferredTasks} from '../components/today/DeferredTasks';
 import { DateField, Row, Section } from '../ui';
 import { formatDate, formatSubtitle, formatDuration, formatTimeRange } from "../lib/format";
 import { evaluateHabitOnDate } from "../domain/habits";
 import { DayCanvas } from "../components/today/DayCanvas";
-import { Leaf } from "lucide-react";
+import { Leaf } from "../ui/icons";
 import {
   Sheet,
   ActionMenu,
@@ -314,7 +315,7 @@ export function TodayWorkspaceView({
         )}
       /></div>
 
-      {effectiveMode!=='habits'&&!triageDismissed&&triageTasks.length>0&&<div data-ui="content-start"><Section><Row title={<button type="button" className="text-left w-full" onClick={()=>{setTriageIndex(0);setReviewOpen(true);}}>Переглянути попередні плани</button>} trailing={<RoundButton aria-label="Приховати пропозицію" onClick={()=>setTriageDismissed(true)}>×</RoundButton>}/></Section></div>}
+      {effectiveMode!=='habits'&&!triageDismissed&&triageTasks.length>0&&<div data-ui="content-start"><Section><Row title={<button type="button" className="text-left w-full" onClick={()=>{setTriageIndex(0);setReviewOpen(true);}}>Переглянути попередні плани</button>} trailing={<RoundButton aria-label="Приховати пропозицію" onClick={()=>setTriageDismissed(true)}><Icon name="x"/></RoundButton>}/></Section></div>}
       <Sheet title="Попередні плани" isOpen={reviewOpen} onClose={()=>setReviewOpen(false)}>
         {triageTask?<div className="space-y-4"><div className="review-dots" role="group" aria-label={`${triageIndex+1} з ${triageTasks.length}`}>{triageTasks.map((task,i)=><span key={task.id} data-active={i===triageIndex}/>)}<small>{triageIndex+1} з {triageTasks.length}</small></div><h2>{triageTask.title}</h2><p>{triageTask.estimatedDurationMinutes?formatDuration(triageTask.estimatedDurationMinutes):"Без оцінки тривалості"}</p><div className="flex flex-wrap gap-2">{['Перенести','Зменшити обсяг','Розділити','Поставити на паузу','Відмовитися'].map(action=><button type="button" className="ui-pill" key={action} onClick={()=>action==='Перенести'?setRescheduleOpen(!rescheduleOpen):setPlanningTask({task:triageTask,reviewAction:action})}>{action}</button>)}</div>{rescheduleOpen&&<Section>{['Сьогодні ввечері','Завтра'].map(label=><Row key={label} title={label} trailing={<Button onClick={()=>{setRescheduleOpen(false);setPlanningTask({task:triageTask,reviewAction:'Перенести',initialDate:label==='Завтра'?addDaysToLocalDate(actualTodayDate,1):actualTodayDate,initialTime:label==='Сьогодні ввечері'?'18:00':undefined});}}>Обрати</Button>}/>)}<DateField label="Інша дата" value={triageDate} onChange={e=>{setTriageDate(e.target.value);setPlanningTask({task:triageTask,reviewAction:'Перенести',initialDate:e.target.value});}}/></Section>}<button type="button" className="triage-keep" onClick={()=>{setRescheduleOpen(false);if(triageIndex+1<triageTasks.length)setTriageIndex(triageIndex+1);else setReviewOpen(false);}}>Залишити як є</button></div>:<p>Усе переглянуто</p>}
       </Sheet>
@@ -359,7 +360,7 @@ export function TodayWorkspaceView({
           }}
           data-testid="today-midnight-rollover-banner"
         >
-          <span className="text-[13px] font-medium">
+          <span className="text-[0.8125rem] font-medium">
             {UK_STRINGS.destinations.today.midnightRolloverNotice(
               formatDate(midnightRolloverDate),
             )}
@@ -397,7 +398,7 @@ export function TodayWorkspaceView({
           }}
           data-testid="today-lifecycle-undo-banner"
         >
-          <span className="text-[13px] font-medium">
+          <span className="text-[0.8125rem] font-medium">
             Справу «{todayUndoToken.previousTaskSnapshot.title}» завершено.
           </span>
           <Button
@@ -439,7 +440,7 @@ export function TodayWorkspaceView({
       )}
       {effectiveMode === "day" && (
         <>
-          {actionPlan.minimalDay&&<><Section title="Залишити на сьогодні">{minimumDayTasks(projectTodayTasks(tasks,reservations,actionDate,activeZone,actionPlan).relevant,actionPlan).filter(t=>!reservations.some(r=>r.taskId===t.id&&r.state==='active')).map(task=><Row key={task.id} title={task.title} secondary={task.deadline?'Важливий термін':task.estimatedDurationMinutes?formatDuration(task.estimatedDurationMinutes):undefined} trailing={<Button onClick={()=>setPlanningTask({task})}>›</Button>}/>)}</Section><DeferredTasks tasks={projectTodayTasks(tasks,reservations,actionDate,activeZone,actionPlan).relevant.filter(t=>!minimumDayTasks(projectTodayTasks(tasks,reservations,actionDate,activeZone,actionPlan).relevant,actionPlan).includes(t))} repositories={repositories} onChanged={()=>onDataChanged()} onPlan={task=>setPlanningTask({task,reviewAction:'Перенести'})}/></>}
+          {actionPlan.minimalDay&&<><Section title="Залишити на сьогодні">{minimumDayTasks(projectTodayTasks(tasks,reservations,actionDate,activeZone,actionPlan).relevant,actionPlan).filter(t=>!reservations.some(r=>r.taskId===t.id&&r.state==='active')).map(task=><Row key={task.id} title={task.title} secondary={task.deadline?'Важливий термін':task.estimatedDurationMinutes?formatDuration(task.estimatedDurationMinutes):undefined} trailing={<Button aria-label={`Планувати: ${task.title}`} onClick={()=>setPlanningTask({task})}><Icon name="chevron-right"/></Button>}/>)}</Section><DeferredTasks tasks={projectTodayTasks(tasks,reservations,actionDate,activeZone,actionPlan).relevant.filter(t=>!minimumDayTasks(projectTodayTasks(tasks,reservations,actionDate,activeZone,actionPlan).relevant,actionPlan).includes(t))} repositories={repositories} onChanged={()=>onDataChanged()} onPlan={task=>setPlanningTask({task,reviewAction:'Перенести'})}/></>}
           {/* 5. Main Proportional Timeline for Selected Date (6.1 / 6.5) */}
           <DayCanvas
             plans={dailyPlans}

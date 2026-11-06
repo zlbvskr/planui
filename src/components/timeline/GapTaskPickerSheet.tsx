@@ -294,13 +294,13 @@ export function GapTaskPickerSheet({
 
         {/* Existing Open Tasks List */}
         <div className="space-y-2">
-          <div className="text-[13px] font-semibold">
+          <div className="text-[0.8125rem] font-semibold">
             {UK_STRINGS.gapPicker.selectTaskHeading} ({filteredTasks.length})
           </div>
 
           {filteredTasks.length === 0 ? (
             <div
-              className="p-3.5 rounded-xl text-[13px]"
+              className="p-3.5 rounded-xl text-[0.8125rem]"
               style={{
                 backgroundColor: 'var(--bg-elevated)',
                 color: 'var(--text-secondary)',
@@ -341,11 +341,11 @@ export function GapTaskPickerSheet({
                     }}
                   >
                     <div className="min-w-0 flex-1 space-y-0.5">
-                      <div className="text-[14px] font-semibold truncate">
+                      <div className="text-[0.875rem] font-semibold truncate">
                         {task.title}
                       </div>
                       <div
-                        className="text-[12px] flex flex-wrap items-center gap-1.5"
+                        className="text-[0.75rem] flex flex-wrap items-center gap-1.5"
                         style={{ color: 'var(--text-secondary)' }}
                       >
                         {projTitle ? (
@@ -387,12 +387,12 @@ export function GapTaskPickerSheet({
             data-testid="gap-picker-session-config"
           >
             <div className="space-y-1">
-              <div className="text-[13px] font-semibold">
+              <div className="text-[0.8125rem] font-semibold">
                 {UK_STRINGS.gapPicker.selectedTaskLabel}: «{selectedTask.title}»
               </div>
               {selectedTask.estimatedDurationMinutes !== null ? (
                 <div
-                  className="text-[12px]"
+                  className="text-[0.75rem]"
                   style={{ color: 'var(--text-secondary)' }}
                 >
                   {UK_STRINGS.gapPicker.estimatePresentNote(
@@ -401,7 +401,7 @@ export function GapTaskPickerSheet({
                 </div>
               ) : (
                 <div
-                  className="text-[12px] font-medium"
+                  className="text-[0.75rem] font-medium"
                   style={{ color: 'var(--color-work-text)' }}
                   data-testid="gap-picker-missing-estimate-prompt"
                 >
@@ -414,7 +414,7 @@ export function GapTaskPickerSheet({
             {selectedTask.estimatedDurationMinutes !== null &&
               selectedTask.estimatedDurationMinutes > gap.durationMinutes && (
                 <div
-                  className="p-3 rounded-xl space-y-2 text-[12px]"
+                  className="p-3 rounded-xl space-y-2 text-[0.75rem]"
                   style={{
                     backgroundColor: 'var(--bg-surface)',
                     border: '1px solid var(--border-subtle)',
@@ -491,7 +491,7 @@ export function GapTaskPickerSheet({
 
             {proposal && proposal.isValid && (
               <div
-                className="text-[12px] flex flex-wrap items-center justify-between gap-2 pt-1"
+                className="text-[0.75rem] flex flex-wrap items-center justify-between gap-2 pt-1"
                 style={{ color: 'var(--text-secondary)' }}
                 data-testid="gap-picker-preview-range"
               >
@@ -514,7 +514,7 @@ export function GapTaskPickerSheet({
             {proposal?.conflictReport.hasConflicts &&
               proposal.conflictReport.warningMessageUk && (
                 <div
-                  className="p-3 rounded-xl space-y-2 text-[12px]"
+                  className="p-3 rounded-xl space-y-2 text-[0.75rem]"
                   style={{
                     backgroundColor: 'var(--bg-surface)',
                     border: '1px solid var(--color-brand)',

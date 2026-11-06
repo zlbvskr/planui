@@ -1,3 +1,4 @@
+import {MotionScreen} from '../ui/Motion';
 import {Icon} from '../ui/icons';
 import React, { useEffect, useMemo, useState } from "react";
 import {
@@ -387,6 +388,7 @@ export function CalendarWorkspaceView(props: CalendarWorkspaceViewProps) {
     onOpenGlobalCreation,
     onDataChanged,
   };
+  const previousDate=React.useRef(selectedDate);React.useEffect(()=>{previousDate.current=selectedDate;},[selectedDate]);
   return (
     <div
       className="calendar-workspace calendar-stage3"
@@ -499,6 +501,7 @@ export function CalendarWorkspaceView(props: CalendarWorkspaceViewProps) {
         </div>
       </PageHeader>
       {error && <p role="alert">{error}</p>}
+      <MotionScreen id={mode} kind="view"><MotionScreen id={selectedDate} kind="calendar" direction={selectedDate>=previousDate.current?1:-1}>
       {mode === "month" && (
         <>
           <CalendarGrid
@@ -616,6 +619,7 @@ export function CalendarWorkspaceView(props: CalendarWorkspaceViewProps) {
           />
         </div>
       )}
+      </MotionScreen></MotionScreen>
       {mode !== "work_schedule" && (
         <RoadmapCalendarLayer
           selectedDate={selectedDate}

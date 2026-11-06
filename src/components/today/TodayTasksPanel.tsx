@@ -1,7 +1,8 @@
+import {useReducedMotion} from '../../ui/motion';
 import {Icon} from '../../ui/icons';
 import {DeferredTasks} from './DeferredTasks';
 import {minimumDayTasks} from './minimumDayPresentation';
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { Clock, Check } from "../../ui/icons";
 import {
   formatDuration,
@@ -60,6 +61,17 @@ export function TodayTasksPanel({
   onPlan,
   onAdd,
 }: Props) {
+  const reduced=useReducedMotion();
+  const [completing,setCompleting]=useState<Set<string>>(new Set());
+  const pending=useRef(new Map<string,ReturnType<typeof setTimeout>>());
+  useEffect(()=>()=>{pending.current.forEach(clearTimeout);},[]);
+  const toggle=(task:Task)=>{
+    const timer=pending.current.get(task.id);
+    if(timer){clearTimeout(timer);pending.current.delete(task.id);setCompleting(prev=>{const next=new Set(prev);next.delete(task.id);return next;});return;}
+    if(task.state!=='open'){void onToggle(task.id);return;}
+    setCompleting(prev=>new Set(prev).add(task.id));
+    pending.current.set(task.id,setTimeout(()=>{pending.current.delete(task.id);void Promise.resolve(onToggle(task.id)).finally(()=>setCompleting(prev=>{const next=new Set(prev);next.delete(task.id);return next;}));},reduced?120:400));
+  };
   const [filter, setFilter] = useState<"today" | "all">("today");
   const [error, setError] = useState("");
   const [placement, setPlacement] = useState<Task | null>(null);
@@ -189,16 +201,16 @@ export function TodayTasksPanel({
           <Section key={section.title} title={section.title}>
             {section.items.map((task) => {
               const dir = directionFor(task, folders, projects),
-                completed = task.state === "completed";
+                completed = task.state === "completed" || completing.has(task.id);
               return (
                 <div
                   key={task.id}
-                  className={`today-task-row ${completed ? "task-completed" : ""}`}
+                  className={`today-task-row ${completed ? "task-completed" : ""}`} data-completing={completing.has(task.id)} data-motion={completing.has(task.id)?"running":"idle"}
                 >
                   <button
                     className="task-check"
                     aria-label={`${completed ? "Відкрити знову" : "Завершити"}: ${task.title}`}
-                    onClick={() => void onToggle(task.id)}
+                    onClick={() => toggle(task)}
                   >
                     <span>
                       {completed && <Check size={15} aria-hidden="true" />}

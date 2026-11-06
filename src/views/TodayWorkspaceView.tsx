@@ -1,3 +1,4 @@
+import {Toast} from '../ui/feedback';
 import {Icon} from '../ui/icons';
 import {minimumDayTasks} from '../components/today/minimumDayPresentation';
 import {DeferredTasks} from '../components/today/DeferredTasks';
@@ -165,7 +166,7 @@ export function TodayWorkspaceView({
       { threshold: 0 },
     );
     observer.observe(header);
-    return () => observer.disconnect();
+  return () => observer.disconnect();
   }, []);
   const [planningTask, setPlanningTask] = useState<{
     task: Task;
@@ -206,6 +207,7 @@ export function TodayWorkspaceView({
     [selectedDate, activeZone, events, reservations, tasks, dayOffAnnotations],
   );
 
+  const [dismissedUndo,setDismissedUndo]=React.useState<typeof todayUndoToken>(null);
   return (
     <div
       ref={rootRef}
@@ -388,29 +390,7 @@ export function TodayWorkspaceView({
         </div>
       )}
 
-      {/* Lifecycle Immediate Undo Banner */}
-      {todayUndoToken && (
-        <div
-          className="p-3 rounded-2xl flex flex-wrap items-center justify-between gap-2"
-          style={{
-            backgroundColor: "var(--bg-surface)",
-            border: "1px solid var(--border-subtle)",
-          }}
-          data-testid="today-lifecycle-undo-banner"
-        >
-          <span className="text-[0.8125rem] font-medium">
-            Справу «{todayUndoToken.previousTaskSnapshot.title}» завершено.
-          </span>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => void onUndoLifecycle()}
-            data-testid="today-undo-lifecycle-button"
-          >
-            {UK_STRINGS.scheduling.undoActionButton}
-          </Button>
-        </div>
-      )}
+      {todayUndoToken && dismissedUndo!==todayUndoToken && <Toast message={`Справу «${todayUndoToken.previousTaskSnapshot.title}» завершено.`} onDismiss={()=>setDismissedUndo(todayUndoToken)} undo={()=>void onUndoLifecycle()} />}
 
       {effectiveMode === "habits" && habitsEnabled && (
         <section className="today-habits space-y-4" data-ui="content-start">

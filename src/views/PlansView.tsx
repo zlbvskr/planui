@@ -1,3 +1,4 @@
+import {MotionScreen} from '../ui/Motion';
 import {Icon} from '../ui/icons';
 import {
   PageHeader,
@@ -1282,7 +1283,7 @@ export const PlansView: React.FC<PlansViewProps> = ({
   }, [folders, editingFolder]);
 
   return (
-    <div className="space-y-4 directions-stage4" data-testid="destination-view-plans">
+    <MotionScreen id={activeProject?.id??activeGoal?.id??plansContext.activeFolderId??'root'} kind="push" direction={activeGoal||activeProject?1:-1}><div className="space-y-4 directions-stage4" data-testid="destination-view-plans">
       {activeGoal || activeProject ? (
         <SubHeader
           title={(activeProject ?? activeGoal)!.title}
@@ -3353,6 +3354,6 @@ export const PlansView: React.FC<PlansViewProps> = ({
         )}
       </ModalSheet>
       </div>
-    </div>
+    </div></MotionScreen>
   );
 };

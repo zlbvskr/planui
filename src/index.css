@@ -2739,3 +2739,10 @@ button:active,.ui-disclosure:active {filter: brightness(.88);}
 :root[data-reduced-motion=true] .motion-ambient i {animation:none;transform:none;}
 :root[data-reduced-motion=true] .ui-empty,:root[data-reduced-motion=true] .ui-slider-bubble {animation:motion-fade 120ms;}
 :root[data-reduced-motion=true] [data-ui=page-header] .ui-page-title h1 {transform:none!important;}
+.today-task-row[data-completing=true] .task-check svg {stroke-dasharray:40;stroke-dashoffset:0;animation:motion-check 200ms var(--motion-out);}
+.today-task-row[data-completing=true] .task-copy > span {position:relative;text-decoration:none;}
+.today-task-row[data-completing=true] .task-copy > span::after {content:'';position:absolute;left:0;right:0;top:50%;height:1px;background:currentColor;transform-origin:left;animation:motion-strike 180ms var(--motion-out);}
+@keyframes motion-check {from{clip-path:inset(0 100% 0 0);}to{clip-path:inset(0);}}
+@keyframes motion-strike {from{transform:scaleX(0);}to{transform:scaleX(1);}}
+@media(prefers-reduced-motion:reduce) {.today-task-row[data-completing=true] .task-check svg,.today-task-row[data-completing=true] .task-copy > span::after {animation:motion-fade 120ms;}}
+:root[data-reduced-motion=true] .today-task-row[data-completing=true] .task-check svg,:root[data-reduced-motion=true] .today-task-row[data-completing=true] .task-copy > span::after {animation:motion-fade 120ms;}

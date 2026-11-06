@@ -1,3 +1,4 @@
+import {MotionScreen} from '../ui/Motion';
 import {Icon} from '../ui/icons';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -994,7 +995,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
     : null;
 
   return (
-    <div className="space-y-4 pb-8" data-testid="destination-view-me">
+    <MotionScreen id={effectiveSubView} kind="push" direction={effectiveSubView==='overview'?-1:1}><div className="space-y-4 pb-8" data-testid="destination-view-me">
       {effectiveSubView === 'overview' ? (
         <PageHeader title={UK_STRINGS.nav.me} />
       ) : (
@@ -2162,6 +2163,6 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
           )}
         </div>
       </Sheet>
-    </div>
+    </div></MotionScreen>
   );
 };

@@ -1303,6 +1303,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
           quickAdd
           isOpen={isOpen}
           title="Швидке додавання"
+          isDirty={isDirty}
           onClose={onClose}
         >
           <form className="stage2-quick" onSubmit={handleSave} noValidate>
@@ -1314,7 +1315,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
               placeholder="Що потрібно зробити?"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              data-testid="quick-title"
+              data-testid={selectedAction === "task" ? "create-task-title-input" : "quick-title"}
             />
             <PillRow
               label="Тип запису"
@@ -1322,6 +1323,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
               options={quickKinds.map((value) => ({
                 value,
                 label: labels[value],
+                testId: `create-action-tab-${value}`,
               }))}
               onChange={(value) => {
                 setSelectedAction(value);

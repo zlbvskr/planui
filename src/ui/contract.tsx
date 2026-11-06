@@ -29,8 +29,8 @@ export function Segmented<T extends string>({value,options,onChange,label}:{valu
   if(options.length>4)throw new Error('Segmented supports at most four options');
   return <div className="ui-segmented" role="group" aria-label={label} onKeyDown={e=>moveGroupFocus(e,options,onChange)}>{options.map(o=><button type="button" key={o.value} aria-pressed={o.value===value} onClick={()=>onChange(o.value)}>{o.label}</button>)}</div>;
 }
-export function PillRow<T extends string>({label,value,options,onChange}:{label:string;value:T;options:readonly {value:T;label:string}[];onChange:(v:T)=>void}) {
-  return <div className="ui-pill-row" data-ui="pill-row" role="group" aria-label={label} onKeyDown={e=>moveGroupFocus(e,options,onChange)}>{options.map(o=><button className="ui-pill" type="button" key={o.value} aria-pressed={o.value===value} onClick={()=>onChange(o.value)}>{o.label}</button>)}</div>;
+export function PillRow<T extends string>({label,value,options,onChange}:{label:string;value:T;options:readonly {value:T;label:string;testId?:string}[];onChange:(v:T)=>void}) {
+  return <div className="ui-pill-row" data-ui="pill-row" role="group" aria-label={label} onKeyDown={e=>moveGroupFocus(e,options,onChange)}>{options.map(o=><button className="ui-pill" type="button" key={o.value} data-testid={o.testId} aria-pressed={o.value===value} onClick={()=>onChange(o.value)}>{o.label}</button>)}</div>;
 }
 export function Section({title,children}:{title?:string;children:React.ReactNode}) {
   const id=useId();return <section className="ui-section ui-contract-section" aria-labelledby={title?id:undefined}>{title&&<h2 id={id} className="ui-section-label">{title}</h2>}<div className="ui-surface" data-ui="group">{children}</div></section>;

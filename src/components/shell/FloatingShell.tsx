@@ -261,7 +261,7 @@ export const FloatingShell: React.FC<FloatingShellProps> = ({
             </button>
 
             {/* Inset Floating Navigation Capsule (4 equal columns for 4 destinations) */}
-            <SelectionThumb value={activeDestination}
+            <SelectionThumb role="navigation" value={activeDestination}
               aria-label={UK_STRINGS.app.mainNavigationAria}
               data-testid="mobile-floating-capsule"
               data-collapsed={collapsed}

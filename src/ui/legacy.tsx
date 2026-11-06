@@ -424,6 +424,8 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, isDirty, showDirtyConfirm, onClose]);
 
+  useEffect(()=>{if(!present)return;const el=dialogRef.current;if(!el)return;const prevent=(e:TouchEvent)=>{if(drag.current&&e.cancelable)e.preventDefault();};el.addEventListener('touchmove',prevent,{passive:false});return()=>el.removeEventListener('touchmove',prevent);},[present]);
+
   if (!isOpen && !present) return null;
 
   const beginDrag=(y:number,target:EventTarget|null)=>{
@@ -435,6 +437,7 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
   const moveDrag=(y:number)=>{const d=drag.current,el=dialogRef.current;if(!d||!el)return;const now=performance.now();d.velocity=(y-d.last)/Math.max(1,now-d.time);d.last=y;d.time=now;const delta=y-d.y;d.offset=delta<0?-Math.sqrt(-delta)*3:delta;el.style.transform=`translateY(${d.offset}px)`;};
   const endDrag=()=>{const d=drag.current,el=dialogRef.current;if(!d||!el)return;drag.current=null;if(d.offset>d.height*.3||(d.offset>0&&d.velocity>.5)){requestClose();}el.style.transform='';void animate(el,springFrames(d.offset,0,'sheet'),{duration:600});};
 
+  // Native body listener must be non-passive so a downward drag can take over at scrollTop=0.
   const modalContent = (
     <div
       ref={scrimRef} data-motion="idle"
@@ -461,7 +464,7 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
         onPointerMove={e=>{if(e.pointerType!=='touch')moveDrag(e.clientY);}}
         onPointerUp={endDrag} onPointerCancel={endDrag}
         onTouchStart={e=>{beginDrag(e.touches[0].clientY,e.target);}}
-        onTouchMove={e=>{if(drag.current){if(e.cancelable)e.preventDefault();moveDrag(e.touches[0].clientY);}}}
+        onTouchMove={e=>{if(drag.current){moveDrag(e.touches[0].clientY);}}}
         onTouchEnd={endDrag} onTouchCancel={endDrag}
         data-quick-add={quickAdd || undefined}
         data-ui="sheet"

@@ -18,7 +18,8 @@ const active=new WeakMap<HTMLElement,Map<string,Animation>>();
 export function animate(el:HTMLElement|null,frames:Keyframe[],options:KeyframeAnimationOptions={},channel='main'):Promise<void> {
   if(!el)return Promise.resolve();
   let channels=active.get(el);if(!channels){channels=new Map();active.set(el,channels);}
-  const old=channels.get(channel);old?.cancel();
+  const old=channels.get(channel);
+  if(old){const current=getComputedStyle(el);const first={...frames[0]};if(first.transform!==undefined)first.transform=current.transform;if(first.opacity!==undefined)first.opacity=current.opacity;frames=[first,...frames.slice(1)];old.cancel();}
   const reduced=reducedMotion();
   const safe=reduced?frames.map(f=>({opacity:f.opacity??1,offset:f.offset})):frames;
   el.dataset.motion='running';el.style.willChange=reduced?'opacity':'transform, opacity';
@@ -29,7 +30,7 @@ export function cancelMotion(el:HTMLElement) {active.get(el)?.forEach(a=>a.cance
 export function installPressMotion() {
   let pressed:HTMLElement|null=null;
   const release=()=>{if(!pressed)return;const el=pressed;pressed=null;el.removeAttribute('data-pressed');void animate(el,springFrames(.97,1,'press','transform',n=>`scale(${n})`),{duration:600},'press');};
-  const down=(event:PointerEvent)=>{release();const el=(event.target as Element).closest<HTMLElement>('button:not(:disabled),.ui-row[role=button],.ui-item-card[role=button]');if(!el||el.closest('[inert]')||reducedMotion())return;pressed=el;el.dataset.pressed='true';void animate(el,[{transform:'scale(.97)'},{transform:'scale(.97)'}],{duration:60000},'press');};
+  const down=(event:PointerEvent)=>{release();const el=(event.target as Element).closest<HTMLElement>('button:not(:disabled),.ui-row,.ui-item-card');if(!el||el.closest('[inert]')||reducedMotion())return;pressed=el;el.dataset.pressed='true';void animate(el,[{transform:'scale(.97)'},{transform:'scale(.97)'}],{duration:60000},'press');};
   document.addEventListener('pointerdown',down);document.addEventListener('pointerup',release);document.addEventListener('pointercancel',release);window.addEventListener('blur',release);
   return()=>{release();document.removeEventListener('pointerdown',down);document.removeEventListener('pointerup',release);document.removeEventListener('pointercancel',release);window.removeEventListener('blur',release);};
 }

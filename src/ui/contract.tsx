@@ -1,5 +1,5 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, Info, MoreHorizontal } from 'lucide-react';
+import { Icon, ChevronLeft, ChevronRight, Info, MoreHorizontal } from './icons';
 import { ModalSheet, ModalSheetProps } from './legacy';
 import { formatDate, formatDuration, formatTime } from '../lib/format';
 
@@ -29,18 +29,18 @@ export function Segmented<T extends string>({value,options,onChange,label}:{valu
   if(options.length>4)throw new Error('Segmented supports at most four options');
   return <div className="ui-segmented" role="group" aria-label={label} onKeyDown={e=>moveGroupFocus(e,options,onChange)}>{options.map(o=><button type="button" key={o.value} aria-pressed={o.value===value} onClick={()=>onChange(o.value)}>{o.label}</button>)}</div>;
 }
-export function PillRow<T extends string>({label,value,options,onChange}:{label:string;value:T;options:readonly {value:T;label:string;testId?:string}[];onChange:(v:T)=>void}) {
-  return <div className="ui-pill-row" data-ui="pill-row" role="group" aria-label={label} onKeyDown={e=>moveGroupFocus(e,options,onChange)}>{options.map(o=><button className="ui-pill" type="button" key={o.value} data-testid={o.testId} aria-pressed={o.value===value} onClick={()=>onChange(o.value)}>{o.label}</button>)}</div>;
+export function PillRow<T extends string>({label,value,options,onChange}:{label:string;value:T;options:readonly {value:T;label:string;testId?:string;count?:number;isDefault?:boolean}[];onChange:(v:T)=>void}) {
+  return <div className="ui-pill-row" data-ui="pill-row" role="group" aria-label={label} onKeyDown={e=>moveGroupFocus(e,options,onChange)}>{options.map(o=><button className="ui-pill" type="button" key={o.value} data-testid={o.testId} aria-pressed={o.value===value} onClick={()=>onChange(o.value)}>{o.label}{o.count&&o.count>0&&!o.isDefault&&options[0]!==o?<small>{o.count}</small>:null}</button>)}</div>;
 }
 export function Section({title,children}:{title?:string;children:React.ReactNode}) {
   const id=useId();return <section className="ui-section ui-contract-section" aria-labelledby={title?id:undefined}>{title&&<h2 id={id} className="ui-section-label">{title}</h2>}<div className="ui-surface" data-ui="group">{children}</div></section>;
 }
-type RowProps=Omit<React.HTMLAttributes<HTMLDivElement>,'title'> & {title?:React.ReactNode;secondary?:string;leading?:React.ReactNode;trailing?:React.ReactNode};
-export function Row({title,secondary,leading,trailing,children,className='',...props}:RowProps) {
-  return <div {...props} className={`ui-row ${className}`} data-ui="row">{leading&&<span className="ui-icon-tile" aria-hidden="true">{leading}</span>}{title!==undefined?<div className="ui-row-text"><span>{title}</span>{secondary&&<small>{secondary}</small>}</div>:children}{trailing&&<span className="ui-row-trailing">{trailing}</span>}</div>;
+type RowProps=Omit<React.HTMLAttributes<HTMLDivElement>,'title'> & {title?:React.ReactNode;secondary?:string;leading?:React.ReactNode;trailing?:React.ReactNode;value?:string|null};
+export function Row({title,secondary,leading,trailing,value,children,className='',...props}:RowProps) {
+  return <div {...props} className={`ui-row ${className}`} data-ui="row">{leading&&<span className="ui-icon-tile" aria-hidden="true">{leading}</span>}{title!==undefined?<div className="ui-row-text"><span>{title}</span>{secondary&&<small>{secondary}</small>}</div>:children}{(trailing!==undefined||value!==undefined)&&<span className="ui-row-trailing">{trailing??<span className={!value?'ui-unset':undefined}>{value||'Не заповнено'}</span>}</span>}</div>;
 }
-export function ItemCard({hue='var(--color-personal)',className='',style,...props}:React.HTMLAttributes<HTMLElement>&{hue?:string}) {
-  return <article {...props} data-ui="item-card" className={`ui-item-card ${className}`} style={{'--item-hue':hue,...style} as React.CSSProperties}/>;
+export function ItemCard({hue='var(--color-personal)',className='',style,height,title,meta,step,children,...props}:Omit<React.HTMLAttributes<HTMLElement>,'title'> & {hue?:string;height?:number;title?:string;meta?:string;step?:string}) {
+  return <article {...props} data-ui="item-card" data-density={height===undefined?undefined:height<44?'compact':height<=72?'medium':'tall'} className={`ui-item-card ${className}`} style={{'--item-hue':hue,...style} as React.CSSProperties}>{title?<><h3>{title}{height!==undefined&&height<44&&meta?` · ${meta}`:''}</h3>{(height===undefined||height>72)&&step&&<p>{step}</p>}{(height===undefined||height>=44)&&meta&&<span className="ui-item-meta">{meta}</span>}</>:children}</article>;
 }
 export function Toggle({label,checked,onChange,disabled=false,testId}:{label:string;checked:boolean;onChange:(v:boolean)=>void;disabled?:boolean;testId?:string}) {
   return <button type="button" data-testid={testId} className="ui-toggle" role="switch" aria-label={label} aria-checked={checked} disabled={disabled} onClick={()=>onChange(!checked)}><span aria-hidden="true"/></button>;
@@ -52,7 +52,7 @@ export function ActionMenu({label='Дії',items,children,testId}:{label?:string
 }
 export function Slider({label,value,min=0,max=10,step=1,onChange}:{label:string;value:number|null;min?:number;max?:number;step?:number;onChange:(v:number|null)=>void}) {
   const id=useId();const [dragging,setDragging]=useState(false);
-  return <div className="ui-slider" data-dragging={dragging}><div><label htmlFor={id}>{label}</label><output htmlFor={id}>{value??'-'}</output><ActionMenu label={`Дії: ${label}`} items={[{label:'Скинути',onSelect:()=>onChange(null)}]}/></div><input id={id} aria-valuetext={value===null?'Не вказано':String(value)} className="planui-slider" type="range" min={min} max={max} step={step} value={value??(min+max)/2} onChange={e=>onChange(Number(e.target.value))} onPointerDown={()=>setDragging(true)} onPointerUp={()=>setDragging(false)} onPointerCancel={()=>setDragging(false)}/></div>;
+  return <div className="ui-slider" data-dragging={dragging} data-unset={value===null} style={{'--slider-fill':value===null?'0%':`${(value-min)/(max-min)*100}%`} as React.CSSProperties}><div><label htmlFor={id}>{label}</label><output htmlFor={id}>{value??'-'}</output><ActionMenu label={`Дії: ${label}`} items={[{label:'Скинути',onSelect:()=>onChange(null)}]}/></div><input id={id} aria-valuetext={value===null?'Не заповнено':String(value)} className="planui-slider" type="range" min={min} max={max} step={step} value={value??(min+max)/2} onChange={e=>onChange(Number(e.target.value))} onPointerDown={e=>{setDragging(true);e.currentTarget.setPointerCapture(e.pointerId);const r=e.currentTarget.getBoundingClientRect();onChange(Math.max(min,Math.min(max,min+Math.round(((e.clientX-r.left)/r.width)*(max-min)/step)*step)));}} onPointerUp={()=>setDragging(false)} onPointerCancel={()=>setDragging(false)}/>{dragging&&<span className="ui-slider-bubble" style={{left:value===null?'50%':`${(value-min)/(max-min)*100}%`}}>{value??'-'}</span>}</div>;
 }
 export function Sheet({children,...props}:Omit<ModalSheetProps,'quickAdd'|'contract'>) {
   return <ModalSheet {...props} quickAdd contract>{children}</ModalSheet>;
@@ -62,19 +62,19 @@ export function InfoSheet({title,children}:{title:string;children:React.ReactNod
 }
 type NativeFieldProps=Omit<React.InputHTMLAttributes<HTMLInputElement>,'type'|'size'> & {label:string;value:string};
 function NativeField({kind,label,value,onChange,...props}:NativeFieldProps&{kind:'date'|'time'}) {
-  const id=useId();return <div className="ui-native-field" role="group" aria-label={label}><Row title={label} trailing={<><span>{value?(kind==='date'?formatDate(value):formatTime(value)):'Не вказано'}</span><ChevronRight size={16} aria-hidden="true"/></>}/><input {...props} id={props.id??id} type={kind} value={value} onChange={onChange} aria-label={label} data-ui="native-overlay"/></div>;
+  const id=useId();return <div className="ui-native-field" role="group" aria-label={label}><Row title={label} trailing={<><span>{value?(kind==='date'?formatDate(value):formatTime(value)):'Не заповнено'}</span><ChevronRight size={16} aria-hidden="true"/></>}/><input {...props} id={props.id??id} type={kind} value={value} onChange={onChange} aria-label={label} data-ui="native-overlay"/></div>;
 }
 export function DateField(props:NativeFieldProps){return <NativeField {...props} kind="date"/>;}
 export function TimeField(props:NativeFieldProps){return <NativeField {...props} kind="time"/>;}
 export function SelectField({label,value,options,...props}:Omit<React.SelectHTMLAttributes<HTMLSelectElement>,'size'> & {label:string;options:readonly {value:string;label:string}[]}) {
-  return <div className="ui-native-field" role="group" aria-label={label}><Row title={label} trailing={<><span>{options.find(o=>o.value===value)?.label??'Не вказано'}</span><ChevronRight size={16} aria-hidden="true"/></>}/><select {...props} value={value} aria-label={label} data-ui="native-overlay">{options.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select></div>;
+  return <div className="ui-native-field" role="group" aria-label={label}><Row title={label} trailing={<><span>{options.find(o=>o.value===value)?.label??'Не заповнено'}</span><ChevronRight size={16} aria-hidden="true"/></>}/><select {...props} value={value} aria-label={label} data-ui="native-overlay">{options.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select></div>;
 }
 export function DurationField({label='Тривалість',value,onChange,step=15}:{label?:string;value:number|null;onChange:(v:number|null)=>void;step?:number}) {
   const [open,setOpen]=useState(false);const [draft,setDraft]=useState(value??step);
-  return <><button className="ui-disclosure" type="button" onClick={()=>{setDraft(value??step);setOpen(true);}}><Row title={label} trailing={<><span>{value===null?'Не вказано':formatDuration(value)}</span><ChevronRight size={16} aria-hidden="true"/></>}/></button><Sheet title={label} isOpen={open} onClose={()=>setOpen(false)}><div className="ui-stepper"><button type="button" aria-label="Зменшити тривалість" disabled={draft<=step} onClick={()=>setDraft(Math.max(step,draft-step))}>−</button><output aria-live="polite">{formatDuration(draft)}</output><button type="button" aria-label="Збільшити тривалість" onClick={()=>setDraft(draft+step)}>+</button></div><button type="button" className="ui-primary" onClick={()=>{onChange(draft);setOpen(false);}}>Зберегти</button><ActionMenu label="Дії тривалості" items={[{label:'Скинути',onSelect:()=>{onChange(null);setOpen(false);}}]}/></Sheet></>;
+  return <><button className="ui-disclosure" type="button" onClick={()=>{setDraft(value??step);setOpen(true);}}><Row title={label} trailing={<><span>{value===null?'Не заповнено':formatDuration(value)}</span><ChevronRight size={16} aria-hidden="true"/></>}/></button><Sheet title={label} isOpen={open} onClose={()=>setOpen(false)}><div className="ui-stepper"><button type="button" aria-label="Зменшити тривалість" disabled={draft<=step} onClick={()=>setDraft(Math.max(step,draft-step))}>−</button><output aria-live="polite">{formatDuration(draft)}</output><button type="button" aria-label="Збільшити тривалість" onClick={()=>setDraft(draft+step)}>+</button></div><button type="button" className="ui-primary" onClick={()=>{onChange(draft);setOpen(false);}}>Зберегти</button><ActionMenu label="Дії тривалості" items={[{label:'Скинути',onSelect:()=>{onChange(null);setOpen(false);}}]}/></Sheet></>;
 }
 export function EmptyState({text,action,onAction,actionTestId}:{text:string;action?:string;onAction?:()=>void;actionTestId?:string}) {
-  return <div className="ui-empty" data-ui="empty-state"><span>{text}</span>{action&&<button type="button" data-testid={actionTestId} onClick={onAction}>{action}</button>}</div>;
+  return <div className="ui-empty" data-ui="empty-state"><i className="ui-icon-tile"><Icon name="sparkles"/></i><span>{text}</span>{action&&<button type="button" data-testid={actionTestId} onClick={onAction}>{action}</button>}</div>;
 }
 export function Disclosure({title,secondary,onClick,testId}:{title:string;secondary?:string;onClick:()=>void;testId?:string}) {
   return <button type="button" data-testid={testId} className="ui-disclosure" onClick={onClick}><Row title={title} secondary={secondary} trailing={<ChevronRight size={20} aria-hidden="true"/>}/></button>;

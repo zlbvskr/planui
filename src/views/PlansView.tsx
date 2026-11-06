@@ -28,7 +28,7 @@ import {
   Search,
   ArrowUpRight,
   Plus,
-} from 'lucide-react';
+} from '../ui/icons';
 import { UK_STRINGS } from '../i18n/uk';
 import {
   CalendarEvent,
@@ -1826,11 +1826,11 @@ export const PlansView: React.FC<PlansViewProps> = ({
       >
         {deletingFolder && folderDeleteImpact && (
           <div className="space-y-4" data-testid="delete-folder-modal">
-            <p className="text-[14px] m-0">
+            <p className="text-[0.875rem] m-0">
               Папка: <strong>{deletingFolder.name}</strong>
             </p>
             <div
-              className="p-3 rounded-xl text-[13px] font-medium"
+              className="p-3 rounded-xl text-[0.8125rem] font-medium"
               style={{ backgroundColor: 'var(--bg-elevated)' }}
               data-testid="delete-folder-impact-summary"
             >
@@ -1857,7 +1857,7 @@ export const PlansView: React.FC<PlansViewProps> = ({
                   data-testid="folder-delete-strategy-rehome"
                   className="mt-1"
                 />
-                <span className="text-[14px]">
+                <span className="text-[0.875rem]">
                   {UK_STRINGS.plansView.deleteFolderRehomeOption}
                 </span>
               </label>
@@ -1874,7 +1874,7 @@ export const PlansView: React.FC<PlansViewProps> = ({
                   data-testid="folder-delete-strategy-recursive"
                   className="mt-1"
                 />
-                <span className="text-[14px]">
+                <span className="text-[0.875rem]">
                   {UK_STRINGS.plansView.deleteFolderRecursiveOption}
                 </span>
               </label>
@@ -2020,20 +2020,20 @@ export const PlansView: React.FC<PlansViewProps> = ({
               );
               if (unresolved.length === 0) {
                 return (
-                  <p className="text-[14px] m-0">
+                  <p className="text-[0.875rem] m-0">
                     {UK_STRINGS.plansView.completeProjectAllResolvedNote}
                   </p>
                 );
               }
               return (
                 <div className="space-y-2.5">
-                  <p className="text-[14px] m-0">
+                  <p className="text-[0.875rem] m-0">
                     {UK_STRINGS.plansView.completeProjectUnresolvedWarning(
                       unresolved.length
                     )}
                   </p>
                   <ul
-                    className="p-3 rounded-xl space-y-1.5 m-0 list-disc pl-6 text-[14px]"
+                    className="p-3 rounded-xl space-y-1.5 m-0 list-disc pl-6 text-[0.875rem]"
                     style={{ backgroundColor: 'var(--bg-elevated)' }}
                     data-testid="complete-project-unresolved-list"
                   >
@@ -2072,7 +2072,7 @@ export const PlansView: React.FC<PlansViewProps> = ({
         {archivingProject && (
           <div className="space-y-4" data-testid="archive-project-modal">
             <p
-              className="text-[14px] m-0"
+              className="text-[0.875rem] m-0"
               style={{ color: 'var(--text-secondary)' }}
             >
               {UK_STRINGS.plansView.archiveProjectSubtitle}
@@ -2090,7 +2090,7 @@ export const PlansView: React.FC<PlansViewProps> = ({
                   data-testid="archive-project-retain-radio"
                   className="mt-1"
                 />
-                <span className="text-[14px]">
+                <span className="text-[0.875rem]">
                   {UK_STRINGS.plansView.archiveRetainPlanningOption}
                 </span>
               </label>
@@ -2106,7 +2106,7 @@ export const PlansView: React.FC<PlansViewProps> = ({
                   data-testid="archive-project-remove-radio"
                   className="mt-1"
                 />
-                <span className="text-[14px]">
+                <span className="text-[0.875rem]">
                   {UK_STRINGS.plansView.archiveRemovePlanningOption}
                 </span>
               </label>
@@ -2150,7 +2150,7 @@ export const PlansView: React.FC<PlansViewProps> = ({
                   onChange={() => setProjectDeleteTaskMode('rehome_to_folder')}
                   className="mt-1"
                 />
-                <span className="text-[14px]">
+                <span className="text-[0.875rem]">
                   {UK_STRINGS.plansView.deleteProjectRehomeOption}
                 </span>
               </label>
@@ -2165,7 +2165,7 @@ export const PlansView: React.FC<PlansViewProps> = ({
                   onChange={() => setProjectDeleteTaskMode('delete_tasks')}
                   className="mt-1"
                 />
-                <span className="text-[14px]">
+                <span className="text-[0.875rem]">
                   {UK_STRINGS.plansView.deleteProjectDeleteTasksOption}
                 </span>
               </label>
@@ -2236,7 +2236,7 @@ export const PlansView: React.FC<PlansViewProps> = ({
               className="p-3 rounded-xl flex flex-wrap items-center justify-between gap-2"
               style={{ backgroundColor: 'var(--bg-elevated)' }}
             >
-              <div className="text-[13px] font-medium">
+              <div className="text-[0.8125rem] font-medium">
                 Стан:{' '}
                 <strong>
                   {editingTask.state === 'open'
@@ -2301,7 +2301,7 @@ export const PlansView: React.FC<PlansViewProps> = ({
               data-testid="task-reservations-section"
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="text-[14px] font-semibold">
+                <div className="text-[0.875rem] font-semibold">
                   {UK_STRINGS.scheduling.reservationsHeading}
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -2338,7 +2338,7 @@ export const PlansView: React.FC<PlansViewProps> = ({
                 if (taskReservations.length === 0) {
                   return (
                     <p
-                      className="text-[13px] m-0"
+                      className="text-[0.8125rem] m-0"
                       style={{ color: 'var(--text-secondary)' }}
                     >
                       {UK_STRINGS.scheduling.noReservationsNote}
@@ -2362,14 +2362,14 @@ export const PlansView: React.FC<PlansViewProps> = ({
                         >
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <div className="space-y-0.5">
-                              <div className="text-[13px] font-semibold">
+                              <div className="text-[0.8125rem] font-semibold">
                                 {formatDate(res.interval.originStartLocalDate)}{' '}
                                 {res.interval.originStartLocalTime} –{' '}
                                 {formatDate(res.interval.originEndLocalDate)}{' '}
                                 {res.interval.originEndLocalTime} ({formatDuration(durationMin)})
                               </div>
                               <div
-                                className="text-[11px] font-medium"
+                                className="text-[0.6875rem] font-medium"
                                 style={{ color: 'var(--text-secondary)' }}
                               >
                                 {res.state === 'active'
@@ -2408,7 +2408,7 @@ export const PlansView: React.FC<PlansViewProps> = ({
 
                           {res.releaseMetadata && (
                             <div
-                              className="p-2 rounded-lg text-[11px] space-y-0.5"
+                              className="p-2 rounded-lg text-[0.6875rem] space-y-0.5"
                               style={{
                                 backgroundColor: 'var(--bg-elevated)',
                                 color: 'var(--text-secondary)',
@@ -2649,13 +2649,13 @@ export const PlansView: React.FC<PlansViewProps> = ({
               }}
               data-testid="task-checklist-section"
             >
-              <div className="text-[14px] font-semibold">
+              <div className="text-[0.875rem] font-semibold">
                 {UK_STRINGS.plansView.checklistHeading}
               </div>
 
               {editingTask.checklist.length === 0 ? (
                 <p
-                  className="text-[13px] m-0"
+                  className="text-[0.8125rem] m-0"
                   style={{ color: 'var(--text-secondary)' }}
                 >
                   {UK_STRINGS.plansView.checklistEmpty}
@@ -2690,7 +2690,7 @@ export const PlansView: React.FC<PlansViewProps> = ({
                             />
                           )}
                           <span
-                            className={`text-[14px] ${
+                            className={`text-[0.875rem] ${
                               item.completed ? 'line-through opacity-70' : ''
                             }`}
                           >
@@ -2764,7 +2764,7 @@ export const PlansView: React.FC<PlansViewProps> = ({
                   onChange={(e) => setNewChecklistTitle(e.target.value)}
                   placeholder={UK_STRINGS.plansView.addChecklistPlaceholder}
                   data-testid="new-checklist-item-input"
-                  className="flex-1 min-h-[42px] px-3 py-1.5 rounded-xl text-[16px]"
+                  className="flex-1 min-h-[42px] px-3 py-1.5 rounded-xl text-[1rem]"
                   style={{
                     backgroundColor: 'var(--bg-surface)',
                     color: 'var(--text-primary)',
@@ -2798,7 +2798,7 @@ export const PlansView: React.FC<PlansViewProps> = ({
               />
 
               <div className="space-y-1.5">
-                <span className="text-[15px] font-medium block">
+                <span className="text-[0.9375rem] font-medium block">
                   {UK_STRINGS.creation.taskForm.priorityLabel}
                 </span>
                 <SegmentedControl<TaskPriority>
@@ -2963,7 +2963,7 @@ export const PlansView: React.FC<PlansViewProps> = ({
               {/* Date-only intention & Estimate */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <span className="text-[15px] font-medium block">
+                  <span className="text-[0.9375rem] font-medium block">
                     {UK_STRINGS.creation.fieldTargetDate}
                   </span>
                   {taskEditPlannedDate === null ? (
@@ -3103,7 +3103,7 @@ export const PlansView: React.FC<PlansViewProps> = ({
           >
             {modalError && (
               <div
-                className="p-3 rounded-xl text-[14px]"
+                className="p-3 rounded-xl text-[0.875rem]"
                 style={{
                   backgroundColor: 'var(--color-brand-tint)',
                   color: 'var(--color-brand-text)',
@@ -3251,7 +3251,7 @@ export const PlansView: React.FC<PlansViewProps> = ({
           <div className="space-y-4" data-testid="delete-goal-modal">
             {modalError && (
               <div
-                className="p-3 rounded-xl text-[14px]"
+                className="p-3 rounded-xl text-[0.875rem]"
                 style={{
                   backgroundColor: 'var(--color-brand-tint)',
                   color: 'var(--color-brand-text)',
@@ -3262,7 +3262,7 @@ export const PlansView: React.FC<PlansViewProps> = ({
             )}
 
             <p
-              className="text-[14px] m-0"
+              className="text-[0.875rem] m-0"
               style={{ color: 'var(--text-secondary)' }}
             >
               Ви збираєтеся видалити ціль{' '}
@@ -3296,7 +3296,7 @@ export const PlansView: React.FC<PlansViewProps> = ({
                   data-testid="goal-delete-unlink-radio"
                 />
                 <div>
-                  <div className="text-[14px] font-medium">
+                  <div className="text-[0.875rem] font-medium">
                     {UK_STRINGS.plansView.goalDeleteUnlinkChildren}
                   </div>
                 </div>
@@ -3325,7 +3325,7 @@ export const PlansView: React.FC<PlansViewProps> = ({
                   data-testid="goal-delete-tasks-radio"
                 />
                 <div>
-                  <div className="text-[14px] font-medium">
+                  <div className="text-[0.875rem] font-medium">
                     {UK_STRINGS.plansView.goalDeleteDirectTasks}
                   </div>
                 </div>

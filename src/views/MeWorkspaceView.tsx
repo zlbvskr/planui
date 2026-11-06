@@ -1,3 +1,4 @@
+import {Icon} from '../ui/icons';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Bookmark,
@@ -6,7 +7,7 @@ import {
   Heart,
   Settings,
   Sparkles,
-} from 'lucide-react';
+} from '../ui/icons';
 import {
   EntityId,
   ExactPrice,
@@ -1229,7 +1230,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
                     data-testid={`inspiration-item-card-${item.id}`}
                   >
                     <div className="flex items-center justify-between gap-1">
-                      <span className="text-[11px] font-medium text-[var(--text-secondary)] truncate">
+                      <span className="text-[0.6875rem] font-medium text-[var(--text-secondary)] truncate">
                         {INSPIRATION_KIND_LABELS_UK[item.kind]}
                       </span>
                       <button
@@ -1249,7 +1250,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
                         }`}
                       >
                         <span aria-hidden="true">
-                          {item.isFavorite ? '★' : '☆'}
+                          <Icon name="star" fill={item.isFavorite?'currentColor':'none'}/>
                         </span>
                       </button>
                     </div>
@@ -1297,7 +1298,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
                       )}
 
                       {linkedArea && !linkedGoal && (
-                        <span className="text-[11px] text-[var(--text-secondary)] truncate block mt-auto pt-1">
+                        <span className="text-[0.6875rem] text-[var(--text-secondary)] truncate block mt-auto pt-1">
                           {linkedArea.questionTextUk}
                         </span>
                       )}
@@ -1673,7 +1674,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
               ]}
             />
             <Row
-              title="У вибраному ★"
+              title="У вибраному"
               trailing={
                 <Toggle
                   label="У вибраному"
@@ -2072,8 +2073,8 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
                           type="button"
                           onClick={() => setEditingCategoryId(null)}
                           className="min-h-[44px] px-3 rounded-xl text-xs"
-                        >
-                          Скасувати
+                         aria-label="Скасувати">
+                          <Icon name="x"/>
                         </button>
                       </div>
                     ) : (
@@ -2148,8 +2149,8 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
                             type="button"
                             onClick={() => setConfirmDeleteCategoryId(null)}
                             className="min-h-[44px] px-3 rounded-xl text-xs"
-                          >
-                            Скасувати
+                           aria-label="Скасувати">
+                            <Icon name="x"/>
                           </button>
                         </div>
                       </div>

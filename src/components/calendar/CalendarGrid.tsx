@@ -1,3 +1,4 @@
+import {Icon} from '../../ui/icons';
 import { deadlineDate } from "../../domain/today";
 import React, { useRef } from "react";
 import { applyCalendarSecondaryFilter } from "../../domain/scheduling";
@@ -105,8 +106,8 @@ export function CalendarGrid({
             >
               {i.segment.continuesBeforeDayStart ||
               i.segment.continuesAfterDayEnd
-                ? "☾"
-                : "☀"}
+                ? <Icon name="moon" size={12}/>
+                : <Icon name="sun" size={12}/>}
             </span>
           ));
           for (const item of items.filter((i) => i.sourceKind !== "work_shift"))

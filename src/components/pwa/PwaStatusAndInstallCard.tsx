@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   RefreshCw,
   WifiOff,
-} from 'lucide-react';
+} from '../../ui/icons';
 import { PwaLifecycleState } from '../../pwa/pwaController';
 import { Disclosure, Row, Section, Sheet } from '../../ui';
 import { Button } from '../ui/primitives';
@@ -39,7 +39,7 @@ export const PwaStatusBanner: React.FC<PwaStatusBannerProps> = ({
         <div
           role="status"
           aria-live="polite"
-          className="px-4 py-2.5 rounded-2xl border flex items-center justify-between gap-3 text-[13px]"
+          className="px-4 py-2.5 rounded-2xl border flex items-center justify-between gap-3 text-[0.8125rem]"
           style={{
             backgroundColor: 'var(--bg-elevated)',
             borderColor: 'var(--border-strong)',
@@ -66,7 +66,7 @@ export const PwaStatusBanner: React.FC<PwaStatusBannerProps> = ({
         <div
           role="region"
           aria-label="Доступне оновлення застосунку"
-          className="p-3.5 rounded-2xl border space-y-2 text-[13px]"
+          className="p-3.5 rounded-2xl border space-y-2 text-[0.8125rem]"
           style={{
             backgroundColor: 'var(--bg-elevated)',
             borderColor: 'var(--color-brand)',
@@ -99,7 +99,7 @@ export const PwaStatusBanner: React.FC<PwaStatusBannerProps> = ({
           {!pwaState.updateSafety.canReloadNow &&
             pwaState.updateSafety.blockedReasonUk && (
               <p
-                className="text-[12px] m-0 leading-relaxed"
+                className="text-[0.75rem] m-0 leading-relaxed"
                 style={{ color: 'var(--text-secondary)' }}
                 data-testid="pwa-update-blocked-reason"
               >
@@ -108,7 +108,7 @@ export const PwaStatusBanner: React.FC<PwaStatusBannerProps> = ({
             )}
           {errorMessage && (
             <p
-              className="text-[12px] m-0"
+              className="text-[0.75rem] m-0"
               style={{ color: 'var(--color-brand-text)' }}
             >
               {errorMessage}

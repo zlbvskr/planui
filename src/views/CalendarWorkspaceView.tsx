@@ -1,9 +1,10 @@
+import {Icon} from '../ui/icons';
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ChevronLeft,
   ChevronRight,
   Stamp,
-} from "lucide-react";
+} from "../ui/icons";
 import {
   PageHeader,
   Segmented,
@@ -515,7 +516,7 @@ export function CalendarWorkspaceView(props: CalendarWorkspaceViewProps) {
           {agenda(selected)}
           <InfoSheet title="Позначки календаря">
             <p>
-              ☾ Нічна зміна · ☀ Денна зміна · ● Подія чи справа · ◆ Термін або
+              <Icon name="moon" size={14}/> Нічна зміна · <Icon name="sun" size={14}/> Денна зміна · ● Подія чи справа · ◆ Термін або
               віха. Нічна зміна — один запис через північ.
             </p>
           </InfoSheet>

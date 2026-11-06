@@ -328,7 +328,7 @@ export function EventDetailSheet({
             {clockSuggestion?.isOvernightSuggestion &&
               endLocalDate > startLocalDate && (
                 <div
-                  className="text-[12px] font-medium"
+                  className="text-[0.75rem] font-medium"
                   style={{ color: 'var(--color-work-text)' }}
                 >
                   {UK_STRINGS.creation.eventForm.overnightSuggestedBadge}:{' '}
@@ -386,7 +386,7 @@ export function EventDetailSheet({
         {candidateConflictReport?.hasConflicts &&
           candidateConflictReport.warningMessageUk && (
             <div
-              className="p-3 rounded-xl space-y-2 text-[12px]"
+              className="p-3 rounded-xl space-y-2 text-[0.75rem]"
               style={{
                 backgroundColor: 'var(--bg-elevated)',
                 border: '1px solid var(--color-brand)',

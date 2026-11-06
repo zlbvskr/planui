@@ -5,7 +5,7 @@ import {
   SunMedium,
   User,
   Plus,
-} from 'lucide-react';
+} from '../../ui/icons';
 import { PrimaryDestinationId, UK_STRINGS } from '../../i18n/uk';
 import { PRIMARY_NAV_ITEMS } from '../../state/shellStore';
 
@@ -140,13 +140,13 @@ export const FloatingShell: React.FC<FloatingShellProps> = ({
           <div className="px-3 flex items-center justify-between">
             <div>
               <span
-                className="text-[20px] font-bold tracking-tight block leading-none"
+                className="text-[1.25rem] font-bold tracking-tight block leading-none"
                 style={{ color: 'var(--text-primary)' }}
               >
                 {UK_STRINGS.app.brand}
               </span>
               <span
-                className="text-[12px] mt-1 block"
+                className="text-[0.75rem] mt-1 block"
                 style={{ color: 'var(--text-secondary)' }}
               >
                 {UK_STRINGS.app.subtitle}
@@ -160,7 +160,7 @@ export const FloatingShell: React.FC<FloatingShellProps> = ({
               onClick={onOpenGlobalCreate}
               aria-label={UK_STRINGS.app.globalCreateButtonAria}
               data-testid="desktop-global-create-button"
-              className="w-full min-h-[46px] px-4 py-2.5 rounded-2xl font-medium text-[15px] flex items-center justify-center gap-2 planui-transition-micro cursor-pointer active:scale-[0.98] "
+              className="w-full min-h-[46px] px-4 py-2.5 rounded-2xl font-medium text-[0.9375rem] flex items-center justify-center gap-2 planui-transition-micro cursor-pointer active:scale-[0.98] "
               style={{
                 viewTransitionName: 'planui-create',
                 backgroundColor: 'var(--glass-bg)',
@@ -185,7 +185,7 @@ export const FloatingShell: React.FC<FloatingShellProps> = ({
                     aria-current={isActive ? 'page' : undefined}
                   data-testid={`desktop-nav-item-${item.id}`}
                   data-active={isActive ? 'true' : 'false'}
-                  className="w-full min-h-[46px] px-3.5 py-2.5 rounded-xl flex items-center gap-3 text-[15px] font-medium planui-transition-micro cursor-pointer text-left"
+                  className="w-full min-h-[46px] px-3.5 py-2.5 rounded-xl flex items-center gap-3 text-[0.9375rem] font-medium planui-transition-micro cursor-pointer text-left"
                   style={{
                     backgroundColor: isActive ? 'var(--bg-elevated)' : 'transparent',
                     color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
@@ -206,7 +206,7 @@ export const FloatingShell: React.FC<FloatingShellProps> = ({
         </div>
 
         <div
-          className="px-3 py-3 rounded-xl text-[12px] leading-relaxed"
+          className="px-3 py-3 rounded-xl text-[0.75rem] leading-relaxed"
           style={{
             backgroundColor: 'var(--bg-elevated)',
             color: 'var(--text-secondary)',
@@ -295,7 +295,7 @@ export const FloatingShell: React.FC<FloatingShellProps> = ({
                       className="w-5 h-5 shrink-0"
                       aria-hidden="true"
                     />
-                    <span className="text-[11px] sm:text-[12px] leading-tight text-center break-words max-w-full px-0.5">
+                    <span className="text-[0.6875rem] sm:text-[0.75rem] leading-tight text-center break-words max-w-full px-0.5">
                       {item.labelUk}
                     </span>
                   </button>

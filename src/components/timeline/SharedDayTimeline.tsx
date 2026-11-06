@@ -1,3 +1,4 @@
+import {Icon} from '../../ui/icons';
 import {projectTodayTasks} from '../../domain/today';
 import {minimumDayTasks} from '../today/minimumDayPresentation';
 import React, {
@@ -8,7 +9,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { ArrowDown, ArrowUp, ChevronDown, Moon } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, Moon } from "../../ui/icons";
 import type {
   CalendarEvent,
   DailyPlan,
@@ -205,7 +206,7 @@ const TimelineItem = memo(function TimelineItem({
       </button>
       {!reminder && plan.focusTaskIds.includes(task?.id ?? "") && (
         <span className="today-star" aria-label="Фокус дня">
-          ★
+          <Icon name="star" size={14}/>
         </span>
       )}
       {task?.deadline?.kind === "date_only" && (

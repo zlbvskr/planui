@@ -19,7 +19,7 @@ import {
   Gift,
   Tag,
   Target,
-} from 'lucide-react';
+} from '../../ui/icons';
 import { PrimaryDestinationId, UK_STRINGS } from '../../i18n/uk';
 import {
   DestinationContextMap,
@@ -2007,7 +2007,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
                   aria-hidden="true"
                 />
                 <div>
-                  <div className="text-[14px] font-semibold leading-tight">
+                  <div className="text-[0.875rem] font-semibold leading-tight">
                     {globalQuickAdd ? ({task:'Справа',shift:'Зміна',event:'Подія',goal:'Ціль',habit:'Звичка',personal_record:'Стан',wish:'Бажання',project:'Проєкт'} as Record<string,string>)[act.kind] ?? act.labelUk : act.labelUk}
                   </div>
                   <div
@@ -2042,12 +2042,12 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
           }}
           data-testid="editable-creation-context"
         >
-          <div className="flex items-center justify-between text-[13px] font-medium">
+          <div className="flex items-center justify-between text-[0.8125rem] font-medium">
             <span style={{ color: 'var(--text-secondary)' }}>
               {UK_STRINGS.creation.contextSummaryTitle}
             </span>
             <span
-              className="px-2 py-0.5 rounded-md text-[12px]"
+              className="px-2 py-0.5 rounded-md text-[0.75rem]"
               style={{
                 backgroundColor: 'var(--bg-surface)',
                 color: 'var(--text-primary)',
@@ -2063,7 +2063,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
               {/* Task Planning State Selector (5.4: unplanned, date_only, timed) */}
               <div className="space-y-1.5">
                 <span
-                  className="text-[13px] font-medium block"
+                  className="text-[0.8125rem] font-medium block"
                   style={{ color: 'var(--text-primary)' }}
                 >
                   {UK_STRINGS.creation.taskForm.planningModeLabel}
@@ -2111,7 +2111,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
                 <div className="space-y-1.5">
                   <label
                     htmlFor="creation-context-date"
-                    className="text-[13px] font-medium flex items-center gap-1.5"
+                    className="text-[0.8125rem] font-medium flex items-center gap-1.5"
                     style={{ color: 'var(--text-primary)' }}
                   >
                     <CalendarIcon className="w-3.5 h-3.5" aria-hidden="true" />
@@ -2408,7 +2408,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
               />
               <div className="space-y-1.5">
                 <span
-                  className="text-[13px] font-medium block"
+                  className="text-[0.8125rem] font-medium block"
                   style={{ color: 'var(--text-primary)' }}
                 >
                   Часовий орієнтир (намір)
@@ -2447,7 +2447,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
             />
             <div className="space-y-1.5">
               <span
-                className="text-[15px] font-medium block"
+                className="text-[0.9375rem] font-medium block"
                 style={{ color: 'var(--text-primary)' }}
               >
                 {UK_STRINGS.creation.taskForm.priorityLabel}
@@ -2680,7 +2680,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
             {selectedAction === 'event' && eventType !== 'work_shift' && (
               <div className="space-y-1.5">
                 <span
-                  className="text-[14px] font-medium block"
+                  className="text-[0.875rem] font-medium block"
                   style={{ color: 'var(--text-primary)' }}
                 >
                   {UK_STRINGS.creation.eventForm.scheduleKindLabel}
@@ -2764,7 +2764,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
                 {eventClockHint?.isOvernightSuggestion &&
                   eventEndDate === eventStartDate && (
                     <div
-                      className="p-3 rounded-xl flex items-center justify-between gap-2 text-[13px]"
+                      className="p-3 rounded-xl flex items-center justify-between gap-2 text-[0.8125rem]"
                       style={{
                         backgroundColor: 'var(--bg-elevated)',
                         border: '1px solid var(--border-subtle)',
@@ -2792,7 +2792,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
 
                 {eventEndDate > eventStartDate && (
                   <div
-                    className="px-3 py-2 rounded-xl text-[13px] font-medium flex items-center gap-2"
+                    className="px-3 py-2 rounded-xl text-[0.8125rem] font-medium flex items-center gap-2"
                     style={{
                       backgroundColor: 'var(--bg-elevated)',
                       color: 'var(--color-work)',
@@ -2906,7 +2906,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
             }}
             data-testid="schedule-conflict-warning-box"
           >
-            <div className="flex items-start gap-2.5 text-[13px]">
+            <div className="flex items-start gap-2.5 text-[0.8125rem]">
               <AlertTriangle
                 className="w-5 h-5 shrink-0 mt-0.5"
                 style={{ color: 'var(--color-brand-text)' }}
@@ -3049,7 +3049,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <span
-                  className="text-[15px] font-medium block"
+                  className="text-[0.9375rem] font-medium block"
                   style={{ color: 'var(--text-primary)' }}
                 >
                   {UK_STRINGS.creation.projectForm.targetDateLabel}
@@ -3122,7 +3122,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
             />
             <div className="space-y-1.5">
               <span
-                className="text-[15px] font-medium block"
+                className="text-[0.9375rem] font-medium block"
                 style={{ color: 'var(--text-primary)' }}
               >
                 {UK_STRINGS.creation.stageForm.targetDateLabel}
@@ -3202,11 +3202,11 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
                 onChange={(e) => setHabitIcon(e.target.value)}
                 options={[
                   { value: 'repeat', label: '↻ Регулярний ритм' },
-                  { value: 'water', label: '💧 Вода / здоров’я' },
-                  { value: 'run', label: '🏃 Рух / фізична форма' },
-                  { value: 'sleep', label: '🌙 Сон і відновлення' },
-                  { value: 'music', label: '🎵 Музика / творчість' },
-                  { value: 'book', label: '📖 Читання / навчання' },
+                  { value: 'water', label: 'Вода / здоров’я' },
+                  { value: 'run', label: 'Рух / фізична форма' },
+                  { value: 'sleep', label: 'Сон і відновлення' },
+                  { value: 'music', label: 'Музика / творчість' },
+                  { value: 'book', label: 'Читання / навчання' },
                 ]}
                 data-testid="create-habit-icon-select"
               />
@@ -3241,7 +3241,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
 
             <div className="space-y-2">
               <span
-                className="text-[14px] font-medium block"
+                className="text-[0.875rem] font-medium block"
                 style={{ color: 'var(--text-primary)' }}
               >
                 Правило розкладу (час лише за ручним плануванням)
@@ -3266,7 +3266,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
                   data-testid="create-habit-weekdays-group"
                 >
                   <span
-                    className="text-[12px] block"
+                    className="text-[0.75rem] block"
                     style={{ color: 'var(--text-secondary)' }}
                   >
                     Оберіть заплановані дні тижня (понеділок — неділя):
@@ -3287,7 +3287,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
                                 : [...prev, wd.iso].sort((a, b) => a - b)
                             )
                           }
-                          className="min-w-[44px] min-h-[44px] px-2.5 py-1.5 rounded-xl text-[13px] font-semibold cursor-pointer planui-transition-micro"
+                          className="min-w-[44px] min-h-[44px] px-2.5 py-1.5 rounded-xl text-[0.8125rem] font-semibold cursor-pointer planui-transition-micro"
                           style={{
                             backgroundColor: selected
                               ? 'var(--color-brand)'
@@ -3322,7 +3322,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
 
             <div className="space-y-2">
               <span
-                className="text-[14px] font-medium block"
+                className="text-[0.875rem] font-medium block"
                 style={{ color: 'var(--text-primary)' }}
               >
                 Тип цілі на день
@@ -3399,7 +3399,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
               />
             </div>
             <p
-              className="text-[12px] m-0"
+              className="text-[0.75rem] m-0"
               style={{ color: 'var(--text-secondary)' }}
             >
               {PERSONAL_STATE_QUESTIONS_UK.stressDirectionNotice}
@@ -3418,7 +3418,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
           <div className="space-y-3.5" data-testid="create-inspiration-form">
             <div className="space-y-1.5">
               <span
-                className="text-[14px] font-medium block"
+                className="text-[0.875rem] font-medium block"
                 style={{ color: 'var(--text-primary)' }}
               >
                 Тип елемента натхнення
@@ -3483,7 +3483,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
               <div className="space-y-2.5">
                 <label className="block space-y-1.5">
                   <span
-                    className="text-[14px] font-medium block"
+                    className="text-[0.875rem] font-medium block"
                     style={{ color: 'var(--text-primary)' }}
                   >
                     Локальне растрове зображення (JPEG, PNG або WebP)
@@ -3505,11 +3505,11 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
                         fileName: file.name,
                       });
                     }}
-                    className="w-full text-[14px]"
+                    className="w-full text-[0.875rem]"
                   />
                 </label>
                 <p
-                  className="text-[12px] m-0"
+                  className="text-[0.75rem] m-0"
                   style={{ color: 'var(--text-secondary)' }}
                 >
                   Підтримуються лише безпечні растрові формати JPEG, PNG та WebP.
@@ -3551,7 +3551,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
 
             <div className="flex items-center justify-between">
               <span
-                className="text-[12px]"
+                className="text-[0.75rem]"
                 style={{ color: 'var(--text-secondary)' }}
               >
                 Достатньо лише назви. Бажання не створює справ чи подій у календарі.

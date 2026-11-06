@@ -12,7 +12,7 @@ import {
 } from "../ui";
 import { formatDate, formatDuration } from "../lib/format";
 import React, { useMemo, useState, useEffect, useContext } from "react";
-import { Repeat } from "lucide-react";
+import { Repeat } from "../ui/icons";
 import {
   CalendarEvent,
   EntityId,

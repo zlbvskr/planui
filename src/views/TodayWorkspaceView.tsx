@@ -4,7 +4,7 @@ import { DateField, Row, Section } from '../ui';
 import { formatDate, formatSubtitle, formatDuration, formatTimeRange } from "../lib/format";
 import { evaluateHabitOnDate } from "../domain/habits";
 import { DayCanvas } from "../components/today/DayCanvas";
-import { Leaf } from "lucide-react";
+import { Leaf } from "../ui/icons";
 import {
   Sheet,
   ActionMenu,
@@ -359,7 +359,7 @@ export function TodayWorkspaceView({
           }}
           data-testid="today-midnight-rollover-banner"
         >
-          <span className="text-[13px] font-medium">
+          <span className="text-[0.8125rem] font-medium">
             {UK_STRINGS.destinations.today.midnightRolloverNotice(
               formatDate(midnightRolloverDate),
             )}
@@ -397,7 +397,7 @@ export function TodayWorkspaceView({
           }}
           data-testid="today-lifecycle-undo-banner"
         >
-          <span className="text-[13px] font-medium">
+          <span className="text-[0.8125rem] font-medium">
             Справу «{todayUndoToken.previousTaskSnapshot.title}» завершено.
           </span>
           <Button

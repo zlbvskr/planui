@@ -1,3 +1,4 @@
+import {Icon} from '../ui/icons';
 import {
   Section,
   Row,
@@ -628,7 +629,7 @@ export function RoadmapView({
                 {(item.record.checkpoints ?? []).map((c) => (
                   <Row
                     key={c.id}
-                    leading={<span>◇</span>}
+                    leading={<Icon name="target"/>}
                     title={c.title}
                     trailing={
                       c.localDate ? dateLabelUk(c.localDate) : undefined

@@ -1,3 +1,4 @@
+import {Icon} from '../ui/icons';
 import { HabitPresentationContext } from "../components/habits/presentation";
 import { SleepReminderNote } from "../components/habits/SleepReminderNote";
 import {
@@ -646,7 +647,7 @@ export function HabitsWorkspaceView({
                       aria-expanded={pausedOpen}
                       onClick={() => setPausedOpen(!pausedOpen)}
                     >
-                      ⌄
+                      <Icon name="chevron-down"/>
                     </Button>
                   }
                 />
@@ -666,7 +667,7 @@ export function HabitsWorkspaceView({
                 aria-label="Усі звички та історія"
                 onClick={() => setHistory(true)}
               >
-                ›
+                <Icon name="chevron-right"/>
               </Button>
             }
           />

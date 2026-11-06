@@ -1,3 +1,4 @@
+import {Icon} from '../ui/icons';
 import {
   PageHeader,
   SubHeader,
@@ -1403,7 +1404,7 @@ export const PlansView: React.FC<PlansViewProps> = ({
               onUpdatePlansContext({ activeFolderId: activeFolder.parentId })
             }
           >
-            ‹
+            <Icon name="chevron-left"/>
           </RoundButton>
           <button
             onClick={() => onUpdatePlansContext({ activeFolderId: null })}
@@ -1412,7 +1413,7 @@ export const PlansView: React.FC<PlansViewProps> = ({
           </button>
           {breadcrumbData.fullChain.map((f) => (
             <React.Fragment key={f.id}>
-              <span>›</span>
+              <span><Icon name="chevron-right"/></span>
               <button
                 onClick={() => onUpdatePlansContext({ activeFolderId: f.id })}
               >

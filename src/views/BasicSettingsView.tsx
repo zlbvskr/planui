@@ -1080,7 +1080,7 @@ export const BasicSettingsView: React.FC<BasicSettingsViewProps> = ({
                         data-testid={`delete-recovery-snapshot-${snap.id}`}
                         className="min-h-[44px] px-2.5 rounded-xl text-xs font-medium text-[var(--color-danger)]"
                       >
-                        ×
+                        <Icon name="x"/>
                       </button>
                     </div>
                   </div>

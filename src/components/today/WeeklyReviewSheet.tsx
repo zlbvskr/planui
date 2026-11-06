@@ -1,3 +1,4 @@
+import {Icon} from '../../ui/icons';
 import React, { useMemo, useState } from "react";
 import { Sheet, Section, Row, Toggle, RoundButton, ActionMenu } from "../../ui";
 import { formatDate, formatTime } from "../../lib/format";
@@ -122,7 +123,7 @@ export function WeeklyReviewSheet({
           aria-label={`Відкрити: ${event.title}`}
           onClick={() => open(() => onInspectEvent(event.id))}
         >
-          ›
+          <Icon name="chevron-right"/>
         </RoundButton>
       }
     />
@@ -274,7 +275,7 @@ export function WeeklyReviewSheet({
               disabled={step === 0 || busy}
               onClick={() => setStep(step - 1)}
             >
-              ‹
+              <Icon name="chevron-left"/>
             </RoundButton>
             {step < 3 ? (
               <button

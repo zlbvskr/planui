@@ -1,3 +1,4 @@
+import {Icon} from '../../ui/icons';
 import {SleepReminderNote} from '../habits/SleepReminderNote';
 import { Sheet, Section, Row, PillRow, ActionMenu, DurationField, Toggle, Slider, DateField, TimeField, SelectField as ContractSelectField } from '../../ui';
 import { formatDuration, formatDate } from '../../lib/format';
@@ -1476,7 +1477,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
                 disabled={isSaving}
                 aria-label="Додати"
               >
-                ↑ <span>Додати</span>
+                <Icon name="arrow-up"/> <span>Додати</span>
               </button>
             </footer>
           </form>
@@ -1790,7 +1791,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
                           )
                         }
                       >
-                        ×
+                        <Icon name="x"/>
                       </button>
                     }
                   />
@@ -3201,7 +3202,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
                 value={habitIcon}
                 onChange={(e) => setHabitIcon(e.target.value)}
                 options={[
-                  { value: 'repeat', label: '↻ Регулярний ритм' },
+                  { value: 'repeat', label: 'Регулярний ритм' },
                   { value: 'water', label: 'Вода / здоров’я' },
                   { value: 'run', label: 'Рух / фізична форма' },
                   { value: 'sleep', label: 'Сон і відновлення' },
@@ -3656,7 +3657,7 @@ export const SharedEditorHost: React.FC<SharedEditorHostProps> = ({
             disabled={isSaving}
             data-testid="shared-editor-submit-button"
           >
-            {globalQuickAdd ? '↑ Додати' : UK_STRINGS.app.saveButton}
+            {globalQuickAdd ? <><Icon name="arrow-up"/> Додати</> : UK_STRINGS.app.saveButton}
           </Button>
         </div>
       </form>

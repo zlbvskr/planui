@@ -493,7 +493,7 @@ export function CalendarWorkspaceView(props: CalendarWorkspaceViewProps) {
               className="ui-pill"
               data-selected={settings.roadmapLayer !== "hidden"}
             >
-              Плани ⌄
+              Плани <Icon name="chevron-down"/>
             </span>
           </ActionMenu>
         </div>

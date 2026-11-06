@@ -1,0 +1,4 @@
+.dev-gallery > .ui-section {margin-block:24px;}
+.dev-gallery .ui-surface {padding:12px;}
+.dev-gallery .ui-surface > .ui-button {margin-block:6px;}
+.dev-gallery .ui-surface > div:has(>label) {margin-block:8px;}

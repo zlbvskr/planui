@@ -1,3 +1,4 @@
+import {Icon} from '../../ui/icons';
 import { CalendarGrid } from "../calendar/CalendarGrid";
 import {
   Section,
@@ -1058,7 +1059,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                   onSelectDate(addMonthsToLocalDate(selectedDate, -1))
                 }
               >
-                ‹
+                <Icon name="chevron-left"/>
               </RoundButton>
               <span>
                 {sentenceCase(formatMonthYear(selectedDate)).replace(
@@ -1072,7 +1073,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                   onSelectDate(addMonthsToLocalDate(selectedDate, 1))
                 }
               >
-                ›
+                <Icon name="chevron-right"/>
               </RoundButton>
             </div>
           )}
@@ -1240,7 +1241,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                       setRepeatOpen(true);
                     }}
                   >
-                    ›
+                    <Icon name="chevron-right"/>
                   </RoundButton>
                 }
               />
@@ -1288,7 +1289,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                       }
                     }}
                   >
-                    ›
+                    <Icon name="chevron-right"/>
                   </RoundButton>
                 }
               />
@@ -1321,7 +1322,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                       setDayActions(false);
                     }}
                   >
-                    ×
+                    <Icon name="x"/>
                   </RoundButton>
                 }
               />
@@ -1336,7 +1337,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                   aria-label="Видалити вихідний"
                   onClick={() => void handleRemoveDayOff(off.id)}
                 >
-                  ×
+                  <Icon name="x"/>
                 </RoundButton>
               }
             />

@@ -4,10 +4,11 @@ import {createRoot} from 'react-dom/client';
 import {PageHeader,SubHeader,RoundButton,Section,Row,Segmented,PillRow,Slider,Sheet,Toggle,DateField,TimeField,SelectField,DurationField,ActionMenu,InfoSheet,EmptyState,Disclosure,ItemCard,WeekStrip} from '../../ui';
 import {Button,InputField,TextAreaField} from '../../ui/legacy';
 import {Toast,InlineBanner} from '../../ui/feedback';
+import './style.css';
 import {Icon,type IconName} from '../../ui/icons';
 export function Gallery(){
  const [value,setValue]=useState<number|null>(null),[tab,setTab]=useState('all'),[on,setOn]=useState(false),[sheet,setSheet]=useState(false),[toast,setToast]=useState(false),[duration,setDuration]=useState<number|null>(null);
- return <main className="planui-canvas" style={{padding:16,minHeight:'100dvh',paddingBottom:120}}>
+ return <main className="planui-canvas dev-gallery" style={{padding:16,minHeight:'100dvh',paddingBottom:120}}>
  <PageHeader title="Компоненти" actions={<RoundButton aria-label="Пошук"><Icon name="search"/></RoundButton>}/>
  <Segmented label="Режим" value={tab} onChange={setTab} options={[{value:'all',label:'Усі'},{value:'focus',label:'Фокус'}]}/>
  <PillRow label="Фільтри" value={tab} onChange={setTab} options={[{value:'all',label:'Усі'},{value:'focus',label:'Фокус',count:2}]}/>

@@ -7,7 +7,7 @@ import { DateField, PillRow, Segmented, SelectField, TimeField } from './contrac
 export { SelectField };
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'subtle' | 'danger';
+  variant?: 'primary' | 'secondary' | 'subtle' | 'danger' | 'tertiary' | 'destructive';
   size?: 'md' | 'sm' | 'icon';
   fullWidth?: boolean;
   busy?: boolean;
@@ -22,6 +22,7 @@ export const Button: React.FC<ButtonProps> = ({
   children,
   ...props
 }) => {
+  const dismissLabel = typeof children === 'string' && ['Закрити','Скасувати'].includes(children.trim()) ? children.trim() : undefined;
   const baseClasses =
     'inline-flex items-center justify-center gap-2 font-medium rounded-xl planui-transition-micro select-none disabled:opacity-50 disabled:pointer-events-none cursor-pointer';
 
@@ -39,13 +40,13 @@ export const Button: React.FC<ButtonProps> = ({
           color: 'var(--btn-primary-fg)',
           border: '1px solid transparent',
         }
-      : variant === 'danger'
+      : (variant === 'danger' || variant === 'destructive')
       ? {
           backgroundColor: 'var(--color-brand-tint)',
           color: 'var(--color-brand-text)',
           border: '1px solid var(--border-subtle)',
         }
-      : variant === 'subtle'
+      : (variant === 'subtle' || variant === 'tertiary')
       ? {
           backgroundColor: 'transparent',
           color: 'var(--text-primary)',
@@ -60,6 +61,7 @@ export const Button: React.FC<ButtonProps> = ({
   return (
     <button
       type="button"
+      aria-label={dismissLabel}
       aria-busy={busy || undefined}
       data-variant={variant}
       className={`ui-button ${baseClasses} ${sizeClasses} ${fullWidth ? 'w-full' : ''} active:scale-[0.98] ${className}`}
@@ -67,7 +69,7 @@ export const Button: React.FC<ButtonProps> = ({
       {...props}
       disabled={busy || props.disabled}
     >
-      {busy ? 'Зачекайте…' : children}
+      {busy ? 'Зачекайте…' : dismissLabel ? <X/> : children}
     </button>
   );
 };
@@ -243,12 +245,12 @@ export const FeedbackBanner: React.FC<FeedbackBannerProps> = ({
   return (
     <div
       role={tone === 'error' ? 'alert' : 'status'}
-      className="rounded-xl px-4 py-3 border flex items-start justify-between gap-3 text-[0.9375rem]"
+      className="ui-inline-banner rounded-xl px-4 py-3 border flex items-start justify-between gap-3 text-[0.9375rem]"
       style={toneStyles}
     >
       <div className="flex items-start gap-2.5">
         <Icon className="w-5 h-5 shrink-0 mt-0.5" aria-hidden="true" />
-        <span className="leading-snug">{message}</span>
+        <span className="ui-banner-text leading-snug">{message}</span>
       </div>
       {onDismiss && (
         <button
@@ -453,6 +455,7 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
           onTouchEnd={(e) => handleSwipeEnd(e.changedTouches[0].clientY)}
           onPointerDown={(e) => {
             dragStart.current = e.clientY;
+            e.currentTarget.setPointerCapture(e.pointerId);
           }}
           onPointerUp={(e) => handleSwipeEnd(e.clientY)}
         >

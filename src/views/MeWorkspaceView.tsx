@@ -1360,7 +1360,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
               }))}
             >
               <span className="ui-pill px-3 py-2 inline-flex items-center gap-1 text-xs font-medium bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-full whitespace-nowrap">
-                {WISH_SCOPE_LABELS_UK[wishlistViewScope]} ⌄
+                {WISH_SCOPE_LABELS_UK[wishlistViewScope]} <Icon name="chevron-down"/>
               </span>
             </ActionMenu>
           </div>
@@ -2010,7 +2010,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
 
           <form
             onSubmit={handleCreateCategory}
-            className="flex items-end gap-2"
+            className="flex flex-col gap-2 [&>*]:w-full"
           >
             <div className="flex-1">
               <InputField

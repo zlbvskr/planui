@@ -1,3 +1,4 @@
+import {Icon} from '../ui/icons';
 import React, { useState } from "react";
 import type { Goal, Project, Task, TaskReservation } from "../domain/types";
 import type { PlanuiRepositories } from "../storage/repositories";
@@ -108,7 +109,7 @@ export function PlanDetail({
               completed: "Завершений",
             }[r.state]
           }{" "}
-          ⌄
+          <Icon name="chevron-down"/>
         </ActionMenu>
       </div>
       <Section>

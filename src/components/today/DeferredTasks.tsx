@@ -1,3 +1,4 @@
+import {Icon} from '../../ui/icons';
 import React, { useState } from "react";
 import type { Task } from "../../domain/types";
 import type { PlanuiRepositories } from "../../storage/repositories";
@@ -23,7 +24,7 @@ export function DeferredTasks({
         className="ui-disclosure"
         onClick={() => setOpen(true)}
       >
-        Відкладені справи ›
+        Відкладені справи <Icon name="chevron-right"/>
       </button>
       <Sheet
         title="Можна відкласти"

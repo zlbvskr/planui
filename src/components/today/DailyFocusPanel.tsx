@@ -1,27 +1,25 @@
-import { Sheet } from '../ui/design';
+import { Sheet, Button, InputField, TextAreaField } from '../../ui';
 import React, { useState } from 'react';
 import { DailyPlan, Task, TaskReservation } from '../../domain/types';
 import { suggestFocusTasks } from '../../domain/today';
 import { PlanuiRepositories } from '../../storage/repositories';
-import { Button, InputField, TextAreaField } from '../ui/primitives';
 
 export function DailyFocusPanel({ date, zone, plan, tasks, reservations, repositories, onChanged, isOpen, onClose }: { date: string; zone: string; plan: DailyPlan; tasks: readonly Task[]; reservations: readonly TaskReservation[]; repositories: PlanuiRepositories; onChanged: () => Promise<void> | void; isOpen: boolean; onClose: () => void }) {
   const [ids, setIds] = useState([...plan.focusTaskIds]);
   const [note, setNote] = useState(plan.focusNoteUk ?? '');
-  const [minimal, setMinimal] = useState(plan.minimalDay);
   const [query, setQuery] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  function closeEditor() { setIds([...plan.focusTaskIds]); setNote(plan.focusNoteUk ?? ''); setMinimal(plan.minimalDay); setError(''); onClose(); }
+  function closeEditor() { setIds([...plan.focusTaskIds]); setNote(plan.focusNoteUk ?? ''); setError(''); onClose(); }
   async function save(e: React.FormEvent) {
     e.preventDefault(); setBusy(true); setError('');
-    try { await repositories.saveDailyPlan(date, { focusTaskIds: ids, focusNoteUk: note.trim() || null, minimalDay: minimal }, plan); await onChanged(); onClose(); }
+    try { await repositories.saveDailyPlan(date, { focusTaskIds: ids, focusNoteUk: note.trim() || null, minimalDay: false }, plan); await onChanged(); onClose(); }
     catch { setError('Не вдалося зберегти фокус. Дані могли змінитися; оновіть сторінку й повторіть.'); }
     finally { setBusy(false); }
   }
   return <>
     {plan.focusNoteUk && <p className="today-focus-note">{plan.focusNoteUk}</p>}
-    <Sheet title="Фокус дня" isOpen={isOpen} onClose={closeEditor} isDirty={JSON.stringify(ids) !== JSON.stringify(plan.focusTaskIds) || note !== (plan.focusNoteUk ?? '') || minimal !== plan.minimalDay}>
+    <Sheet title="Фокус дня" isOpen={isOpen} onClose={closeEditor} isDirty={JSON.stringify(ids) !== JSON.stringify(plan.focusTaskIds) || note !== (plan.focusNoteUk ?? '')}>
       <form onSubmit={save} className="space-y-3 pt-2">
         <p>Оберіть 1–3 справи для фокусу, якщо це корисно. Можна обрати більше або жодної.</p>
         <div className="space-y-1"><p>Можливі кроки з датованих справ. Це пропозиція, а не обов’язок:</p>{suggestFocusTasks(tasks, reservations, date, zone).filter(task => !ids.includes(task.id)).map(task => <Button key={task.id} onClick={() => setIds([...ids, task.id])}>Додати до фокусу: {task.title}</Button>)}</div>
@@ -30,10 +28,8 @@ export function DailyFocusPanel({ date, zone, plan, tasks, reservations, reposit
         <fieldset className="max-h-72 overflow-y-auto space-y-1"><legend>Що залишити у фокусі</legend>
           {tasks.filter(t => t.state !== 'canceled' && (ids.includes(t.id) || (t.state === 'open' && t.title.toLocaleLowerCase('uk').includes(query.toLocaleLowerCase('uk'))))).map(task => <button type="button" key={task.id} className="ui-pill" aria-pressed={ids.includes(task.id)} onClick={() => setIds(ids.includes(task.id) ? ids.filter(id => id !== task.id) : [...ids, task.id])}>{task.title}</button>)}
         </fieldset>
-        <button type="button" className="ui-pill" aria-pressed={minimal} onClick={()=>setMinimal(!minimal)}>Мінімальний день</button>
-        <p>Це допомагає спростити план, а не стерти зобов’язання. Залишається не більше одного малого кроку з фокусу без терміну й сеансу. Терміни, робота, події та зайнятий час залишаються видимими. Пріоритет не визначає обов’язковість. Розклад не змінюється.</p>
         {error && <p role="alert">{error}</p>}
-        <Button type="submit" disabled={busy} variant="primary">Зберегти фокус і вигляд дня</Button>
+        <Button type="submit" disabled={busy} variant="primary">Зберегти фокус</Button>
       </form>
     </Sheet>
   </>;

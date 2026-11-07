@@ -1,11 +1,10 @@
-import { flushSync } from 'react-dom';
+import { captureOrbRect } from '../../ui/motion';
 
-/** Shared-element morph where supported; normal React update elsewhere. */
+/**
+ * Captures the Quick Add + orb geometry before state update so ModalSheet
+ * morphs between the orb's rect/radius and the sheet's rect/radius with springs.sheet.
+ */
 export function transitionCreation(update: () => void): void {
-  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches || document.documentElement.dataset.reducedMotion === 'true';
-  const doc = document as Document & { startViewTransition?: (update: () => void) => { finished: Promise<void> } };
-  if (!reduced && doc.startViewTransition) {
-    const transition = doc.startViewTransition(() => flushSync(update));
-    void transition.finished.catch(() => { /* Rendering may skip snapshots, but update has still committed. */ });
-  } else update();
+  captureOrbRect();
+  update();
 }

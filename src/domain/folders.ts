@@ -1,5 +1,5 @@
 import { PlanuiError } from '../i18n/errorsUk';
-import { EntityId, Folder } from './types';
+import { EntityId, Folder, FolderKind, Project, Task } from './types';
 
 export function validateFolderHierarchy(
   folders: readonly Folder[],
@@ -116,3 +116,118 @@ export function collectDescendantFolderIds(
 
   return result;
 }
+
+/**
+ * Creates a new Folder with nesting and optional area binding.
+ */
+export function createFolder(
+  kind: FolderKind,
+  name: string,
+  options?: {
+    id?: EntityId;
+    parentId?: EntityId | null;
+    areaId?: EntityId | null;
+    order?: number;
+    nowIso?: string;
+  }
+): Folder {
+  const now = options?.nowIso ?? new Date().toISOString();
+  return {
+    id: options?.id ?? `folder-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    kind,
+    name: name.trim(),
+    parentId: options?.parentId ?? null,
+    areaId: options?.areaId ?? null,
+    order: options?.order ?? 0,
+    createdAt: now,
+    updatedAt: now,
+    revision: 1,
+  };
+}
+
+/**
+ * Updates an existing folder while validating hierarchy to prevent cycles.
+ */
+export function updateFolder(
+  folder: Folder,
+  updates: Partial<Pick<Folder, 'name' | 'parentId' | 'areaId' | 'order' | 'kind'>>,
+  allFolders?: readonly Folder[]
+): Folder {
+  const nextParentId = updates.parentId !== undefined ? (updates.parentId ?? null) : folder.parentId;
+  if (allFolders && nextParentId !== folder.parentId) {
+    validateFolderHierarchy(allFolders, { id: folder.id, parentId: nextParentId });
+  }
+  return {
+    ...folder,
+    ...updates,
+    parentId: nextParentId,
+    updatedAt: new Date().toISOString(),
+    revision: folder.revision + 1,
+  };
+}
+
+/**
+ * Deletes a folder and all its descendants from a folders array.
+ */
+export function deleteFolderCascade(
+  folders: readonly Folder[],
+  folderIdToDelete: EntityId
+): Folder[] {
+  const idsToRemove = collectDescendantFolderIds(folders, folderIdToDelete);
+  return folders.filter((f) => !idsToRemove.has(f.id));
+}
+
+/**
+ * Moves an item between folders while preserving its manual order.
+ */
+export function moveItemToFolder<T extends { folderId?: EntityId | null; order?: number }>(
+  item: T,
+  targetFolderId: EntityId | null
+): T {
+  return {
+    ...item,
+    folderId: targetFolderId,
+    // Note: order is preserved as required
+  };
+}
+
+/**
+ * In kind 'projects': a folder may contain child folders, projects, and tasks.
+ * Returns the direct contents of a folder (or root when folderId is null).
+ */
+export function getProjectsFolderContents(
+  folderId: EntityId | null,
+  data: {
+    folders?: readonly Folder[];
+    projects?: readonly Project[];
+    tasks?: readonly Task[];
+  }
+): {
+  childFolders: Folder[];
+  projects: Project[];
+  tasks: Task[];
+} {
+  const childFolders = (data.folders ?? [])
+    .filter((f) => (f.kind === undefined || f.kind === 'projects') && (f.parentId ?? null) === folderId)
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+  const projects = (data.projects ?? [])
+    .filter((p) => (p.folderId ?? null) === folderId && !p.archived)
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+  const tasks = (data.tasks ?? [])
+    .filter((t) => {
+      const taskFolderId =
+        t.folderId ??
+        (t.ownership?.kind === 'folder'
+          ? t.ownership.folderId
+          : t.ownership?.kind === 'standalone'
+            ? null
+            : undefined);
+      return taskFolderId !== undefined && (taskFolderId ?? null) === folderId;
+    })
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+  return { childFolders, projects, tasks };
+}
+

@@ -1,31 +1,33 @@
 import {Icon} from "../../ui/icons";
 import React from "react";
-import type { Folder, Project, Task } from "../../domain/types";
+import type { Folder, Project, Task, LifeArea, LifeAreaQuestion } from "../../domain/types";
+import { itemColor, resolveArea } from "../../domain/modelHelpers";
+
+export { itemColor };
+
 export function directionFor(
   task: Task | undefined,
-  folders: readonly Folder[],
-  projects: readonly Project[],
+  folders: readonly Folder[] = [],
+  projects: readonly Project[] = [],
+  lifeAreas: readonly (LifeArea | LifeAreaQuestion)[] = [],
 ) {
+  const resolved = resolveArea(task, { folders, projects, lifeAreas });
   const ownership = task?.ownership;
   const folderId =
-    ownership?.kind === "folder"
+    task?.folderId ??
+    (ownership?.kind === "folder"
       ? ownership.folderId
       : ownership?.kind === "project"
         ? projects.find((p) => p.id === ownership.projectId)?.folderId
-        : null;
-  const index = Math.max(
-    0,
-    folders.findIndex((f) => f.id === folderId),
-  );
+        : null);
+
+  const folderName = folders.find((f) => f.id === folderId)?.name;
+  const name = resolved?.name ?? folderName ?? "Без напряму";
+  const hue = itemColor(task, { folders, projects, lifeAreas });
+
   return {
-    name: folders.find((f) => f.id === folderId)?.name ?? "Без напряму",
-    hue: [
-      "var(--hue-english)",
-      "var(--hue-creative)",
-      "var(--hue-university)",
-      "var(--hue-relationships)",
-      "var(--hue-work)",
-    ][index % 5],
+    name,
+    hue,
   };
 }
 export const effortDots = (effort: Task["effort"]) =>

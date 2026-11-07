@@ -9,7 +9,7 @@
     <meta property="og:description" content="Приватний локальний планувальник розкладу, справ, змін, звичок та особистого простору." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="theme-color" content="#F5F5F7" id="planui-theme-color" />
+    <meta name="theme-color" content="#F3F4F8" id="planui-theme-color" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -20,9 +20,10 @@
     <script>
       (function () {
         try {
-          var mode = localStorage.getItem('planui_theme_bootstrap') || 'system';
+          var mode = localStorage.getItem('planui_theme_bootstrap') || 'light';
           var reducedMotion = localStorage.getItem('planui_reduced_motion') === 'true';
           var reducedTransparency = localStorage.getItem('planui_reduced_transparency') === 'true';
+          var textScale = localStorage.getItem('planui_text_scale');
           var sysDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
           var resolved = mode === 'dark' || (mode === 'system' && sysDark) ? 'dark' : 'light';
           var root = document.documentElement;
@@ -31,9 +32,10 @@
           root.setAttribute('data-theme-mode', mode);
           if (reducedMotion) root.setAttribute('data-reduced-motion', 'true');
           if (reducedTransparency) root.setAttribute('data-reduced-transparency', 'true');
+          if (textScale) root.style.setProperty('--text-scale', textScale);
           var metaTheme = document.getElementById('planui-theme-color');
           if (metaTheme) {
-            metaTheme.setAttribute('content', resolved === 'dark' ? '#05060A' : '#F5F5F7');
+            metaTheme.setAttribute('content', resolved === 'dark' ? '#0E1014' : '#F3F4F8');
           }
         } catch (e) {}
       })();

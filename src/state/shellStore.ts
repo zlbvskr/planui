@@ -1,9 +1,12 @@
 import { AnyDestinationId, PrimaryDestinationId, UK_STRINGS } from '../i18n/uk';
 import { TaskPriority, TaskState, ThemePreference, TodayMode } from '../domain/types';
 import { CalendarSecondaryFilter } from '../domain/scheduling';
+import { closeTopmostOverlay, hasOpenOverlay } from '../ui/overlayStack';
+
+export type TabDestinationId = 'today' | 'directions' | 'me';
 
 export interface PrimaryNavItem {
-  id: PrimaryDestinationId;
+  id: TabDestinationId;
   labelUk: string;
   hashPath: string;
   isCenter: boolean;
@@ -11,7 +14,6 @@ export interface PrimaryNavItem {
 
 export const PRIMARY_NAV_ITEMS: readonly PrimaryNavItem[] = [
   { id: 'today', labelUk: UK_STRINGS.nav.today, hashPath: '#/today', isCenter: false },
-  { id: 'calendar', labelUk: UK_STRINGS.nav.calendar, hashPath: '#/calendar', isCenter: false },
   { id: 'directions', labelUk: UK_STRINGS.nav.directions, hashPath: '#/directions', isCenter: false },
   { id: 'me', labelUk: UK_STRINGS.nav.me, hashPath: '#/me', isCenter: false },
 ] as const;
@@ -27,8 +29,10 @@ export type MeSubViewMode =
   | 'settings';
 export type PlansTaskStateFilter = 'all' | TaskState;
 export type PlansPriorityFilter = 'all' | TaskPriority;
+export type DirectionsSubMode = 'projects' | 'goals';
 
 export interface DirectionsDestinationContext {
+  subMode?: DirectionsSubMode;
   activeFolderId: string | null;
   activeGoalId?: string | null;
   activeProjectId: string | null;
@@ -74,6 +78,7 @@ export interface DestinationContextMap {
 
 export function createInitialDestinationContextMap(todayDate: string): DestinationContextMap {
   const directionsCtx: DirectionsDestinationContext = {
+    subMode: 'projects',
     activeFolderId: null,
     activeGoalId: null,
     activeProjectId: null,
@@ -141,26 +146,92 @@ export function updateDestinationContext<K extends PrimaryDestinationId | 'plans
   };
 }
 
-export function parseDestinationFromHash(hash: string): PrimaryDestinationId {
+export function isTabAtHome(
+  tab: TabDestinationId,
+  contexts: DestinationContextMap,
+  actualTodayDate: string,
+  scrollY = typeof window !== 'undefined' ? window.scrollY : 0
+): boolean {
+  if (scrollY > 8) return false;
+  if (tab === 'today') {
+    const mode = contexts.today.mode ?? 'day';
+    return mode === 'day' && contexts.today.selectedDate === actualTodayDate;
+  }
+  if (tab === 'directions') {
+    const dir = contexts.directions ?? contexts.plans;
+    return (
+      (dir.subMode ?? 'projects') === 'projects' &&
+      dir.activeFolderId === null &&
+      !dir.activeGoalId &&
+      dir.activeProjectId === null &&
+      !dir.searchQuery
+    );
+  }
+  if (tab === 'me') {
+    return contexts.me.subView === 'overview';
+  }
+  return true;
+}
+
+/**
+ * Single documented tab-tap handler per DESIGN.md §3:
+ * (a) If any overlay (Sheet / AlertSheet / popover / calendar window) is open -> close the topmost overlay and stop.
+ * (b) If the current tab is not at home (sub-screen open, scrolled > 8px, non-default segment/date/month) -> reset it to home and stop.
+ * (c) If target != current -> switch to target tab (starting fresh at default state).
+ * Contextual bar buttons never call this function.
+ */
+export function onTabTap(
+  target: TabDestinationId,
+  params: {
+    current: TabDestinationId;
+    contexts: DestinationContextMap;
+    actualTodayDate: string;
+    scrollY?: number;
+    onResetCurrentTabToHome: (tab: TabDestinationId) => void;
+    onSwitchTab: (target: TabDestinationId) => void;
+  }
+): 'closed-overlay' | 'reset-home' | 'switched-tab' | 'noop' {
+  // (a) Overlay open -> close topmost overlay and stop
+  if (hasOpenOverlay() && closeTopmostOverlay()) {
+    return 'closed-overlay';
+  }
+  // (b) Current tab not at home -> reset current tab to home and stop
+  const atHome = isTabAtHome(
+    params.current,
+    params.contexts,
+    params.actualTodayDate,
+    params.scrollY
+  );
+  if (!atHome) {
+    params.onResetCurrentTabToHome(params.current);
+    return 'reset-home';
+  }
+  // (c) target != current -> switch to target tab
+  if (target !== params.current) {
+    params.onSwitchTab(target);
+    return 'switched-tab';
+  }
+  return 'noop';
+}
+
+export function parseDestinationFromHash(hash: string): TabDestinationId {
   const cleaned = hash.replace(/^#\/?/, '').split(/[/?]/)[0]?.toLowerCase() ?? '';
   switch (cleaned) {
     case 'today':
       return 'today';
-    case 'calendar':
-      return 'calendar';
     case 'directions':
-    case 'plans': // Former Plans route migrated to Directions context
+    case 'plans':
       return 'directions';
     case 'me':
-    case 'diary': // Former diary/records routes lead to accessible legacy history in 'me'
+    case 'diary':
     case 'records':
     case 'settings':
     case 'wishlist':
     case 'inspiration':
     case 'life_areas':
       return 'me';
-    case 'habits': // Former Habits route opens Today
-      return 'today';
+    case 'calendar':
+    case 'habits':
     default:
       return 'today';
   }
@@ -188,7 +259,7 @@ export function extractSubViewFromHash(hash: string): MeSubViewMode | null {
 
 export function formatHashForDestination(destination: PrimaryDestinationId | AnyDestinationId): string {
   if (destination === 'plans') return '#/directions';
-  if (destination === 'habits') return '#/today';
+  if (destination === 'habits' || destination === 'calendar') return '#/today';
   return `#/${destination}`;
 }
 
@@ -257,7 +328,7 @@ export const CREATION_ACTION_REGISTRY: readonly CreationActionDescriptor[] = [
     kind: 'personal_record',
     labelUk: UK_STRINGS.creation.actions.personal_record.label,
     descriptionUk: UK_STRINGS.creation.actions.personal_record.description,
-    implementedInCurrentStage: true,
+    implementedInCurrentStage: false,
     prioritizedInDestinations: ['me', 'today'],
     prioritizedInMeSubViews: ['records', 'settings', 'wishlist'],
   },
@@ -457,7 +528,6 @@ export function getContextualCreationActions(
   if (activeDestination === 'today' || activeDestination === 'habits') {
     const order: ImplementedCreationActionKind[] = ['task', 'event'];
     if (habitsOn) order.push('habit');
-    if (stateCheckInsOn) order.push('personal_record');
     return order.map((k) => byKind.get(k)!).filter(Boolean);
   }
 
@@ -506,32 +576,13 @@ export function getContextualCreationActions(
     if (subView === 'wishlist') {
       const order: ImplementedCreationActionKind[] = [];
       if (wishlistOn) {
-        order.push('wish', 'wishlist_category');
+        order.push('wish', 'folder');
       }
-      order.push('task');
       return order.map((k) => byKind.get(k)!).filter(Boolean);
     }
-    if (subView === 'inspiration') {
-      const order: ImplementedCreationActionKind[] = [];
-      if (desiredLifeOn) {
-        order.push('inspiration');
-      }
-      order.push('task');
-      return order.map((k) => byKind.get(k)!).filter(Boolean);
-    }
-    if (subView === 'records') {
-      const order: ImplementedCreationActionKind[] = [];
-      if (stateCheckInsOn) {
-        order.push('personal_record');
-      }
-      order.push('task');
-      return order.map((k) => byKind.get(k)!).filter(Boolean);
-    }
-    const order: ImplementedCreationActionKind[] = [];
-    if (stateCheckInsOn) order.push('personal_record');
-    if (desiredLifeOn) order.push('inspiration');
+    const order: ImplementedCreationActionKind[] = ['task'];
+    if (habitsOn) order.push('habit');
     if (wishlistOn) order.push('wish');
-    order.push('task');
     return order.map((k) => byKind.get(k)!).filter(Boolean);
   }
 
@@ -555,7 +606,8 @@ export function resolveEffectiveTheme(
 export function applyThemeAndAccessibilityToDocument(
   themePreference: ThemePreference,
   reducedMotion: boolean,
-  reducedTransparency: boolean
+  reducedTransparency: boolean,
+  textScale?: 'standard' | 'larger' | 'largest' | number | null
 ): 'light' | 'dark' {
   if (typeof window === 'undefined' || typeof document === 'undefined') {
     return resolveEffectiveTheme(themePreference, false);
@@ -580,6 +632,18 @@ export function applyThemeAndAccessibilityToDocument(
     root.setAttribute('data-reduced-transparency', 'true');
   } else {
     root.removeAttribute('data-reduced-transparency');
+  }
+
+  if (textScale !== undefined && textScale !== null) {
+    const scaleVal =
+      textScale === 'largest'
+        ? 1.25
+        : textScale === 'larger'
+        ? 1.12
+        : typeof textScale === 'number'
+        ? textScale
+        : 1;
+    root.style.setProperty('--text-scale', String(scaleVal));
   }
 
   const metaTheme = document.getElementById('planui-theme-color');

@@ -1,5 +1,6 @@
 import {Icon} from '../ui/icons';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSubScreenTransition } from '../ui/motion';
 import {
   Bookmark,
   Compass,
@@ -60,9 +61,12 @@ import {
 import { PlanuiRepositories } from '../storage/repositories';
 import {
   ActionMenu,
+  Card,
   Disclosure,
   EmptyState,
   InfoSheet,
+  InputField,
+  Orb,
   PageHeader,
   PillRow,
   RoundButton,
@@ -71,14 +75,40 @@ import {
   Segmented,
   SelectField,
   Sheet,
+  Slider,
   SubHeader,
+  TextAreaField,
   Toggle,
 } from '../ui';
-import { InputField, TextAreaField } from '../components/ui/primitives';
 import { BasicSettingsView } from './BasicSettingsView';
-import { LifeAreasReviewView } from './LifeAreasReviewView';
-import { StateCheckInsView } from './StateCheckInsView';
-import { WeeklyReviewSheet } from '../components/today/WeeklyReviewSheet';
+import { areaColor, itemColor, resolveArea } from '../domain/modelHelpers';
+import { buildLifeReview, projectLifeAreaLinks, ReviewAnswerDraft } from '../domain/lifeAreas';
+import { addDaysToLocalDate } from '../domain/temporal';
+
+const AREA_ICONS = [
+  'heart-pulse',
+  'brain',
+  'users',
+  'briefcase',
+  'wallet',
+  'home',
+  'book-open',
+  'sun',
+  'sparkles',
+  'compass',
+] as const;
+
+const KIND_UK: Record<string, string> = {
+  inspiration: 'Матеріал',
+  folder: 'Папка',
+  goal: 'Ціль',
+  project: 'Проєкт',
+  task: 'Завдання',
+  habit: 'Звичка',
+  event: 'Подія',
+  wish: 'Бажання',
+  reservation: 'Запланована дія',
+};
 
 function getErrorMessageUk(err: unknown): string {
   return err instanceof Error ? err.message : 'Сталася неочікувана помилка.';
@@ -190,6 +220,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
   onChangeSubView,
   onOpenPlan,
   onInspectCalendarEvent,
+  onOpenGlobalCreation,
   onSettingsPatch,
   onDataChanged,
   onNavigateToWorkRoster,
@@ -198,21 +229,20 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
   onModalStateChange,
   pwaState,
 }) => {
-  const [planningReviewOpen, setPlanningReviewOpen] = useState(false);
-  const [weeklyOpen, setWeeklyOpen] = useState(false);
+  // Life Areas Sheet & Review State
+  const [selectedAreaId, setSelectedAreaId] = useState<string | null>(null);
+  const [scoreDraft, setScoreDraft] = useState<number | null>(null);
+  const [definitionDraft, setDefinitionDraft] = useState('');
+  const [focusDraft, setFocusDraft] = useState(false);
+  const [isLinkPickerOpen, setIsLinkPickerOpen] = useState(false);
+  const [lifeReviewOpen, setLifeReviewOpen] = useState(false);
+  const [reviewStep, setReviewStep] = useState(0);
+  const [reviewDrafts, setReviewDrafts] = useState<Record<string, ReviewAnswerDraft>>({});
+  const [activeWishFolderId, setActiveWishFolderId] = useState<string | null>(null);
 
   // Guard disabled module subviews so turning a module off hides its screen too
   const effectiveSubView: MeSubViewMode = useMemo(() => {
-    if (
-      subView === 'records' &&
-      settings.modules?.stateCheckInsEnabled === false
-    ) {
-      return 'overview';
-    }
-    if (
-      subView === 'inspiration' &&
-      settings.modules?.desiredLifeEnabled === false
-    ) {
+    if (subView === 'inspiration' || subView === 'life_areas') {
       return 'overview';
     }
     if (
@@ -224,14 +254,162 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
     return subView;
   }, [subView, settings.modules]);
 
+  const modelContext = useMemo(
+    () => ({
+      folders: snapshot.folders,
+      projects,
+      goals: snapshot.goals,
+      areas: lifeAreaQuestions,
+    }),
+    [snapshot.folders, projects, snapshot.goals, lifeAreaQuestions]
+  );
+
+  const activeLifeAreas = useMemo(() => {
+    return [...snapshot.lifeAreaQuestions]
+      .filter((a) => !a.archived && !a.mergedIntoId)
+      .sort((a, b) => a.order - b.order);
+  }, [snapshot.lifeAreaQuestions]);
+
+  const latestAssessmentAnswer = useCallback(
+    (id: string) =>
+      [...snapshot.lifeAreaAssessments]
+        .filter((r) => r.scale?.min === 0)
+        .sort((a, b) => b.recordedAt.localeCompare(a.recordedAt))
+        .flatMap((r) => r.answers)
+        .find((a) => a.questionId === id),
+    [snapshot.lifeAreaAssessments]
+  );
+
+  const selectedArea = useMemo(
+    () => activeLifeAreas.find((a) => a.id === selectedAreaId) ?? null,
+    [activeLifeAreas, selectedAreaId]
+  );
+
+  const links = useMemo(() => projectLifeAreaLinks(snapshot), [snapshot]);
+
+  const relatedLinks = useMemo(() => {
+    if (!selectedArea) return [];
+    return links.filter((l) => l.effectiveId === selectedArea.id && l.kind !== 'reservation');
+  }, [links, selectedArea]);
+
+  const completedTwoWeeksCount = useMemo(() => {
+    if (!selectedArea) return 0;
+    const twoWeeksAgo = addDaysToLocalDate(actualTodayDate, -13);
+    return snapshot.tasks.filter((t) => {
+      const matchesArea = t.lifeAreaId === selectedArea.id || t.areaId === selectedArea.id;
+      return (
+        matchesArea &&
+        t.completedAt &&
+        t.completedAt.slice(0, 10) >= twoWeeksAgo &&
+        t.completedAt.slice(0, 10) <= actualTodayDate
+      );
+    }).length;
+  }, [snapshot.tasks, selectedArea, actualTodayDate]);
+
+  const handleSaveSelectedArea = async () => {
+    if (!selectedArea) return;
+    try {
+      const nowIso = new Date().toISOString();
+      const updatedArea: LifeAreaQuestion = {
+        ...selectedArea,
+        rating: scoreDraft,
+        ratedAt: scoreDraft !== null ? nowIso : selectedArea.ratedAt,
+        goodEnoughUk: definitionDraft.trim() || null,
+        focus: focusDraft,
+        updatedAt: nowIso,
+        revision: selectedArea.revision + 1,
+      };
+      await repositories.saveLifeAreaQuestion(updatedArea, selectedArea.revision);
+
+      await repositories.saveLifeAreaAssessment(
+        buildLifeReview(
+          crypto.randomUUID(),
+          [updatedArea],
+          { [updatedArea.id]: { score: scoreDraft as ReviewAnswerDraft['score'], attentionNow: focusDraft, usefulChangeUk: null } },
+          actualTodayDate,
+          actualTodayDate,
+          nowIso
+        )
+      );
+
+      await onDataChanged('Сферу оновлено');
+      setSelectedAreaId(null);
+    } catch (err) {
+      console.error('Failed to save life area', err);
+    }
+  };
+
+  const currentReviewArea = activeLifeAreas[reviewStep] ?? null;
+  const currentReviewAnswer = currentReviewArea
+    ? reviewDrafts[currentReviewArea.id] ??
+      latestAssessmentAnswer(currentReviewArea.id) ?? {
+        score: currentReviewArea.rating ?? null,
+        attentionNow: currentReviewArea.focus ?? null,
+        usefulChangeUk: null,
+      }
+    : { score: null, attentionNow: null, usefulChangeUk: null };
+
+  const updateReviewDraft = (id: string, patch: Partial<ReviewAnswerDraft>) => {
+    setReviewDrafts((prev) => ({
+      ...prev,
+      [id]: {
+        ...(prev[id] ?? latestAssessmentAnswer(id) ?? {
+          score: null,
+          attentionNow: null,
+          usefulChangeUk: null,
+        }),
+        ...patch,
+      },
+    }));
+  };
+
+  const handleSavePeriodicReview = async () => {
+    try {
+      const nowIso = new Date().toISOString();
+      const twoWeeksAgo = addDaysToLocalDate(actualTodayDate, -13);
+
+      await repositories.saveLifeAreaAssessment(
+        buildLifeReview(
+          crypto.randomUUID(),
+          activeLifeAreas,
+          reviewDrafts,
+          twoWeeksAgo,
+          actualTodayDate,
+          nowIso
+        )
+      );
+
+      for (const area of activeLifeAreas) {
+        const draft = reviewDrafts[area.id];
+        if (draft && (draft.score !== undefined || draft.attentionNow !== undefined)) {
+          const updated: LifeAreaQuestion = {
+            ...area,
+            rating: draft.score !== undefined ? draft.score : area.rating,
+            ratedAt: draft.score !== undefined && draft.score !== null ? nowIso : area.ratedAt,
+            focus: draft.attentionNow !== undefined ? draft.attentionNow : area.focus,
+            updatedAt: nowIso,
+            revision: area.revision + 1,
+          };
+          await repositories.saveLifeAreaQuestion(updated, area.revision);
+        }
+      }
+
+      await onDataChanged('Огляд сфер збережено');
+      setLifeReviewOpen(false);
+      setReviewDrafts({});
+    } catch (err) {
+      console.error('Failed to save periodic review', err);
+    }
+  };
+
+  const { containerRef: meStageRef, captureOutgoingScreen } =
+    useSubScreenTransition(effectiveSubView, (v) => v !== 'overview');
+
   const handleSubViewChange = (
     next: MeSubViewMode,
-    categoryId?: string | null,
-    keepPlanningReview = false
+    categoryId?: string | null
   ) => {
-    if (!keepPlanningReview) {
-      setPlanningReviewOpen(false);
-    }
+    captureOutgoingScreen();
     onChangeSubView(next, categoryId);
   };
 
@@ -574,6 +752,18 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
     [wishes, wishlistViewScope, effectiveCategoryFilter, wishlistTimingFilter]
   );
 
+  const childWishFolders = useMemo(() => {
+    return snapshot.folders.filter(
+      (f) => f.kind === 'wishes' && (f.parentId ?? null) === activeWishFolderId
+    );
+  }, [snapshot.folders, activeWishFolderId]);
+
+  const displayWishes = useMemo(() => {
+    return groupedWishes.wishes.filter(
+      (w) => (w.folderId ?? null) === activeWishFolderId
+    );
+  }, [groupedWishes.wishes, activeWishFolderId]);
+
   // Add / Edit Wish Sheet state
   const [isWishSheetOpen, setIsWishSheetOpen] = useState(false);
   const [editingWishId, setEditingWishId] = useState<EntityId | null>(null);
@@ -615,7 +805,10 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
 
   useEffect(() => {
     const anyModal = Boolean(
-      isInspModalOpen ||
+      selectedAreaId ||
+        lifeReviewOpen ||
+        isLinkPickerOpen ||
+        isInspModalOpen ||
         isWishSheetOpen ||
         isCategoryManagerOpen ||
         confirmDeleteCategoryId
@@ -623,6 +816,9 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
     onModalStateChange?.(anyModal);
     return () => onModalStateChange?.(false);
   }, [
+    selectedAreaId,
+    lifeReviewOpen,
+    isLinkPickerOpen,
     isInspModalOpen,
     isWishSheetOpen,
     isCategoryManagerOpen,
@@ -651,30 +847,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
   };
 
   const openNewWishModal = () => {
-    setEditingWishId(null);
-    setWishTitleInput('');
-    setWishNoteInput('');
-    setWishTimingInput(
-      wishlistTimingFilter !== 'all' ? wishlistTimingFilter : 'later'
-    );
-    setWishCategoryInput(
-      effectiveCategoryFilter !== 'all' &&
-        effectiveCategoryFilter !== 'uncategorized'
-        ? effectiveCategoryFilter
-        : ''
-    );
-    setWishPriceInput('');
-    setWishCurrencyInput(settings.preferredWishlistCurrency ?? 'UAH');
-    setWishLinkInput('');
-    setWishProjectInput('');
-    setWishMediaIdInput(null);
-    setWishPreparedMedia(null);
-    setWishStatusInput('want');
-    setConfirmWishCurrency(false);
-    setQuickNewCatName('');
-    setActiveWishChips(new Set());
-    setWishFormError(null);
-    setIsWishSheetOpen(true);
+    onOpenGlobalCreation('wish');
   };
 
   const openEditWishModal = (wish: WishItem) => {
@@ -994,330 +1167,119 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
     : null;
 
   return (
-    <div className="space-y-4 pb-8" data-testid="destination-view-me">
+    <div
+      ref={meStageRef}
+      data-motion="idle"
+      className="space-y-4 pb-8"
+      data-testid="destination-view-me"
+    >
       {effectiveSubView === 'overview' ? (
-        <PageHeader title={UK_STRINGS.nav.me} />
+        <PageHeader
+          title={UK_STRINGS.nav.me}
+          actions={
+            <button
+              type="button"
+              className="ui-pill"
+              onClick={() => {
+                setReviewStep(0);
+                setReviewDrafts({});
+                setLifeReviewOpen(true);
+              }}
+            >
+              Огляд
+            </button>
+          }
+        />
       ) : (
         <SubHeader
           title={
             effectiveSubView === 'records'
-              ? 'Стан'
-              : effectiveSubView === 'life_areas'
-              ? 'Сфери життя'
-              : effectiveSubView === 'inspiration'
-              ? 'Моє бажане життя'
+              ? 'Статистика'
               : effectiveSubView === 'wishlist'
               ? 'Список бажань'
               : 'Налаштування'
           }
           onBack={() => handleSubViewChange('overview')}
           actions={
-            effectiveSubView === 'inspiration' ? (
-              <div className="flex items-center gap-2">
-                <InfoSheet title="Моє бажане життя">
-                  <p>
-                    Простір для описів, фото й орієнтирів без зобов’язань.
-                    Необов’язкові питання для роздумів:
-                  </p>
-                  <ul className="list-disc pl-5 space-y-1.5 mt-2">
-                    <li>Який вигляд має мій звичайний бажаний день?</li>
-                    <li>Які люди й стосунки мене оточують?</li>
-                    <li>Як я працюю і як відпочиваю?</li>
-                    <li>Яке місце займає творчість або розвиток?</li>
-                    <li>Чого я хочу більше, а чого — менше?</li>
-                  </ul>
-                </InfoSheet>
-                <RoundButton
-                  aria-label="Додати"
-                  data-testid="open-inspiration-modal-button"
-                  onClick={openNewInspirationModal}
-                >
-                  +
-                </RoundButton>
-              </div>
-            ) : effectiveSubView === 'wishlist' ? (
-              <div className="flex items-center gap-2">
-                <RoundButton
-                  aria-label="Додати бажання"
-                  data-testid="open-add-wish-button"
-                  onClick={openNewWishModal}
-                >
-                  +
-                </RoundButton>
-                <ActionMenu
-                  label="Дії списку бажань"
-                  testId="wishlist-header-menu"
-                  items={[
-                    {
-                      label: 'Керувати категоріями',
-                      onSelect: () => setIsCategoryManagerOpen(true),
-                    },
-                  ]}
-                />
-              </div>
+            effectiveSubView === 'wishlist' ? (
+              <ActionMenu
+                label="Дії списку бажань"
+                testId="wishlist-header-menu"
+                items={[
+                  {
+                    label: 'Керувати категоріями',
+                    onSelect: () => setIsCategoryManagerOpen(true),
+                  },
+                ]}
+              />
             ) : undefined
           }
         />
       )}
 
-      {/* SUBVIEW: OVERVIEW ("Я" Hub) */}
+      {/* SUBVIEW: OVERVIEW (Life Areas Are The Screen) */}
       {effectiveSubView === 'overview' && (
         <div
           className="space-y-4"
           data-testid="me-subview-overview"
           data-ui="content-start"
         >
-          <Section>
-            <div data-testid="me-overview-drilldown-list">
-              {(
-                [
-                  ['records', 'Стан'],
-                  ['life_areas', 'Сфери життя'],
-                  ['inspiration', 'Моє бажане життя'],
-                  ['wishlist', 'Список бажань'],
-                  ['settings', 'Налаштування'],
-                ] as const
-              )
-                .filter(
-                  ([id]) =>
-                    (id !== 'records' ||
-                      (settings.modules?.stateCheckInsEnabled ?? false)) &&
-                    (id !== 'inspiration' ||
-                      (settings.modules?.desiredLifeEnabled ?? false)) &&
-                    (id !== 'wishlist' ||
-                      (settings.modules?.wishlistEnabled ?? false))
-                )
-                .map(([id, title]) => (
-                  <Disclosure
-                    key={id}
-                    title={title}
-                    testId={`me-drilldown-${id.replace('_', '-')}`}
-                    onClick={() => handleSubViewChange(id)}
-                  />
-                ))}
-            </div>
-          </Section>
-          <Section>
-            <Disclosure
-              title="Щотижневий огляд"
-              onClick={() => setWeeklyOpen(true)}
-            />
-            <Disclosure
-              title="Короткий огляд планування"
-              testId="me-planning-review"
-              onClick={() => {
-                setPlanningReviewOpen(true);
-                handleSubViewChange('life_areas', undefined, true);
-              }}
-            />
-          </Section>
-          {weeklyOpen && (
-            <WeeklyReviewSheet
-              snapshot={snapshot}
-              today={actualTodayDate}
-              repositories={repositories}
-              onClose={() => setWeeklyOpen(false)}
-              onOpenPlan={onOpenPlan}
-              onPause={(p) => {
-                void repositories
-                  .saveProject(
-                    {
-                      ...p,
-                      state: 'paused',
-                      updatedAt: new Date().toISOString(),
-                    },
-                    p.revision
-                  )
-                  .then(() => onDataChanged());
-              }}
-              onInspectEvent={onInspectCalendarEvent}
-              onChanged={onDataChanged}
-            />
-          )}
-        </div>
-      )}
+          {/* ONE white card of 10 rows: GEL ORB in area color with thin icon, name, slim bar + "7/10" or "-", dot for "Фокус зараз" */}
+          <Card className="life-areas-card">
+            {activeLifeAreas.map((area, index) => {
+              const answer = latestAssessmentAnswer(area.id);
+              const rating = area.rating ?? answer?.score ?? null;
+              const color = areaColor(rating);
+              const iconName = AREA_ICONS[index % AREA_ICONS.length];
+              const isFocus = Boolean(area.focus || answer?.attentionNow);
 
-      {/* SUBVIEW: RECORDS ("Стан") */}
-      {effectiveSubView === 'records' && (
-        <div data-testid="me-subview-records" data-ui="content-start">
-          <StateCheckInsView
-            events={snapshot.events}
-            records={personalRecords}
-            today={actualTodayDate}
-            zone={activeZone}
-            enabled={settings.modules?.stateCheckInsEnabled ?? false}
-            repositories={repositories}
-            onChanged={() => onDataChanged()}
-          />
-        </div>
-      )}
-
-      {/* SUBVIEW: LIFE AREAS ("Сфери життя") */}
-      {effectiveSubView === 'life_areas' && (
-        <LifeAreasReviewView
-          key={planningReviewOpen ? 'planning' : 'areas'}
-          initialPlanningReview={planningReviewOpen}
-          snapshot={snapshot}
-          zone={activeZone}
-          today={actualTodayDate}
-          repositories={repositories}
-          onChanged={() => onDataChanged()}
-          onOpenPlan={onOpenPlan}
-          onInspectEvent={onInspectCalendarEvent}
-          onModalStateChange={onModalStateChange}
-        />
-      )}
-
-      {/* SUBVIEW: INSPIRATION ("Моє бажане життя") */}
-      {effectiveSubView === 'inspiration' && (
-        <div
-          className="space-y-4"
-          data-testid="me-subview-inspiration"
-          data-ui="content-start"
-        >
-          <Segmented<'preferred_life' | 'saved'>
-            label="Колекція"
-            value={inspCollectionFilter}
-            onChange={setInspCollectionFilter}
-            options={[
-              { value: 'preferred_life', label: 'Моє бажане життя' },
-              { value: 'saved', label: 'Збережене' },
-            ]}
-          />
-
-          <PillRow<InspirationTypeFilter>
-            label="Тип матеріалу"
-            value={inspTypeFilter}
-            onChange={setInspTypeFilter}
-            options={[
-              { value: 'all', label: 'Усі' },
-              { value: 'favorite', label: 'Вибрані' },
-              { value: 'text', label: 'Нотатки' },
-              { value: 'quote', label: 'Цитати' },
-              { value: 'link', label: 'Посилання' },
-              { value: 'image', label: 'Зображення' },
-            ]}
-          />
-
-          {filteredInspirationItems.length === 0 ? (
-            <Section>
-              <EmptyState
-                text="Ще немає записів"
-                action="Додати"
-                onAction={openNewInspirationModal}
-              />
-            </Section>
-          ) : (
-            <div
-              className="grid grid-cols-2 gap-3"
-              data-testid="inspiration-items-grid"
-            >
-              {filteredInspirationItems.map((item) => {
-                const imgUrl = item.mediaId
-                  ? mediaUrlById.get(item.mediaId)
-                  : undefined;
-                const linkedGoal = item.goalId
-                  ? snapshot.goals.find((g) => g.id === item.goalId)
-                  : undefined;
-                const linkedArea = item.lifeAreaId
-                  ? lifeAreaQuestions.find((a) => a.id === item.lifeAreaId)
-                  : undefined;
-
-                return (
-                  <article
-                    key={item.id}
-                    className="rounded-[20px] bg-[var(--bg-surface)] border border-[var(--border-subtle)] p-3 flex flex-col justify-between gap-2 min-w-0"
-                    data-testid={`inspiration-item-card-${item.id}`}
-                  >
-                    <div className="flex items-center justify-between gap-1">
-                      <span className="text-[0.6875rem] font-medium text-[var(--text-secondary)] truncate">
-                        {INSPIRATION_KIND_LABELS_UK[item.kind]}
+              return (
+                <Row
+                  key={area.id}
+                  leading={
+                    <Orb color={color} size={32}>
+                      <Icon name={iconName} size={16} color="rgba(255, 255, 255, 0.95)" />
+                    </Orb>
+                  }
+                  title={area.questionTextUk}
+                  trailing={
+                    <div className="flex items-center gap-2">
+                      <span className="area-score-bar">
+                        <i
+                          style={{
+                            width: rating !== null ? `${rating * 10}%` : '0%',
+                            backgroundColor: color,
+                          }}
+                        />
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => void handleToggleInspirationFavorite(item)}
-                        aria-label={
-                          item.isFavorite
-                            ? 'Прибрати з вибраного'
-                            : 'Додати у вибране'
-                        }
-                        aria-pressed={item.isFavorite}
-                        data-testid={`toggle-favorite-inspiration-${item.id}`}
-                        className={`w-11 h-11 -mr-2 -mt-2 inline-flex items-center justify-center rounded-full shrink-0 text-sm ${
-                          item.isFavorite
-                            ? 'text-amber-400'
-                            : 'text-[var(--text-secondary)]'
-                        }`}
-                      >
-                        <span aria-hidden="true">
-                          <Icon name="star" fill={item.isFavorite?'currentColor':'none'}/>
+                      <span className="text-xs font-semibold tabular-nums text-[var(--text-secondary)] w-7 text-right">
+                        {rating !== null ? `${rating}/10` : '-'}
+                      </span>
+                      {isFocus && (
+                        <span className="area-focus-dot text-blue-500 font-bold" title="Фокус зараз">
+                          ●
                         </span>
-                      </button>
+                      )}
+                      <Icon name="chevron-right" size={16} className="text-[var(--text-secondary)] opacity-50" />
                     </div>
+                  }
+                  onClick={() => {
+                    setSelectedAreaId(area.id);
+                    setScoreDraft(rating);
+                    setDefinitionDraft(area.goodEnoughUk ?? '');
+                    setFocusDraft(isFocus);
+                  }}
+                />
+              );
+            })}
+          </Card>
+        </div>
+      )}
 
-                    <button
-                      type="button"
-                      onClick={() => openEditInspirationModal(item)}
-                      data-testid={`open-inspiration-detail-${item.id}`}
-                      className="text-left flex-1 flex flex-col gap-1.5 min-h-[48px] min-w-0"
-                    >
-                      {item.kind === 'image' && imgUrl && (
-                        <div className="w-full h-24 rounded-[12px] overflow-hidden bg-[var(--bg-elevated)] border border-[var(--border-subtle)]">
-                          <img
-                            src={imgUrl}
-                            alt={item.title ?? 'Зображення'}
-                            className="w-full h-full object-cover"
-                            loading="lazy"
-                            data-testid={`inspiration-image-preview-${item.id}`}
-                          />
-                        </div>
-                      )}
-
-                      {item.title && (
-                        <h3 className="text-sm font-semibold text-[var(--text-primary)] leading-snug line-clamp-2 break-words">
-                          {item.title}
-                        </h3>
-                      )}
-
-                      {item.contentText && (
-                        <p
-                          className={`text-xs text-[var(--text-secondary)] line-clamp-3 break-words ${
-                            item.kind === 'quote' ? 'italic' : ''
-                          }`}
-                        >
-                          {item.contentText.length > 90
-                            ? `${item.contentText.slice(0, 88)}…`
-                            : item.contentText}
-                        </p>
-                      )}
-
-                      {item.kind === 'link' && item.linkUrl && (
-                        <span className="text-xs text-[var(--color-brand-text)] truncate block">
-                          {safeHostname(item.linkUrl)}
-                        </span>
-                      )}
-
-                      {linkedArea && !linkedGoal && (
-                        <span className="text-[0.6875rem] text-[var(--text-secondary)] truncate block mt-auto pt-1">
-                          {linkedArea.questionTextUk}
-                        </span>
-                      )}
-                    </button>
-
-                    {linkedGoal && (
-                      <button
-                        type="button"
-                        onClick={() => onOpenPlan('goal', linkedGoal.id)}
-                        className="min-h-[44px] px-2.5 rounded-xl bg-[var(--bg-elevated)] border border-[var(--border-subtle)] text-left text-xs font-medium text-[var(--text-secondary)] truncate w-full"
-                      >
-                        {`Ціль: ${linkedGoal.title}`}
-                      </button>
-                    )}
-                  </article>
-                );
-              })}
-            </div>
-          )}
+      {/* SUBVIEW: RECORDS ("Статистика") */}
+      {effectiveSubView === 'records' && (
+        <div data-testid="me-subview-records" data-ui="content-start" className="space-y-4">
+          <EmptyState text="Статистика з'явиться пізніше" />
         </div>
       )}
 
@@ -1351,7 +1313,6 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
                   'active',
                   'purchased',
                   'not_relevant',
-                  'fulfilled',
                   'archived',
                 ] as const
               ).map((scope) => ({
@@ -1360,28 +1321,65 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
               }))}
             >
               <span className="ui-pill px-3 py-2 inline-flex items-center gap-1 text-xs font-medium bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-full whitespace-nowrap">
-                {WISH_SCOPE_LABELS_UK[wishlistViewScope]} <Icon name="chevron-down"/>
+                {WISH_SCOPE_LABELS_UK[wishlistViewScope]} <Icon name="chevron-down" size={14} />
               </span>
             </ActionMenu>
           </div>
 
-          {sortedCategories.length > 0 && (
-            <PillRow<WishlistCategoryFilter>
-              label="Категорії бажань"
-              value={effectiveCategoryFilter}
-              onChange={handleSelectCategoryFilter}
-              options={[
-                { value: 'all', label: 'Усі категорії' },
-                { value: 'uncategorized', label: 'Без категорії' },
-                ...sortedCategories.map((cat) => ({
-                  value: cat.id,
-                  label: cat.name,
-                })),
-              ]}
-            />
+          {/* Folder tree first: Breadcrumbs if inside folder, and child folders */}
+          {activeWishFolderId && (
+            <div className="folder-breadcrumbs flex items-center gap-2 py-1">
+              <RoundButton
+                aria-label="Назад до всіх папок"
+                onClick={() => {
+                  const currentFolder = snapshot.folders.find((f) => f.id === activeWishFolderId);
+                  setActiveWishFolderId(currentFolder?.parentId ?? null);
+                }}
+              >
+                <Icon name="chevron-left" size={18} />
+              </RoundButton>
+              <span className="breadcrumb-path font-semibold text-sm">
+                {snapshot.folders.find((f) => f.id === activeWishFolderId)?.name ?? 'Папка'}
+              </span>
+            </div>
           )}
 
-          {groupedWishes.totalMatchingCount === 0 ? (
+          {/* Child folders for wishes */}
+          {childWishFolders.length > 0 && (
+            <div className="folders-list space-y-1">
+              {childWishFolders.map((folder) => {
+                const folderArea = resolveArea(folder, modelContext);
+                const folderColor = folderArea ? itemColor(folder, modelContext) : 'var(--color-neutral-slate)';
+                const folderWishesCount = wishes.filter((w) => w.folderId === folder.id).length;
+
+                return (
+                  <div
+                    key={folder.id}
+                    className="folder-row flex items-center justify-between p-3 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] cursor-pointer"
+                    onClick={() => setActiveWishFolderId(folder.id)}
+                  >
+                    <div className="folder-info flex items-center gap-2">
+                      <Orb color={folderColor} size={24}>
+                        <Icon name="folder" size={13} color="rgba(255, 255, 255, 0.95)" />
+                      </Orb>
+                      <strong className="text-sm font-semibold">{folder.name}</strong>
+                    </div>
+                    <div className="folder-actions flex items-center gap-2">
+                      {folderWishesCount > 0 && (
+                        <span className="folder-count text-xs text-[var(--text-secondary)]">
+                          {folderWishesCount}
+                        </span>
+                      )}
+                      <Icon name="chevron-right" size={16} className="text-[var(--text-secondary)] opacity-50" />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Wish rows */}
+          {displayWishes.length === 0 && childWishFolders.length === 0 ? (
             <Section>
               <EmptyState
                 text="Список бажань порожній"
@@ -1392,24 +1390,11 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
             </Section>
           ) : (
             <Section>
-              {groupedWishes.wishes.map((wish) => {
-                const approxPrice = formatWishApproximatePriceUk(
-                  wish.estimatedPrice
-                );
-                const cat = wish.categoryId
-                  ? sortedCategories.find((c) => c.id === wish.categoryId)
-                  : undefined;
-                const linkedProject = wish.projectId
-                  ? projects.find((p) => p.id === wish.projectId)
-                  : undefined;
-                const wishImgUrl = wish.mediaId
-                  ? mediaUrlById.get(wish.mediaId)
-                  : undefined;
-                const secondaryParts = [
-                  approxPrice,
-                  WISHLIST_TIMING_LABELS_UK[wish.timing],
-                  linkedProject ? linkedProject.title : null,
-                ].filter(Boolean);
+              {displayWishes.map((wish) => {
+                const approxPrice = formatWishApproximatePriceUk(wish.estimatedPrice);
+                const wishAreaColor = itemColor(wish, modelContext);
+                const currentStatus = getWishPurchaseStatus(wish);
+                const timingLabel = WISHLIST_TIMING_LABELS_UK[wish.timing];
 
                 return (
                   <div
@@ -1417,100 +1402,88 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
                     className="ui-row border-b last:border-b-0 border-[var(--border-subtle)] px-3 py-2 flex items-center gap-3"
                     data-testid={`wish-item-card-${wish.id}`}
                   >
+                    {/* Orb tile in area color */}
+                    <Orb color={wishAreaColor} size={32}>
+                      <Icon name="gift" size={16} color="rgba(255, 255, 255, 0.95)" />
+                    </Orb>
+
                     <button
                       type="button"
                       onClick={() => openEditWishModal(wish)}
                       data-testid={`edit-wish-button-${wish.id}`}
-                      className="flex items-center gap-3 flex-1 min-w-0 min-h-[48px] text-left"
+                      className="flex-1 min-w-0 text-left cursor-pointer"
                     >
-                      <span
-                        className="ui-icon-tile shrink-0 overflow-hidden"
-                        aria-hidden="true"
-                      >
-                        {wishImgUrl ? (
-                          <img
-                            src={wishImgUrl}
-                            alt=""
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <Gift className="w-4 h-4 text-[var(--color-brand-text)]" />
+                      <div className="text-sm font-semibold text-[var(--text-primary)] truncate">
+                        {wish.title}
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-[var(--text-secondary)] mt-0.5">
+                        {approxPrice && <span>{approxPrice}</span>}
+                        {timingLabel && (
+                          <span className="px-1.5 py-0.5 rounded text-[0.6875rem] bg-[var(--bg-elevated)] border border-[var(--border-subtle)]">
+                            {timingLabel}
+                          </span>
                         )}
-                      </span>
-                      <span className="ui-row-text">
-                        <span>{wish.title}</span>
-                        {secondaryParts.length > 0 && (
-                          <small data-testid={`wish-price-${wish.id}`}>
-                            {secondaryParts.join(' · ')}
-                          </small>
-                        )}
-                      </span>
+                      </div>
+
+                      {/* Measure bar when set */}
+                      {wish.measure && (
+                        <div className="wish-measure-block mt-1">
+                          <div className="wish-measure-track h-1 bg-[rgba(0,0,0,0.08)] rounded-full overflow-hidden w-28">
+                            <div
+                              className="wish-measure-fill h-full bg-[var(--text-primary)]"
+                              style={{
+                                width: wish.measure.target
+                                  ? `${Math.min(100, Math.round((wish.measure.current / wish.measure.target) * 100))}%`
+                                  : '0%',
+                              }}
+                            />
+                          </div>
+                          <span className="text-[0.6875rem] text-[var(--text-secondary)] tabular-nums">
+                            {wish.measure.current} / {wish.measure.target ?? '—'} {wish.measure.unit}
+                          </span>
+                        </div>
+                      )}
                     </button>
 
-                    <span className="ui-row-trailing">
-                      {cat && (
-                        <span className="px-2.5 py-1 rounded-full text-xs bg-[var(--bg-pressed)] text-[var(--text-secondary)] truncate max-w-[100px]">
-                          {cat.name}
-                        </span>
-                      )}
-                      <ActionMenu
-                        label={`Дії: ${wish.title}`}
-                        testId={`wish-actions-${wish.id}`}
-                        items={[
-                          ...(getWishPurchaseStatus(wish) !== 'purchased'
-                            ? [
-                                {
-                                  label: 'Куплено',
-                                  onSelect: () =>
-                                    void handleSetWishStatus(wish, 'purchased'),
-                                },
-                              ]
-                            : []),
-                          ...(getWishPurchaseStatus(wish) !== 'not_relevant'
-                            ? [
-                                {
-                                  label: 'Більше не актуально',
-                                  onSelect: () =>
-                                    void handleSetWishStatus(
-                                      wish,
-                                      'not_relevant'
-                                    ),
-                                },
-                              ]
-                            : []),
-                          ...(getWishPurchaseStatus(wish) !== 'want'
-                            ? [
-                                {
-                                  label: 'Хочу',
-                                  onSelect: () =>
-                                    void handleSetWishStatus(wish, 'want'),
-                                },
-                              ]
-                            : []),
-                          {
-                            label: wish.archived ? 'З архіву' : 'В архів',
-                            onSelect: () => void handleToggleArchiveWish(wish),
-                          },
-                          ...(linkedProject
-                            ? [
-                                {
-                                  label: `Проєкт: ${linkedProject.title}`,
-                                  onSelect: () =>
-                                    onOpenPlan('project', linkedProject.id),
-                                },
-                              ]
-                            : []),
-                          {
-                            label: 'Редагувати',
-                            onSelect: () => openEditWishModal(wish),
-                          },
-                          {
-                            label: 'Видалити',
-                            onSelect: () => void handleDeleteWish(wish.id),
-                          },
-                        ]}
-                      />
-                    </span>
+                    {/* Status menu "Хочу ⌄" (keeping every existing status, never auto-creates tasks) */}
+                    <ActionMenu
+                      label={`Статус: ${WISH_STATUS_LABELS_UK[currentStatus]}`}
+                      items={[
+                        { label: 'Хочу', onSelect: () => void handleSetWishStatus(wish, 'want') },
+                        { label: 'Куплено', onSelect: () => void handleSetWishStatus(wish, 'purchased') },
+                        { label: 'Більше не актуально', onSelect: () => void handleSetWishStatus(wish, 'not_relevant') },
+                      ]}
+                    >
+                      <span className="ui-pill text-xs px-2.5 py-1 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-full flex items-center gap-1 cursor-pointer">
+                        {WISH_STATUS_LABELS_UK[currentStatus]} <Icon name="chevron-down" size={12} />
+                      </span>
+                    </ActionMenu>
+
+                    {/* ⋯ ActionMenu */}
+                    <ActionMenu
+                      label={`Дії: ${wish.title}`}
+                      testId={`wish-actions-${wish.id}`}
+                      items={[
+                        ...(currentStatus !== 'purchased'
+                          ? [{ label: 'Куплено', onSelect: () => void handleSetWishStatus(wish, 'purchased') }]
+                          : []),
+                        ...(currentStatus !== 'not_relevant'
+                          ? [{ label: 'Більше не актуально', onSelect: () => void handleSetWishStatus(wish, 'not_relevant') }]
+                          : []),
+                        {
+                          label: wish.archived ? 'З архіву' : 'В архів',
+                          onSelect: () => void handleToggleArchiveWish(wish),
+                        },
+                        {
+                          label: 'Редагувати',
+                          onSelect: () => openEditWishModal(wish),
+                        },
+                        {
+                          label: 'Видалити',
+                          onSelect: () => void handleDeleteWish(wish.id),
+                        },
+                      ]}
+                    />
                   </div>
                 );
               })}
@@ -2024,7 +1997,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
             <button
               type="submit"
               data-testid="create-wishlist-category-button"
-              className="ui-primary text-xs px-4 py-2.5 shrink-0"
+              className="ui-primary"
             >
               Додати
             </button>
@@ -2065,7 +2038,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
                           type="button"
                           onClick={() => void handleSaveRenameCategory(cat)}
                           data-testid={`save-rename-category-${cat.id}`}
-                          className="ui-primary text-xs px-3 py-2"
+                          className="ui-pill text-xs px-3 py-2"
                         >
                           Зберегти
                         </button>
@@ -2161,6 +2134,441 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
             </Section>
           )}
         </div>
+      </Sheet>
+
+      {/* ====================================================================
+          SHEET 4: LIFE AREA DETAILS & EDIT
+          ==================================================================== */}
+      <Sheet
+        isOpen={selectedArea !== null}
+        onClose={() => setSelectedAreaId(null)}
+        title={selectedArea?.questionTextUk ?? 'Сфера життя'}
+      >
+        {selectedArea && (
+          <div className="space-y-4">
+            {/* Slider 0-10 (unset state; the value floats while dragging) */}
+            <div className="p-3.5 rounded-2xl bg-[var(--bg-elevated)] border border-[var(--border-subtle)] space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold text-[var(--text-primary)]">
+                  Рівень задоволеності
+                </span>
+                <span className="text-sm font-bold tabular-nums text-[var(--text-secondary)]">
+                  {scoreDraft !== null ? `${scoreDraft}/10` : 'Не визначено'}
+                </span>
+              </div>
+              <Slider
+                label="Рівень задоволеності"
+                value={scoreDraft}
+                min={0}
+                max={10}
+                step={1}
+                onChange={(v) => setScoreDraft(v)}
+              />
+              {scoreDraft !== null && (
+                <button
+                  type="button"
+                  onClick={() => setScoreDraft(null)}
+                  className="text-xs text-[var(--text-secondary)] underline hover:text-[var(--text-primary)] cursor-pointer"
+                >
+                  Скинути оцінку
+                </button>
+              )}
+            </div>
+
+            {/* Field: "Що означає «достатньо добре» для мене" */}
+            <TextAreaField
+              label="Що означає «достатньо добре» для мене"
+              value={definitionDraft}
+              onChange={(e) => setDefinitionDraft(e.target.value)}
+              placeholder="Опишіть орієнтир для цієї сфери..."
+              rows={3}
+            />
+
+            {/* Toggle: "Фокус зараз" */}
+            <div className="flex items-center justify-between p-3.5 rounded-2xl bg-[var(--bg-elevated)] border border-[var(--border-subtle)]">
+              <div>
+                <p className="text-sm font-semibold text-[var(--text-primary)]">Фокус зараз</p>
+                <p className="text-xs text-[var(--text-secondary)]">
+                  Приділяти більше уваги у щоденному плануванні
+                </p>
+              </div>
+              <Toggle
+                label="Фокус зараз"
+                checked={focusDraft}
+                onChange={(checked) => setFocusDraft(checked)}
+              />
+            </div>
+
+            {/* Section: "Що підтримує цю сферу" (items that use this area; effort only as "N кроків за 2 тижні" when > 0; NEVER changes rating) */}
+            <Section title="Що підтримує цю сферу">
+              {completedTwoWeeksCount > 0 && (
+                <div className="px-3 py-2 text-xs font-semibold text-[var(--text-secondary)] bg-[var(--bg-elevated)]/50 rounded-xl mb-1">
+                  {completedTwoWeeksCount}{' '}
+                  {completedTwoWeeksCount === 1
+                    ? 'крок'
+                    : completedTwoWeeksCount < 5
+                    ? 'кроки'
+                    : 'кроків'}{' '}
+                  за 2 тижні
+                </div>
+              )}
+              {relatedLinks.length === 0 ? (
+                <div className="px-3 py-2 text-xs text-[var(--text-secondary)]">
+                  Немає пов'язаних записів
+                </div>
+              ) : (
+                relatedLinks.map((l) => (
+                  <Row
+                    key={`${l.kind}-${l.id}`}
+                    leading={
+                      <Orb color={areaColor(selectedArea.rating)} size={24}>
+                        <Icon
+                          name={
+                            l.kind === 'project'
+                              ? 'folder'
+                              : l.kind === 'goal'
+                              ? 'check'
+                              : l.kind === 'habit'
+                              ? 'sparkles'
+                              : 'check'
+                          }
+                          size={12}
+                          color="rgba(255, 255, 255, 0.95)"
+                        />
+                      </Orb>
+                    }
+                    title={l.title}
+                    secondary={
+                      l.kind === 'project'
+                        ? 'Проєкт'
+                        : l.kind === 'goal'
+                        ? 'Ціль'
+                        : l.kind === 'habit'
+                        ? 'Звичка'
+                        : l.kind === 'folder'
+                        ? 'Папка'
+                        : l.kind === 'event'
+                        ? 'Подія'
+                        : l.kind === 'inspiration'
+                        ? 'Матеріал'
+                        : 'Завдання'
+                    }
+                  />
+                ))
+              )}
+            </Section>
+
+            {/* Rows: "Додати крок" and "Пов'язати запис" */}
+            <div className="space-y-2 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedAreaId(null);
+                  onOpenGlobalCreation?.('task');
+                }}
+                className="w-full flex items-center justify-center gap-2 p-3 rounded-2xl bg-[var(--bg-elevated)] border border-[var(--border-subtle)] text-sm font-semibold text-[var(--text-primary)] hover:bg-[var(--bg-surface-hover)] cursor-pointer"
+              >
+                <Icon name="plus" size={16} /> Додати крок
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsLinkPickerOpen(true)}
+                className="w-full flex items-center justify-center gap-2 p-3 rounded-2xl bg-[var(--bg-elevated)] border border-[var(--border-subtle)] text-sm font-semibold text-[var(--text-primary)] hover:bg-[var(--bg-surface-hover)] cursor-pointer"
+              >
+                <Icon name="link" size={16} /> Пов'язати запис
+              </button>
+            </div>
+
+            {/* Sticky: "Зберегти" */}
+            <div className="sticky bottom-0 pt-3 bg-gradient-to-t from-[var(--bg-surface)] via-[var(--bg-surface)] to-transparent pb-1">
+              <button
+                type="button"
+                onClick={() => void handleSaveSelectedArea()}
+                className="ui-primary w-full font-semibold"
+              >
+                Зберегти
+              </button>
+            </div>
+          </div>
+        )}
+      </Sheet>
+
+      {/* ====================================================================
+          SHEET 5: LINK RECORD TO AREA
+          ==================================================================== */}
+      <Sheet
+        isOpen={isLinkPickerOpen}
+        onClose={() => setIsLinkPickerOpen(false)}
+        title="Пов'язати запис зі сферою"
+      >
+        <div className="space-y-3">
+          <p className="text-xs text-[var(--text-secondary)]">
+            Оберіть елемент, щоб пов'язати його зі сферою «{selectedArea?.questionTextUk}»:
+          </p>
+          <div className="max-h-[60vh] overflow-y-auto space-y-1">
+            {/* Unlinked or other projects */}
+            {projects
+              .filter((p) => p.lifeAreaId !== selectedArea?.id && !p.archived)
+              .map((p) => (
+                <Row
+                  key={p.id}
+                  leading={
+                    <Orb color="var(--color-neutral-slate)" size={24}>
+                      <Icon name="folder" size={12} color="rgba(255, 255, 255, 0.95)" />
+                    </Orb>
+                  }
+                  title={p.title}
+                  secondary="Проєкт"
+                  onClick={async () => {
+                    if (!selectedArea) return;
+                    await repositories.setLifeAreaLink('project', p.id, selectedArea.id, p.revision);
+                    await onDataChanged("Проєкт пов'язано зі сферою");
+                    setIsLinkPickerOpen(false);
+                  }}
+                />
+              ))}
+            {/* Unlinked or other habits */}
+            {snapshot.habits
+              .filter((h) => h.lifeAreaId !== selectedArea?.id && h.state !== 'archived')
+              .map((h) => (
+                <Row
+                  key={h.id}
+                  leading={
+                    <Orb color="var(--color-neutral-slate)" size={24}>
+                      <Icon name="sparkles" size={12} color="rgba(255, 255, 255, 0.95)" />
+                    </Orb>
+                  }
+                  title={h.name}
+                  secondary="Звичка"
+                  onClick={async () => {
+                    if (!selectedArea) return;
+                    await repositories.setLifeAreaLink('habit', h.id, selectedArea.id, h.revision);
+                    await onDataChanged("Звичку пов'язано зі сферою");
+                    setIsLinkPickerOpen(false);
+                  }}
+                />
+              ))}
+            {/* Unlinked open tasks */}
+            {snapshot.tasks
+              .filter((t) => t.state === 'open' && t.lifeAreaId !== selectedArea?.id)
+              .slice(0, 30)
+              .map((t) => (
+                <Row
+                  key={t.id}
+                  leading={
+                    <Orb color="var(--color-neutral-slate)" size={24}>
+                      <Icon name="check" size={12} color="rgba(255, 255, 255, 0.95)" />
+                    </Orb>
+                  }
+                  title={t.title}
+                  secondary="Завдання"
+                  onClick={async () => {
+                    if (!selectedArea) return;
+                    await repositories.setLifeAreaLink('task', t.id, selectedArea.id, t.revision);
+                    await onDataChanged("Завдання пов'язано зі сферою");
+                    setIsLinkPickerOpen(false);
+                  }}
+                />
+              ))}
+            {/* Unlinked active wishes */}
+            {wishes
+              .filter((w) => w.areaId !== selectedArea?.id && !w.archived)
+              .map((w) => (
+                <Row
+                  key={w.id}
+                  leading={
+                    <Orb color="var(--color-neutral-slate)" size={24}>
+                      <Icon name="gift" size={12} color="rgba(255, 255, 255, 0.95)" />
+                    </Orb>
+                  }
+                  title={w.title}
+                  secondary="Бажання"
+                  onClick={async () => {
+                    if (!selectedArea) return;
+                    const updatedWish: WishItem = {
+                      ...w,
+                      areaId: selectedArea.id,
+                      updatedAt: new Date().toISOString(),
+                      revision: w.revision + 1,
+                    };
+                    await repositories.saveWishItem(updatedWish, w.revision);
+                    await onDataChanged("Бажання пов'язано зі сферою");
+                    setIsLinkPickerOpen(false);
+                  }}
+                />
+              ))}
+          </div>
+        </div>
+      </Sheet>
+
+      {/* ====================================================================
+          SHEET 6: PERIODIC LIFE AREAS REVIEW
+          ==================================================================== */}
+      <Sheet
+        isOpen={lifeReviewOpen}
+        onClose={() => {
+          setLifeReviewOpen(false);
+          setReviewDrafts({});
+        }}
+        title="Огляд сфер життя"
+      >
+        {currentReviewArea && (
+          <div className="space-y-4">
+            {/* Progress dots */}
+            <div className="flex items-center justify-center gap-1.5 py-1">
+              {activeLifeAreas.map((area, idx) => {
+                const isDone = reviewDrafts[area.id] !== undefined;
+                const isCurrent = idx === reviewStep;
+                return (
+                  <button
+                    key={area.id}
+                    type="button"
+                    aria-label={`Сфера ${idx + 1}: ${area.questionTextUk}`}
+                    onClick={() => setReviewStep(idx)}
+                    className={`h-2 rounded-full transition-all duration-200 cursor-pointer ${
+                      isCurrent
+                        ? 'w-6 bg-[var(--text-primary)]'
+                        : isDone
+                        ? 'w-2 bg-[var(--text-primary)]/50'
+                        : 'w-2 bg-[var(--border-subtle)]'
+                    }`}
+                  />
+                );
+              })}
+            </div>
+
+            {/* Current Area Header */}
+            <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-[var(--bg-elevated)] border border-[var(--border-subtle)]">
+              <Orb color={areaColor(currentReviewAnswer.score)} size={36}>
+                <Icon
+                  name={AREA_ICONS[reviewStep % AREA_ICONS.length]}
+                  size={18}
+                  color="rgba(255, 255, 255, 0.95)"
+                />
+              </Orb>
+              <div>
+                <span className="text-xs text-[var(--text-secondary)] font-medium">
+                  Сфера {reviewStep + 1} з {activeLifeAreas.length}
+                </span>
+                <h3 className="text-base font-bold text-[var(--text-primary)]">
+                  {currentReviewArea.questionTextUk}
+                </h3>
+              </div>
+            </div>
+
+            {/* Satisfaction Slider */}
+            <div className="p-3.5 rounded-2xl bg-[var(--bg-elevated)] border border-[var(--border-subtle)] space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold text-[var(--text-primary)]">
+                  Задоволеність (0–10)
+                </span>
+                <span className="text-sm font-bold tabular-nums text-[var(--text-secondary)]">
+                  {currentReviewAnswer.score !== null
+                    ? `${currentReviewAnswer.score}/10`
+                    : 'Не визначено'}
+                </span>
+              </div>
+              <Slider
+                label="Задоволеність"
+                value={currentReviewAnswer.score}
+                min={0}
+                max={10}
+                step={1}
+                onChange={(v) =>
+                  updateReviewDraft(currentReviewArea.id, {
+                    score: v as ReviewAnswerDraft['score'],
+                  })
+                }
+              />
+            </div>
+
+            {/* Toggle "Приділити увагу зараз?" */}
+            <div className="flex items-center justify-between p-3.5 rounded-2xl bg-[var(--bg-elevated)] border border-[var(--border-subtle)]">
+              <div>
+                <p className="text-sm font-semibold text-[var(--text-primary)]">
+                  Приділити увагу зараз?
+                </p>
+                <p className="text-xs text-[var(--text-secondary)]">
+                  Зробити цю сферу фокусною на найближчий період
+                </p>
+              </div>
+              <Toggle
+                label="Приділити увагу зараз?"
+                checked={Boolean(currentReviewAnswer.attentionNow)}
+                onChange={(checked) =>
+                  updateReviewDraft(currentReviewArea.id, { attentionNow: checked })
+                }
+              />
+            </div>
+
+            {/* One helpful change via pills */}
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-[var(--text-secondary)]">
+                Одна корисна зміна
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  'Додати регулярну дію',
+                  'Створити проєкт',
+                  'Звільнити час',
+                  'Запланувати зустріч',
+                  'Знизити навантаження',
+                  'Змінити підхід',
+                ].map((pillText) => {
+                  const isSelected =
+                    currentReviewAnswer.usefulChangeUk === pillText;
+                  return (
+                    <button
+                      key={pillText}
+                      type="button"
+                      onClick={() =>
+                        updateReviewDraft(currentReviewArea.id, {
+                          usefulChangeUk: isSelected ? null : pillText,
+                        })
+                      }
+                      className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-[var(--text-primary)] text-[var(--bg-surface)] border-[var(--text-primary)]'
+                          : 'bg-[var(--bg-elevated)] text-[var(--text-secondary)] border-[var(--border-subtle)] hover:text-[var(--text-primary)]'
+                      }`}
+                    >
+                      {pillText}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Navigation & Submit footer */}
+            <div className="flex items-center justify-between pt-3 border-t border-[var(--border-subtle)]">
+              <button
+                type="button"
+                disabled={reviewStep === 0}
+                onClick={() => setReviewStep((s) => Math.max(0, s - 1))}
+                className="ui-pill px-4 py-2 text-xs font-medium disabled:opacity-30 cursor-pointer"
+              >
+                Назад
+              </button>
+              {reviewStep < activeLifeAreas.length - 1 ? (
+                <button
+                  type="button"
+                  onClick={() => setReviewStep((s) => s + 1)}
+                  className="ui-primary text-xs px-5 py-2 cursor-pointer"
+                >
+                  Далі
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void handleSavePeriodicReview()}
+                  className="ui-primary text-xs px-5 py-2 font-semibold cursor-pointer"
+                >
+                  Зберегти огляд
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </Sheet>
     </div>
   );

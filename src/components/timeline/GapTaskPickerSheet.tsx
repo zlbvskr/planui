@@ -1,5 +1,14 @@
 import { formatDate, formatDuration } from '../../lib/format';
-import { Row, TimeField, Toggle } from '../../ui';
+import {
+  Row,
+  TimeField,
+  Toggle,
+  Button,
+  FeedbackBanner,
+  InputField,
+  ModalSheet,
+  SelectField,
+} from '../../ui';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   CalendarEvent,
@@ -14,13 +23,6 @@ import {
 } from '../../domain/scheduling';
 import { PlanuiRepositories } from '../../storage/repositories';
 import { UK_STRINGS } from '../../i18n/uk';
-import {
-  Button,
-  FeedbackBanner,
-  InputField,
-  ModalSheet,
-  SelectField,
-} from '../ui/primitives';
 
 export interface GapTaskPickerSheetProps {
   isOpen: boolean;
@@ -543,19 +545,14 @@ export function GapTaskPickerSheet({
           </div>
         )}
 
-        <div className="flex items-center justify-end gap-2 pt-2">
-          <Button type="button" variant="secondary" onClick={onClose}>
-            {UK_STRINGS.app.cancelButton}
-          </Button>
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={isSaving || !selectedTask}
-            data-testid="gap-picker-submit-button"
-          >
-            {UK_STRINGS.gapPicker.confirmScheduleButton}
-          </Button>
-        </div>
+        <Button
+          type="submit"
+          variant="primary"
+          disabled={isSaving || !selectedTask}
+          data-testid="gap-picker-submit-button"
+        >
+          {UK_STRINGS.gapPicker.confirmScheduleButton}
+        </Button>
       </form>
     </ModalSheet>
   );

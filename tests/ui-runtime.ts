@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { mkdir, readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import { webkit, type Page } from 'playwright';
+import { webkit, chromium, type Page } from 'playwright';
 import { UI_CLOCK, UI_ZONE, type UiFixtureVariant } from '../src/test/ui-fixture';
 
 export async function startUiRuntime() {
@@ -13,7 +13,16 @@ export async function startUiRuntime() {
   let log='';let started=alreadyUp;server?.stdout?.on('data',v=>{log+=v;if(String(v).includes('Local:'))started=true;});server?.stderr?.on('data',v=>{log+=v;});
   try {
     for(let attempt=0;attempt<100;attempt++) { try{if((!server||started)&&(await fetch(url)).ok){await new Promise(r=>setTimeout(r,50));if(server?.exitCode!==null&&server?.exitCode!==undefined)throw new Error(log);break;}}catch{} if(server?.exitCode!==null&&server?.exitCode!==undefined)throw new Error(log);if(attempt===99)throw new Error(`Vite did not start: ${log}`);await new Promise(r=>setTimeout(r,100)); }
-    const browser=await webkit.launch();
+    let browser;
+    try {
+      browser=await webkit.launch();
+    } catch {
+      try {
+        browser=await chromium.launch({args:['--no-sandbox']});
+      } catch {
+        browser=await chromium.launch({executablePath:'/ms-playwright/chrome-headless-shell-linux64/chrome-headless-shell',args:['--no-sandbox']});
+      }
+    }
     const out=process.env.UI_ARTIFACT_DIR??'/tmp/planui-stage-0';await mkdir(out,{recursive:true});
     return {url,browser,out,async close(){await browser.close();server?.kill();}};
   }catch(error){server?.kill();throw error;}

@@ -1,35 +1,24 @@
-import {Icon} from '../ui/icons';
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Icon } from "../ui/icons";
+import { RoundButton, TintedCard, EventBar, Orb } from "../ui";
 import {
-  ChevronLeft,
-  ChevronRight,
-  Stamp,
-} from "../ui/icons";
-import {
-  PageHeader,
-  Segmented,
-  RoundButton,
-  Pill,
-  ActionMenu,
-  InfoSheet,
-  Section,
-  Row,
-  ItemCard,
-  Sheet,
-  EmptyState,
-} from "../ui";
+  easings,
+  ensureMotionRootAttribute,
+  isReducedMotion,
+  runInterruptibleAnimation,
+  tweens,
+} from "../ui/motion";
+import { HabitBand } from "../components/today/HabitBand";
 import {
   formatMonthYear,
-  formatDateRange,
   formatShortDate,
   formatTimeRange,
   sentenceCase,
 } from "../lib/format";
 import { CalendarGrid } from "../components/calendar/CalendarGrid";
-import { WorkRosterSubview } from "../components/roster/WorkRosterSubview";
-import { SharedDayTimeline } from "../components/timeline/SharedDayTimeline";
+import { CalendarWeekGrid } from "../components/calendar/CalendarWeekGrid";
 import { TaskPlanningSheet } from "../components/today/TaskPlanningSheet";
-import { directionFor } from "../components/timeline/itemPresentation";
+import { itemColor } from "../domain/modelHelpers";
 import {
   RoadmapSource,
   projectRoadmap,
@@ -38,8 +27,6 @@ import {
 import {
   CalendarSecondaryFilter,
   UnoccupiedTimeGap,
-  ProjectedDaySchedule,
-  applyCalendarSecondaryFilter,
   projectMonthCalendarGrid,
   projectScheduleForDate,
 } from "../domain/scheduling";
@@ -50,6 +37,8 @@ import {
   CalendarEvent,
   DayOffAnnotation,
   EntityId,
+  Habit,
+  HabitEntry,
   IanaTimeZone,
   LocalDateString,
   ShiftTemplate,
@@ -61,7 +50,7 @@ import {
   ImplementedCreationActionKind,
 } from "../state/shellStore";
 import { PlanuiRepositories } from "../storage/repositories";
-import { RoadmapCalendarLayer } from "./RoadmapCalendarLayer";
+
 export interface CalendarWorkspaceViewProps {
   roadmapSource: RoadmapSource;
   settings: PlanuiSettings;
@@ -77,6 +66,8 @@ export interface CalendarWorkspaceViewProps {
   dayOffAnnotations: readonly DayOffAnnotation[];
   shiftTemplates: readonly ShiftTemplate[];
   repositories: PlanuiRepositories;
+  habits?: readonly Habit[];
+  habitEntries?: readonly HabitEntry[];
   onChangeMode: (nextMode: CalendarViewMode) => void;
   onChangeSecondaryFilter: (nextFilter: CalendarSecondaryFilter) => void;
   onSelectDate: (nextDate: LocalDateString) => void;
@@ -84,57 +75,62 @@ export interface CalendarWorkspaceViewProps {
   onCancelEvent: (eventId: EntityId, revision: number) => Promise<void> | void;
   onInspectHabitSession?: (reservation: TaskReservation) => void;
   onInspectEvent: (event: CalendarEvent) => void;
-  onOpenGapPicker: (gap: UnoccupiedTimeGap) => void;
+  onOpenGapPicker?: (gap: UnoccupiedTimeGap) => void;
   onOpenGlobalCreation: (
     preferredAction?: ImplementedCreationActionKind,
   ) => void;
   onDataChanged: (feedbackMessage?: string) => Promise<void> | void;
   onModalStateChange?: (isOpen: boolean) => void;
+  onPlanHabit?: (habitId: string, date: string) => void;
 }
-export function CalendarWorkspaceView(props: CalendarWorkspaceViewProps) {
-  const {
-    roadmapSource,
-    settings,
-    selectedDate,
-    actualTodayDate,
-    mode,
-    secondaryFilter,
-    displayZone,
-    nowMs,
-    events,
-    reservations,
-    tasks,
-    dayOffAnnotations,
-    shiftTemplates,
-    repositories,
-    onChangeMode,
-    onChangeSecondaryFilter,
-    onSelectDate,
-    onToggleTaskState,
-    onCancelEvent,
-    onInspectEvent,
-    onInspectHabitSession,
-    onOpenGapPicker,
-    onOpenGlobalCreation,
-    onDataChanged,
-    onModalStateChange,
-  } = props;
-  const [stampOpen, setStampOpen] = useState(false),
-    [summaryOpen, setSummaryOpen] = useState(false),
-    [tool, setTool] = useState<"period" | "text" | null>(null),
-    [planning, setPlanning] = useState<{
-      task: Task;
-      reservationId?: string;
-    } | null>(null),
-    [error, setError] = useState("");
+
+export function CalendarWorkspaceView({
+  roadmapSource,
+  settings,
+  selectedDate,
+  actualTodayDate,
+  mode,
+  secondaryFilter,
+  displayZone,
+  nowMs,
+  events,
+  reservations,
+  tasks,
+  dayOffAnnotations,
+  shiftTemplates,
+  repositories,
+  habits = [],
+  habitEntries = [],
+  onSelectDate,
+  onToggleTaskState,
+  onCancelEvent,
+  onInspectEvent,
+  onInspectHabitSession,
+  onOpenGlobalCreation,
+  onDataChanged,
+  onModalStateChange,
+  onPlanHabit,
+}: CalendarWorkspaceViewProps) {
+  const [planning, setPlanning] = useState<{
+    task: Task;
+    reservationId?: string;
+  } | null>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const prevModeRef = useRef<CalendarViewMode>(mode);
+  const prevPeriodKeyRef = useRef<string>("");
+  const lastDirectionRef = useRef<number>(1);
+
   useEffect(() => {
-    onModalStateChange?.(stampOpen || summaryOpen || Boolean(planning));
+    onModalStateChange?.(Boolean(planning));
     return () => onModalStateChange?.(false);
-  }, [stampOpen, summaryOpen, Boolean(planning)]);
+  }, [Boolean(planning)]);
+
   const roadmapItems = useMemo(
     () => projectRoadmap(roadmapSource),
     [roadmapSource],
   );
+
+  // Month grid projection
   const grid = useMemo(
     () =>
       projectMonthCalendarGrid({
@@ -145,7 +141,7 @@ export function CalendarWorkspaceView(props: CalendarWorkspaceViewProps) {
         reservations,
         tasks,
         dayOffAnnotations,
-        secondaryFilter,
+        secondaryFilter: "all",
         maxVisibleBadges: 3,
       }),
     [
@@ -156,383 +152,353 @@ export function CalendarWorkspaceView(props: CalendarWorkspaceViewProps) {
       reservations,
       tasks,
       dayOffAnnotations,
-      secondaryFilter,
     ],
   );
-  const projection = (date: string, released = false) => {
-    const full = projectScheduleForDate({
-      localDate: date,
+
+  // Selected day schedule projection for the agenda below the calendar
+  const selectedSchedule = useMemo(
+    () =>
+      projectScheduleForDate({
+        localDate: selectedDate,
+        displayZone,
+        events,
+        reservations,
+        tasks,
+        dayOffAnnotations,
+      }),
+    [
+      selectedDate,
       displayZone,
       events,
       reservations,
       tasks,
       dayOffAnnotations,
-      includeReleasedReservations: released,
-    });
-    const filter = applyCalendarSecondaryFilter({
-      dayProjection: full,
-      secondaryFilter,
-    });
-    return {
-      ...full,
-      timelineItems: filter.filteredTimelineItems,
-      allDayItems: filter.filteredAllDayItems,
-      untimedDateOnlyTasks: filter.filteredUntimedTasks,
-      dayOffAnnotations: filter.filteredDayOffAnnotations,
-    };
-  };
-  const selected = projection(selectedDate),
-    released = projection(selectedDate, true);
-  const weekStart = (() => {
-    const d = new Date(selectedDate + "T12:00:00Z");
-    return addDaysToLocalDate(selectedDate, -(d.getUTCDay() + 6) % 7);
-  })();
-  const week = Array.from({ length: 7 }, (_, i) =>
-    projection(addDaysToLocalDate(weekStart, i)),
+    ],
   );
-  const shiftIds = new Set(
-    week.flatMap((d) =>
-      d.timelineItems
-        .filter((i) => i.sourceKind === "work_shift")
-        .map((i) => i.sourceId),
-    ),
+
+  // Period title: "Листопад 2026"
+  const monthTitle = sentenceCase(formatMonthYear(selectedDate)).replace(
+    / р\.$/,
+    "",
   );
-  const nights = events.filter(
-    (e) =>
-      shiftIds.has(e.id) &&
-      e.schedule.kind === "timed" &&
-      e.schedule.interval.originStartLocalDate !==
-        e.schedule.interval.originEndLocalDate,
-  ).length;
-  const summary = [
-    shiftIds.size ? `${shiftIds.size} зміни` : null,
-    nights ? `${nights} нічні` : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
-  const period =
-    mode === "month" || mode === "work_schedule"
-      ? sentenceCase(formatMonthYear(selectedDate)).replace(/ р\.$/, "")
-      : mode === "week"
-        ? formatDateRange(weekStart, addDaysToLocalDate(weekStart, 6), true)
-        : sentenceCase(formatShortDate(selectedDate));
-  const step = (direction: number) =>
-    onSelectDate(
-      mode === "month" || mode === "work_schedule"
-        ? addMonthsToLocalDate(selectedDate, direction)
-        : addDaysToLocalDate(
-            selectedDate,
-            direction * (mode === "week" ? 7 : 1),
-          ),
-    );
-  const away =
-    mode === "month" || mode === "work_schedule"
-      ? selectedDate.slice(0, 7) !== actualTodayDate.slice(0, 7)
-      : mode === "week"
-        ? !week.some((d) => d.localDate === actualTodayDate)
-        : selectedDate !== actualTodayDate;
-  const hue = (id: string | null) =>
-    directionFor(
-      tasks.find((t) => t.id === id),
-      roadmapSource.folders ?? [],
-      roadmapSource.projects ?? [],
-    ).hue;
-  const inspect = (item: ProjectedDaySchedule["timelineItems"][number]) => {
-    if (item.taskId) {
-      const task = tasks.find((t) => t.id === item.taskId);
-      if (task) setPlanning({ task, reservationId: item.sourceId });
-    } else if (item.sourceKind === "reservation") {
-      const r = reservations.find((r) => r.id === item.sourceId);
-      if (r) onInspectHabitSession?.(r);
+
+  // Compute period key (month YYYY-MM or week Monday YYYY-MM-DD) for paging animation
+  const periodKey = useMemo(() => {
+    if (mode === "week") {
+      const d = new Date(selectedDate + "T12:00:00Z");
+      const mondayOffset = -((d.getUTCDay() + 6) % 7);
+      return `week:${addDaysToLocalDate(selectedDate, mondayOffset)}`;
+    }
+    return `month:${selectedDate.slice(0, 7)}`;
+  }, [mode, selectedDate]);
+
+  useLayoutEffect(() => {
+    const el = stageRef.current;
+    if (!el) return;
+    ensureMotionRootAttribute(el);
+
+    if (prevModeRef.current !== mode) {
+      prevModeRef.current = mode;
+      prevPeriodKeyRef.current = periodKey;
+      if (isReducedMotion()) {
+        runInterruptibleAnimation(el, [{ opacity: 0 }, { opacity: 1 }], {
+          durationMs: tweens.reduced,
+          easing: easings.out,
+          root: el,
+          willChange: "opacity",
+        });
+      } else {
+        runInterruptibleAnimation(
+          el,
+          [
+            { opacity: 0, transform: "scale(0.985)" },
+            { opacity: 1, transform: "scale(1)" },
+          ],
+          {
+            durationMs: tweens.base,
+            easing: easings.out,
+            root: el,
+            willChange: "transform, opacity",
+          },
+        );
+      }
+      return;
+    }
+
+    if (!prevPeriodKeyRef.current) {
+      prevPeriodKeyRef.current = periodKey;
+      return;
+    }
+
+    if (prevPeriodKeyRef.current !== periodKey) {
+      const prev = prevPeriodKeyRef.current;
+      prevPeriodKeyRef.current = periodKey;
+      const dir =
+        periodKey > prev ? 1 : periodKey < prev ? -1 : lastDirectionRef.current;
+      if (isReducedMotion()) {
+        runInterruptibleAnimation(el, [{ opacity: 0 }, { opacity: 1 }], {
+          durationMs: tweens.reduced,
+          easing: easings.out,
+          root: el,
+          willChange: "opacity",
+        });
+      } else {
+        const offsetPx = dir >= 0 ? 24 : -24;
+        runInterruptibleAnimation(
+          el,
+          [
+            { opacity: 0, transform: `translate3d(${offsetPx}px, 0, 0)` },
+            { opacity: 1, transform: "translate3d(0px, 0, 0)" },
+          ],
+          {
+            durationMs: tweens.base,
+            easing: easings.out,
+            root: el,
+            willChange: "transform, opacity",
+          },
+        );
+      }
+    }
+  }, [mode, periodKey]);
+
+  const step = (direction: number) => {
+    lastDirectionRef.current = direction;
+    if (mode === "week") {
+      onSelectDate(addDaysToLocalDate(selectedDate, direction * 7));
     } else {
-      const event = events.find((e) => e.id === item.sourceId);
-      if (event) onInspectEvent(event);
+      onSelectDate(addMonthsToLocalDate(selectedDate, direction));
     }
   };
-  const agenda = (day: ProjectedDaySchedule, collapse = false) => {
-    const empty =
-      !day.timelineItems.length &&
-      !day.allDayItems.length &&
-      !day.untimedDateOnlyTasks.length &&
-      !day.dayOffAnnotations.length;
-    if (empty && collapse)
-      return (
-        <p key={day.localDate} className="calendar-muted-day">
-          <button type="button" onClick={() => onSelectDate(day.localDate)}>
-            {sentenceCase(formatShortDate(day.localDate))} · Поки без подій
-          </button>
-        </p>
-      );
-    return (
-      <section
-        className="calendar-agenda"
-        key={day.localDate}
-        data-testid={`calendar-agenda-${day.localDate}`}
-      >
-        <button
-          className="ui-pill calendar-day-chip"
-          type="button"
-          onClick={() => onSelectDate(day.localDate)}
-        >
-          {sentenceCase(formatShortDate(day.localDate))}
-        </button>
-        {empty ? (
-          collapse ? (
-            <p className="calendar-muted-day">Поки без подій</p>
-          ) : (
-            <EmptyState
-              text="Поки без подій"
-              action="Створити"
-              onAction={() => {
-                onSelectDate(day.localDate);
-                onOpenGlobalCreation("event");
-              }}
-            />
-          )
-        ) : (
-          <>
-            {day.dayOffAnnotations.length > 0 && <Row title="Вихідний" />}
-            {day.timelineItems.map((item) => (
-              <ItemCard
-                key={item.itemKey}
-                hue={
-                  item.sourceKind === "work_shift"
-                    ? "var(--color-work)"
-                    : hue(item.taskId)
-                }
-                className="calendar-agenda-item"
-              >
-                <button
-                  type="button"
-                  onClick={() => {
-                    onSelectDate(day.localDate);
-                    inspect(item);
-                  }}
-                >
-                  <strong>{item.title}</strong>
-                  <small>
-                    {formatTimeRange(
-                      item.segment.displayStartLocalTime,
-                      item.segment.displayEndLocalTime,
-                    )}
-                    {item.segment.continuesBeforeDayStart
-                      ? " · після нічної зміни"
-                      : item.segment.continuesAfterDayEnd
-                        ? " · до наступного дня"
-                        : ""}
-                  </small>
-                </button>
-              </ItemCard>
-            ))}
-            {day.allDayItems.map((item) => (
-              <ItemCard
-                key={item.eventId}
-                hue={hue(null)}
-                className="calendar-agenda-item"
-              >
-                <button
-                  type="button"
-                  onClick={() => {
-                    const event = events.find((e) => e.id === item.eventId);
-                    if (event) onInspectEvent(event);
-                  }}
-                >
-                  <strong>{item.title}</strong>
-                  <small>Увесь день</small>
-                </button>
-              </ItemCard>
-            ))}
-            {day.untimedDateOnlyTasks.map((task) => (
-              <ItemCard
-                key={task.id}
-                hue={hue(task.id)}
-                className="calendar-agenda-item"
-              >
-                <button type="button" onClick={() => setPlanning({ task })}>
-                  <strong>{task.title}</strong>
-                  <small>{task.deadline ? "◆ Термін" : "Без часу"}</small>
-                </button>
-              </ItemCard>
-            ))}
-          </>
-        )}
-      </section>
-    );
-  };
-  const setLayer = async (layer: PlanuiSettings["roadmapLayer"]) => {
-    try {
-      await repositories.saveSettings(
-        { ...settings, roadmapLayer: layer },
-        settings.revision,
-      );
-      await onDataChanged();
-    } catch {
-      setError("Не вдалося змінити вигляд планів.");
+
+  const awayFromToday =
+    selectedDate !== actualTodayDate ||
+    selectedDate.slice(0, 7) !== actualTodayDate.slice(0, 7);
+
+  // Model context for resolving area colors
+  const modelContext = useMemo(
+    () => ({
+      folders: roadmapSource.folders,
+      projects: roadmapSource.projects,
+      goals: roadmapSource.goals,
+    }),
+    [roadmapSource],
+  );
+
+  // Shifts for the selected day
+  const dayShifts = useMemo(() => {
+    return selectedSchedule.timelineItems
+      .filter((i) => i.sourceKind === "work_shift")
+      .map((shift) => {
+        const isContinuation = shift.segment.continuesBeforeDayStart;
+        const isNight =
+          isContinuation ||
+          shift.segment.continuesAfterDayEnd ||
+          shift.segment.displayStartLocalTime >= "18:00" ||
+          shift.segment.displayStartLocalTime < "06:00";
+        const timeRange = formatTimeRange(
+          shift.segment.displayStartLocalTime,
+          shift.segment.displayEndLocalTime,
+          shift.segment.continuesAfterDayEnd,
+        );
+        const originalEvent = events.find((e) => e.id === shift.sourceId);
+        const resolvedColor = itemColor(originalEvent, modelContext);
+        const hasCustomArea = resolvedColor !== "var(--color-neutral-slate)" && resolvedColor !== "var(--color-adjacent-day)";
+
+        return {
+          id: shift.itemKey,
+          sourceId: shift.sourceId,
+          title: isNight ? "Нічна зміна" : "Денна зміна",
+          timeRange,
+          isNight,
+          isContinuation,
+          color: hasCustomArea
+            ? resolvedColor
+            : isNight
+              ? "var(--color-shift-night-start)"
+              : "var(--color-shift-day-start)",
+          colorEnd: hasCustomArea
+            ? undefined
+            : isNight
+              ? "var(--color-shift-night-end)"
+              : "var(--color-shift-day-end)",
+          event: originalEvent,
+        };
+      });
+  }, [selectedSchedule.timelineItems, events, modelContext]);
+
+  // Primary shift chip for the selected day header (if any)
+  const primaryShift = dayShifts[0] ?? null;
+
+  // Events for the selected day
+  const dayEvents = useMemo(() => {
+    const list: Array<{
+      id: string;
+      title: string;
+      timeMeta: string;
+      color: string;
+      event: CalendarEvent;
+    }> = [];
+
+    // All-day events
+    for (const allDay of selectedSchedule.allDayItems) {
+      const ev = events.find((e) => e.id === allDay.eventId);
+      if (ev) {
+        list.push({
+          id: allDay.eventId,
+          title: allDay.title,
+          timeMeta: "Увесь день",
+          color: itemColor(ev, modelContext),
+          event: ev,
+        });
+      }
     }
-  };
-  const rosterProps = {
-    selectedDate,
-    actualTodayDate,
-    displayZone,
-    monthGrid: grid,
-    events,
-    reservations,
-    tasks,
-    dayOffAnnotations,
-    shiftTemplates,
-    repositories,
-    onSelectDate,
-    onInspectEvent,
-    onCancelEvent,
-    onOpenGlobalCreation,
-    onDataChanged,
-  };
+
+    // Timed events
+    for (const item of selectedSchedule.timelineItems) {
+      if (item.sourceKind === "event") {
+        const ev = events.find((e) => e.id === item.sourceId);
+        if (ev) {
+          list.push({
+            id: item.itemKey,
+            title: item.title,
+            timeMeta: formatTimeRange(
+              item.segment.displayStartLocalTime,
+              item.segment.displayEndLocalTime,
+            ),
+            color: itemColor(ev, modelContext),
+            event: ev,
+          });
+        }
+      }
+    }
+
+    return list;
+  }, [selectedSchedule, events, modelContext]);
+
+  // Tasks for the selected day
+  const dayTasks = useMemo(() => {
+    const list: Array<{
+      id: string;
+      title: string;
+      state: Task["state"];
+      timeMeta: string;
+      color: string;
+      task: Task;
+      reservationId?: string;
+    }> = [];
+
+    // Timed task reservations
+    for (const item of selectedSchedule.timelineItems) {
+      if (item.taskId) {
+        const task = tasks.find((t) => t.id === item.taskId);
+        if (task) {
+          list.push({
+            id: item.itemKey,
+            title: task.title,
+            state: task.state,
+            timeMeta: formatTimeRange(
+              item.segment.displayStartLocalTime,
+              item.segment.displayEndLocalTime,
+            ),
+            color: itemColor(task, modelContext),
+            task,
+            reservationId: item.sourceId,
+          });
+        }
+      }
+    }
+
+    // Untimed tasks / deadlines
+    for (const task of selectedSchedule.untimedDateOnlyTasks) {
+      const isDeadline =
+        deadlineDate(task, displayZone) === selectedDate;
+      list.push({
+        id: task.id,
+        title: task.title,
+        state: task.state,
+        timeMeta: isDeadline ? "◆ Термін" : "Без часу",
+        color: itemColor(task, modelContext),
+        task,
+      });
+    }
+
+    return list;
+  }, [selectedSchedule, tasks, displayZone, selectedDate, modelContext]);
+
+  // Check if day is completely empty
+  const isDayEmpty =
+    dayShifts.length === 0 &&
+    dayEvents.length === 0 &&
+    dayTasks.length === 0 &&
+    !selectedSchedule.dayOffAnnotations.length;
+
   return (
     <div
-      className="calendar-workspace calendar-stage3"
+      className="calendar-workspace calendar-p6-window"
       data-testid="calendar-workspace"
     >
-      <PageHeader
-        title="Календар"
-        actions={
-          <>
-            <RoundButton
-              aria-label="Штамп змін"
-              onClick={() => setStampOpen(true)}
+      {/* Header inside the window: month title (28px bold), ‹ ›, "Сьогодні" pill */}
+      <div className="calendar-window-header" data-ui="calendar-header">
+        <h1 className="calendar-window-title" data-testid="calendar-period-heading">
+          {monthTitle}
+        </h1>
+        <div className="calendar-window-actions">
+          <RoundButton
+            aria-label="Попередній період"
+            onClick={() => step(-1)}
+          >
+            <Icon name="chevron-left" size={18} />
+          </RoundButton>
+          <RoundButton
+            aria-label="Наступний період"
+            onClick={() => step(1)}
+          >
+            <Icon name="chevron-right" size={18} />
+          </RoundButton>
+          {awayFromToday && (
+            <button
+              type="button"
+              className="ui-pill ui-pressable calendar-today-jump"
+              onClick={() => onSelectDate(actualTodayDate)}
             >
-              <Stamp size={21} aria-hidden="true" />
-            </RoundButton>
-            <ActionMenu
-              label="Інструменти календаря"
-              items={[
-                {
-                  label: "Генерація на період",
-                  onSelect: () => {
-                    setTool("period");
-                    setStampOpen(true);
-                  },
-                },
-                {
-                  label: "Текстове внесення",
-                  onSelect: () => {
-                    setTool("text");
-                    setStampOpen(true);
-                  },
-                },
-                {
-                  label: "Створити подію",
-                  onSelect: () => onOpenGlobalCreation("event"),
-                },
-              ]}
-            />
-          </>
-        }
-      >
-        <Segmented
-          label="Режим календаря"
-          value={mode}
-          onChange={onChangeMode}
-          options={[
-            { value: "month", label: "Місяць" },
-            { value: "week", label: "Тиждень" },
-            { value: "day", label: "День" },
-            { value: "work_schedule", label: "Графік" },
-          ]}
-        />
-        <div className="calendar-period">
-          <span data-testid="calendar-period-heading">{period}</span>
-          <RoundButton aria-label="Попередній період" onClick={() => step(-1)}>
-            <ChevronLeft size={19} />
-          </RoundButton>
-          <RoundButton aria-label="Наступний період" onClick={() => step(1)}>
-            <ChevronRight size={19} />
-          </RoundButton>
-          {away && (
-            <Pill onClick={() => onSelectDate(actualTodayDate)}>Сьогодні</Pill>
+              Сьогодні
+            </button>
           )}
         </div>
-        <div
-          className="ui-pill-row"
-          data-ui="pill-row"
-          role="group"
-          aria-label="Фільтри календаря"
-        >
-          {(
-            [
-              { value: "all", label: "Усе" },
-              { value: "work", label: "Робота" },
-              { value: "events_and_tasks", label: "Події та справи" },
-            ] as const
-          ).map((f) => (
-            <Pill
-              key={f.value}
-              selected={secondaryFilter === f.value}
-              onClick={() => onChangeSecondaryFilter(f.value)}
-            >
-              {f.label}
-            </Pill>
-          ))}
-          <ActionMenu
-            label="Плани"
-            items={[
-              {
-                label: "Лише ключові дати",
-                onSelect: () => void setLayer("key_dates"),
-              },
-              {
-                label: "Етапи й дати",
-                onSelect: () => void setLayer("periods"),
-              },
-              {
-                label: "Приховати плани",
-                onSelect: () => void setLayer("hidden"),
-              },
-            ]}
-          >
-            <span
-              className="ui-pill"
-              data-selected={settings.roadmapLayer !== "hidden"}
-            >
-              Плани <Icon name="chevron-down"/>
-            </span>
-          </ActionMenu>
-        </div>
-      </PageHeader>
-      {error && <p role="alert">{error}</p>}
-      {mode === "month" && (
-        <>
+      </div>
+
+      {/* Main calendar area (Month or Week) */}
+      <div ref={stageRef} className="calendar-view-container" data-ui="calendar-stage">
+        {mode === "week" ? (
+          <CalendarWeekGrid
+            selectedDate={selectedDate}
+            actualTodayDate={actualTodayDate}
+            displayZone={displayZone}
+            events={events}
+            reservations={reservations}
+            tasks={tasks}
+            dayOffAnnotations={dayOffAnnotations}
+            folders={roadmapSource.folders}
+            projects={roadmapSource.projects}
+            onSelectDate={onSelectDate}
+            onSelectTask={(task, resId) =>
+              setPlanning({ task, reservationId: resId })
+            }
+            onInspectEvent={onInspectEvent}
+            onInspectHabitSession={onInspectHabitSession}
+            onPrevWeek={() => step(-1)}
+            onNextWeek={() => step(1)}
+          />
+        ) : (
           <CalendarGrid
             grid={grid}
             onSelect={(cell) => onSelectDate(cell.localDate)}
-            hueForTask={hue}
-            roadmapCount={(date) =>
-              roadmapMarkers(
-                roadmapItems,
-                date,
-                settings.roadmapLayer ?? "hidden",
-              ).length
-            }
-          />
-          {agenda(selected)}
-          <InfoSheet title="Позначки календаря">
-            <p>
-              <Icon name="moon" size={14}/> Нічна зміна · <Icon name="sun" size={14}/> Денна зміна · ● Подія чи справа · ◆ Термін або
-              віха. Нічна зміна — один запис через північ.
-            </p>
-          </InfoSheet>
-        </>
-      )}
-      {mode === "week" && (
-        <div data-ui="content-start">
-          <CalendarGrid
-            grid={{
-              ...grid,
-              cells: grid.cells.filter((cell) =>
-                week.some((day) => day.localDate === cell.localDate),
-              ),
+            onPrevMonth={() => step(-1)}
+            onNextMonth={() => step(1)}
+            hueForTask={(id) => {
+              const task = tasks.find((t) => t.id === id);
+              return itemColor(task, modelContext);
             }}
-            onSelect={(cell) => onSelectDate(cell.localDate)}
-            hueForTask={hue}
             roadmapCount={(date) =>
               roadmapMarkers(
                 roadmapItems,
@@ -541,141 +507,140 @@ export function CalendarWorkspaceView(props: CalendarWorkspaceViewProps) {
               ).length
             }
           />
-          {week.map((d) => agenda(d, true))}
-          {summary && (
-            <Section>
-              <Row
-                title="Підсумок тижня"
-                secondary={summary}
-                trailing={
-                  <RoundButton
-                    aria-label="Підсумок тижня"
-                    onClick={() => setSummaryOpen(true)}
-                  >
-                    ⓘ
-                  </RoundButton>
-                }
-              />
-            </Section>
+        )}
+      </div>
+
+      {/* Under the calendar: selected day's header & agenda in common category order */}
+      <div
+        className="calendar-agenda-container"
+        data-testid={`calendar-agenda-${selectedDate}`}
+      >
+        {/* Selected day header ("чт, 5 листопада" + shift chip if any) */}
+        <div className="calendar-agenda-head">
+          <h2 className="calendar-agenda-title">
+            {sentenceCase(formatShortDate(selectedDate))}
+          </h2>
+          {primaryShift && (
+            <span
+              className="calendar-shift-badge"
+              style={{
+                background: primaryShift.colorEnd
+                  ? `linear-gradient(180deg, ${primaryShift.color} 0%, ${primaryShift.colorEnd} 100%)`
+                  : primaryShift.color,
+              }}
+            >
+              <Icon name={primaryShift.isNight ? "moon" : "sun"} size={13} />
+              <span>
+                {primaryShift.title} · {primaryShift.timeRange}
+              </span>
+            </span>
           )}
         </div>
-      )}
-      {mode === "day" && (
-        <div data-ui="content-start">
-          {tasks.some(
-            (t) =>
-              t.state === "open" &&
-              deadlineDate(t, displayZone) === selectedDate,
-          ) && (
-            <div className="calendar-deadlines" aria-label="Терміни дня">
-              {tasks
-                .filter(
-                  (t) =>
-                    t.state === "open" &&
-                    deadlineDate(t, displayZone) === selectedDate,
-                )
-                .map((t) => (
-                  <button
-                    className="planui-deadline-badge"
-                    type="button"
-                    key={t.id}
-                    onClick={() => setPlanning({ task: t })}
-                  >
-                    ◆ {t.title}
-                  </button>
-                ))}
-            </div>
-          )}
-          <SharedDayTimeline
-            testIdPrefix="calendar"
+
+        {/* Explicit Day Off indicator if applicable */}
+        {selectedSchedule.dayOffAnnotations.length > 0 && (
+          <div className="calendar-day-off-banner">
+            <span>Вихідний день</span>
+          </div>
+        )}
+
+        {/* Common category order: (1) Habit band -> (2) Зміна -> (3) Події -> (4) Завдання */}
+        <div className="calendar-agenda-content space-y-3">
+          {/* 1. Habit band (visually separate, above everything) */}
+          <HabitBand
+            habits={habits}
+            habitEntries={habitEntries}
+            date={selectedDate}
+            daysOff={dayOffAnnotations.map((d) => d.localDate)}
             folders={roadmapSource.folders}
             projects={roadmapSource.projects}
-            projection={selected}
-            projectionWithReleased={released}
-            nowMs={nowMs}
-            events={events}
-            tasks={tasks}
-            reservations={reservations}
-            onDayInView={onSelectDate}
-            onToggleTaskState={onToggleTaskState}
-            onCancelEvent={onCancelEvent}
-            onInspectEvent={onInspectEvent}
-            onInspectHabitSession={onInspectHabitSession}
-            onInspectTask={(task, reservationId) =>
-              setPlanning({ task, reservationId })
-            }
-            onOpenGapPicker={onOpenGapPicker}
+            repositories={repositories}
+            onChanged={onDataChanged}
+            onPlanHabit={onPlanHabit}
+            habitsEnabled={settings.modules?.habitsEnabled !== false}
           />
-        </div>
-      )}
-      {mode === "work_schedule" && (
-        <div data-ui="content-start">
-          <WorkRosterSubview
-            {...rosterProps}
-            onModalStateChange={onModalStateChange}
-          />
-        </div>
-      )}
-      {mode !== "work_schedule" && (
-        <RoadmapCalendarLayer
-          selectedDate={selectedDate}
-          source={roadmapSource}
-          settings={settings}
-          repositories={repositories}
-          startDate={
-            mode === "month"
-              ? grid.cells[0].localDate
-              : mode === "week"
-                ? weekStart
-                : selectedDate
-          }
-          endDateExclusive={addDaysToLocalDate(
-            mode === "month"
-              ? grid.cells.at(-1)!.localDate
-              : mode === "week"
-                ? addDaysToLocalDate(weekStart, 6)
-                : selectedDate,
-            1,
+
+          {/* 2. Зміна (EventBars) */}
+          {dayShifts.map((shift) => (
+            <EventBar
+              key={shift.id}
+              color={shift.color}
+              colorEnd={shift.colorEnd}
+              icon={shift.isNight ? "moon" : "sun"}
+              title={shift.title}
+              meta={shift.timeRange}
+              onClick={() => {
+                if (shift.event) onInspectEvent(shift.event);
+              }}
+            />
+          ))}
+
+          {/* 3. Події (EventBars) */}
+          {dayEvents.map((ev) => (
+            <EventBar
+              key={ev.id}
+              color={ev.color}
+              icon="calendar"
+              title={ev.title}
+              meta={ev.timeMeta}
+              onClick={() => onInspectEvent(ev.event)}
+            />
+          ))}
+
+          {/* 4. Завдання (TintedCards with tinted check circle) */}
+          {dayTasks.map((t) => (
+            <TintedCard
+              key={t.id}
+              color={t.color}
+              icon={
+                <button
+                  type="button"
+                  className="planui-task-check-circle"
+                  aria-label={
+                    t.state === "completed"
+                      ? "Позначити невиконаним"
+                      : "Позначити виконаним"
+                  }
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleTaskState(t.task.id);
+                  }}
+                >
+                  <span
+                    className={`planui-check-dot ${
+                      t.state === "completed" ? "done" : ""
+                    }`}
+                  >
+                    {t.state === "completed" && <Icon name="check" size={13} />}
+                  </span>
+                </button>
+              }
+              title={t.title}
+              meta={t.timeMeta}
+              onClick={() =>
+                setPlanning({ task: t.task, reservationId: t.reservationId })
+              }
+            />
+          ))}
+
+          {/* Empty day state */}
+          {isDayEmpty && (
+            <div className="calendar-empty-state" data-testid="calendar-empty-day">
+              <Orb color="var(--color-neutral-slate)" size={52} />
+              <p className="calendar-empty-text">Нічого не заплановано</p>
+              <button
+                type="button"
+                className="calendar-tertiary-create"
+                onClick={() => onOpenGlobalCreation(undefined)}
+              >
+                Створити
+              </button>
+            </div>
           )}
-          onChanged={() => onDataChanged()}
-        />
-      )}
-      <Sheet
-        title="Підсумок тижня"
-        isOpen={summaryOpen}
-        onClose={() => setSummaryOpen(false)}
-      >
-        <div data-ui="info-sheet">
-          <p>{summary}</p>
-          <p>
-            Нічна зміна враховується один раз, навіть коли переходить на
-            наступний день.
-          </p>
         </div>
-      </Sheet>
-      <Sheet
-        title="Штамп змін"
-        isOpen={stampOpen}
-        onClose={() => {
-          setStampOpen(false);
-          setTool(null);
-        }}
-      >
-        <WorkRosterSubview
-          {...rosterProps}
-          stampMode
-          initialTool={tool}
-          onInspectEvent={(e) => {
-            setStampOpen(false);
-            onInspectEvent(e);
-          }}
-          onOpenGlobalCreation={(kind) => {
-            setStampOpen(false);
-            onOpenGlobalCreation(kind);
-          }}
-          onModalStateChange={() => onModalStateChange?.(true)}
-        />
-      </Sheet>
+      </div>
+
+      {/* Task planning modal */}
       {planning && (
         <TaskPlanningSheet
           task={planning.task}
@@ -685,6 +650,9 @@ export function CalendarWorkspaceView(props: CalendarWorkspaceViewProps) {
           tasks={tasks}
           events={events}
           reservations={reservations}
+          folders={roadmapSource.folders}
+          projects={roadmapSource.projects}
+          goals={roadmapSource.goals}
           repositories={repositories}
           onClose={() => setPlanning(null)}
           onSaved={() => onDataChanged()}

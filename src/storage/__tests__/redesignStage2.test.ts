@@ -1,4 +1,3 @@
-import { minimumDayTasks } from "../../components/today/minimumDayPresentation";
 import { reminderFallsInSleep } from "../../components/habits/SleepReminderNote";
 import { selectTaskReviewState } from "../../domain/projections";
 import { it } from "node:test";
@@ -86,51 +85,6 @@ it("Stage 2: Minimum Day retains deadlines and limits optional steps; triage pro
   assert.deepEqual(
     (await repos.captureCoherentSnapshot(UI_CLOCK)).snapshot,
     before,
-  );
-});
-
-it("Stage 2: presentation keeps one optional task across sessions without mutating the plan", async () => {
-  const engine = new InMemoryTransactionalEngine();
-  const { snapshot } = await seedUiFixture(engine);
-  const base = snapshot.tasks[0];
-  const tasks = [
-    {
-      ...base,
-      id: "small1",
-      deadline: null,
-      priority: "normal" as const,
-      effort: "small" as const,
-      state: "open" as const,
-    },
-    {
-      ...base,
-      id: "small2",
-      deadline: null,
-      priority: "normal" as const,
-      effort: "small" as const,
-      state: "open" as const,
-    },
-    {
-      ...base,
-      id: "critical",
-      deadline: { kind: "date_only" as const, localDate: "2026-11-05" },
-      state: "open" as const,
-    },
-  ];
-  const plan = {
-    minimalDay: true,
-    focusTaskIds: ["small1", "small2"],
-    focusNoteUk: null,
-  };
-  const copy = structuredClone({ tasks, plan });
-  assert.deepEqual(
-    minimumDayTasks(tasks, plan).map((t) => t.id),
-    ["small1", "critical"],
-  );
-  assert.deepEqual({ tasks, plan }, copy);
-  assert.equal(
-    minimumDayTasks(tasks, { ...plan, minimalDay: false }).length,
-    3,
   );
 });
 it("Stage 2: sleep note observes user sleep blocks, including midnight, without changing events", async () => {

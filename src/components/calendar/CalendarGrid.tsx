@@ -1,82 +1,113 @@
-import {Icon} from '../../ui/icons';
+import React, { useLayoutEffect, useRef } from "react";
+import { Icon } from "../../ui/icons";
+import { animateSpringTransform, isReducedMotion, springs } from "../../ui/motion";
 import { deadlineDate } from "../../domain/today";
-import React, { useRef } from "react";
 import { applyCalendarSecondaryFilter } from "../../domain/scheduling";
 import type {
   ProjectedMonthCalendarGrid,
   ProjectedMonthCell,
 } from "../../domain/scheduling";
 import { formatDate, formatTimeRange } from "../../lib/format";
-type Props = {
+
+export interface CalendarGridProps {
   grid: ProjectedMonthCalendarGrid;
   onSelect: (cell: ProjectedMonthCell) => void;
-  onPaint?: (dates: string[]) => void;
-  markedDates?: readonly string[];
+  onPrevMonth?: () => void;
+  onNextMonth?: () => void;
   roadmapCount?: (date: string) => number;
   hueForTask?: (id: string | null) => string;
   compact?: boolean;
-};
-/** One canvas grid for Month, roster and stamp; source IDs survive midnight/month boundaries. */
+  onPaint?: (dates: string[]) => void;
+  markedDates?: readonly string[];
+}
+
+interface MiniBarItem {
+  id: string;
+  order: number;
+  label: string;
+  icon?: "sun" | "moon" | "diamond";
+  bgGradient: string;
+  title: string;
+}
+
 export function CalendarGrid({
   grid,
   onSelect,
-  onPaint,
-  markedDates = [],
+  onPrevMonth,
+  onNextMonth,
   roadmapCount = () => 0,
   hueForTask = () => "var(--color-personal)",
   compact = false,
-}: Props) {
-  const ignoreClick = useRef(false);
-  const gesture = useRef<{
-    start: string;
-    dates: Set<string>;
-    x: number;
-    y: number;
-  } | null>(null);
-  const cellAt = (x: number, y: number) =>
-    document
-      .elementFromPoint(x, y)
-      ?.closest<HTMLElement>("[data-calendar-date]")?.dataset.calendarDate;
+  onPaint,
+  markedDates = [],
+}: CalendarGridProps) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const prevSelectedRectRef = useRef<{ left: number; top: number; monthKey: string } | null>(null);
+  const touchStartX = useRef<number | null>(null);
+  const touchStartY = useRef<number | null>(null);
+
+  const selectedCell = grid.cells.find((c) => c.isSelected);
+  const selectedDateKey = selectedCell?.localDate ?? "";
+  const activeMonthKey = grid.cells[15]?.localDate.slice(0, 7) ?? "";
+
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const selectedBadge = root.querySelector<HTMLElement>(".calendar-day-selected");
+    if (!selectedBadge) return;
+    const rect = selectedBadge.getBoundingClientRect();
+    const prev = prevSelectedRectRef.current;
+    prevSelectedRectRef.current = {
+      left: rect.left,
+      top: rect.top,
+      monthKey: activeMonthKey,
+    };
+    if (
+      prev &&
+      prev.monthKey === activeMonthKey &&
+      !isReducedMotion() &&
+      (Math.abs(prev.left - rect.left) > 1 || Math.abs(prev.top - rect.top) > 1)
+    ) {
+      const dx = Math.round(prev.left - rect.left);
+      const dy = Math.round(prev.top - rect.top);
+      animateSpringTransform(
+        selectedBadge,
+        `translate3d(${dx}px, ${dy}px, 0)`,
+        "translate3d(0px, 0px, 0)",
+        springs.smooth,
+        { root },
+      );
+    }
+  }, [selectedDateKey, activeMonthKey]);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX.current === null || touchStartY.current === null) return;
+    const dx = e.changedTouches[0].clientX - touchStartX.current;
+    const dy = e.changedTouches[0].clientY - touchStartY.current;
+    touchStartX.current = null;
+    touchStartY.current = null;
+    if (Math.abs(dx) > 44 && Math.abs(dx) > Math.abs(dy) * 1.4) {
+      if (dx < 0 && onNextMonth) {
+        onNextMonth();
+      } else if (dx > 0 && onPrevMonth) {
+        onPrevMonth();
+      }
+    }
+  };
+
   return (
     <div
+      ref={rootRef}
       className={`calendar-grid ${compact ? "calendar-grid-compact" : ""}`}
       data-testid="calendar-month-grid"
       data-ui="content-start"
-      onPointerDown={(e) => {
-        if (!onPaint || e.button !== 0) return;
-        const date = cellAt(e.clientX, e.clientY);
-        if (date) {
-          ignoreClick.current = false;
-          gesture.current = {
-            start: date,
-            dates: new Set([date]),
-            x: e.clientX,
-            y: e.clientY,
-          };
-          e.currentTarget.setPointerCapture(e.pointerId);
-        }
-      }}
-      onPointerMove={(e) => {
-        const g = gesture.current;
-        if (!g) return;
-        const date = cellAt(e.clientX, e.clientY);
-        if (date) g.dates.add(date);
-      }}
-      onPointerUp={() => {
-        const g = gesture.current;
-        gesture.current = null;
-        if (g) {
-          ignoreClick.current = true;
-          if (g.dates.size > 1) onPaint?.([...g.dates]);
-          else {
-            const cell = grid.cells.find((c) => c.localDate === g.start);
-            if (cell) onSelect(cell);
-          }
-        }
-      }}
-      onPointerCancel={() => {
-        gesture.current = null;
-      }}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
     >
       <div className="calendar-weekdays" aria-hidden="true">
         {grid.weekdayHeadersUk.map((label) => (
@@ -91,71 +122,104 @@ export function CalendarGrid({
           });
           const items = filtered.filteredTimelineItems;
           const shifts = items.filter((i) => i.sourceKind === "work_shift");
-          const marks: React.ReactNode[] = shifts.map((i) => (
-            <span
-              key={i.itemKey}
-              className="calendar-work-mark"
-              title={i.title}
-              aria-label={
-                i.segment.continuesBeforeDayStart ||
-                i.segment.continuesAfterDayEnd
-                  ? "Нічна зміна"
-                  : "Денна зміна"
-              }
-              role="img"
-            >
-              {i.segment.continuesBeforeDayStart ||
-              i.segment.continuesAfterDayEnd
-                ? <Icon name="moon" size={12}/>
-                : <Icon name="sun" size={12}/>}
-            </span>
-          ));
-          for (const item of items.filter((i) => i.sourceKind !== "work_shift"))
-            marks.push(
-              <i
-                key={item.itemKey}
-                className="calendar-dot"
-                style={{ background: hueForTask(item.taskId) }}
-              />,
-            );
-          for (const item of filtered.filteredAllDayItems)
-            marks.push(
-              <i
-                key={item.eventId}
-                className="calendar-dot"
-                style={{ background: hueForTask(null) }}
-              />,
-            );
-          for (const task of filtered.filteredUntimedTasks)
-            marks.push(
-              <span
-                key={task.id}
-                className="calendar-diamond"
-                style={{ color: hueForTask(task.id) }}
-              >
-                {deadlineDate(task, cell.dayProjection.displayZone) ===
-                cell.localDate
-                  ? "◆"
-                  : "•"}
-              </span>,
-            );
-          if (roadmapCount(cell.localDate))
-            marks.push(
-              <span key="roadmap" className="calendar-diamond">
-                ◆
-              </span>,
-            );
-          if (cell.hasExplicitDayOff)
-            marks.push(
-              <span
-                key="off"
-                className="calendar-off"
-                aria-label="Вихідний"
-                role="img"
-              >
-                ○
-              </span>,
-            );
+
+          const miniBars: MiniBarItem[] = [];
+
+          // 1. All-day events first
+          for (const allDay of filtered.filteredAllDayItems) {
+            miniBars.push({
+              id: allDay.eventId,
+              order: 0,
+              label: allDay.title.slice(0, 8),
+              bgGradient: `linear-gradient(180deg, ${hueForTask(null)} 0%, ${hueForTask(null)} 100%)`,
+              title: allDay.title,
+            });
+          }
+
+          // 2. Goal deadlines
+          if (roadmapCount(cell.localDate) > 0) {
+            miniBars.push({
+              id: `goal-${cell.localDate}`,
+              order: 5,
+              label: "Ціль",
+              icon: "diamond",
+              bgGradient: "linear-gradient(180deg, var(--color-deadline-start) 0%, var(--color-deadline-end) 100%)",
+              title: "Термін цілі",
+            });
+          }
+
+          // 3. Task deadlines
+          for (const task of filtered.filteredUntimedTasks) {
+            const isDeadline =
+              deadlineDate(task, cell.dayProjection.displayZone) ===
+              cell.localDate;
+            if (isDeadline) {
+              miniBars.push({
+                id: `deadline-${task.id}`,
+                order: 8,
+                label: task.title.slice(0, 7),
+                icon: "diamond",
+                bgGradient: `linear-gradient(180deg, ${hueForTask(task.id)} 0%, ${hueForTask(task.id)} 100%)`,
+                title: task.title,
+              });
+            }
+          }
+
+          // 4. Timed items (shifts, events, tasks, reservations)
+          for (const item of items) {
+            if (item.sourceKind === "work_shift") {
+              const isContinuation = item.segment.continuesBeforeDayStart;
+              const isNight =
+                isContinuation ||
+                item.segment.continuesAfterDayEnd ||
+                item.segment.displayStartLocalTime >= "18:00" ||
+                item.segment.displayStartLocalTime < "06:00";
+              const shiftGradient = isNight
+                ? "linear-gradient(180deg, var(--color-shift-night-start) 0%, var(--color-shift-night-end) 100%)"
+                : "linear-gradient(180deg, var(--color-shift-day-start) 0%, var(--color-shift-day-end) 100%)";
+
+              miniBars.push({
+                id: item.itemKey,
+                order: isContinuation ? 1 : item.segment.startMinuteOfDay + 10,
+                label: isNight ? "Нічна" : "Денна",
+                icon: isNight ? "moon" : "sun",
+                bgGradient: shiftGradient,
+                title: `${item.title} (${item.segment.displayStartLocalTime}–${item.segment.displayEndLocalTime})`,
+              });
+            } else {
+              // Regular timed event / task reservation
+              miniBars.push({
+                id: item.itemKey,
+                order: item.segment.startMinuteOfDay + 10,
+                label: item.title.slice(0, 8),
+                bgGradient: `linear-gradient(180deg, ${hueForTask(item.taskId)} 0%, ${hueForTask(item.taskId)} 100%)`,
+                title: item.title,
+              });
+            }
+          }
+
+          // 5. Non-deadline untimed tasks
+          for (const task of filtered.filteredUntimedTasks) {
+            const isDeadline =
+              deadlineDate(task, cell.dayProjection.displayZone) ===
+              cell.localDate;
+            if (!isDeadline) {
+              miniBars.push({
+                id: `task-${task.id}`,
+                order: 1440,
+                label: task.title.slice(0, 8),
+                bgGradient: `linear-gradient(180deg, ${hueForTask(task.id)} 0%, ${hueForTask(task.id)} 100%)`,
+                title: task.title,
+              });
+            }
+          }
+
+          // Sort chronologically (all-day first)
+          miniBars.sort((a, b) => a.order - b.order);
+
+          const visibleBars = miniBars.slice(0, 3);
+          const overflowCount = miniBars.length - 3;
+
           return (
             <button
               type="button"
@@ -163,6 +227,7 @@ export function CalendarGrid({
               data-calendar-date={cell.localDate}
               data-adjacent={!cell.inActiveMonth}
               data-today={cell.isToday}
+              data-day-off={cell.hasExplicitDayOff}
               aria-current={cell.isToday ? "date" : undefined}
               aria-pressed={
                 markedDates.length
@@ -170,19 +235,37 @@ export function CalendarGrid({
                   : cell.isSelected
               }
               aria-label={formatDate(cell.localDate)}
-              onClick={(e) => {
-                if (e.detail > 0 && ignoreClick.current) {
-                  ignoreClick.current = false;
-                  return;
-                }
-                onSelect(cell);
-              }}
+              onClick={() => onSelect(cell)}
+              className="calendar-month-cell"
             >
-              <span className="calendar-day-number">{cell.dayNumber}</span>
-              <span className="calendar-marks" aria-hidden="true">
-                {marks.slice(0, 3)}
-                {marks.length > 3 && <small>+{marks.length - 3}</small>}
+              <span
+                className={`calendar-day-number ${cell.isSelected ? "calendar-day-selected" : ""} ${cell.isToday ? "calendar-day-today" : ""}`}
+              >
+                {cell.dayNumber}
               </span>
+
+              {visibleBars.length > 0 && (
+                <span className="calendar-mini-bars" aria-hidden="true">
+                  {visibleBars.map((bar) => (
+                    <span
+                      key={bar.id}
+                      className="calendar-mini-bar"
+                      style={{ background: bar.bgGradient }}
+                      title={bar.title}
+                    >
+                      {bar.icon === "sun" && <Icon name="sun" size={9} />}
+                      {bar.icon === "moon" && <Icon name="moon" size={9} />}
+                      {bar.icon === "diamond" && <span className="calendar-mini-diamond">◆</span>}
+                      <span className="calendar-mini-label">{bar.label}</span>
+                    </span>
+                  ))}
+                  {overflowCount > 0 && (
+                    <small className="calendar-mini-overflow">+{overflowCount}</small>
+                  )}
+                </span>
+              )}
+
+              {/* Night bridge compatibility line */}
               {shifts
                 .filter(
                   (i) =>

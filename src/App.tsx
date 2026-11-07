@@ -1,33 +1,31 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { SharedEditorHost } from './components/editors/SharedEditorHost';
-import { HabitSessionSheet } from './components/habits/HabitSessionSheet';
 import { PwaStatusBanner } from './components/pwa/PwaStatusAndInstallCard';
 import { FloatingShell } from './components/shell/FloatingShell';
 import { transitionCreation } from './components/shell/creationTransition';
-import { EventDetailSheet } from './components/timeline/EventDetailSheet';
 import { GapTaskPickerSheet } from './components/timeline/GapTaskPickerSheet';
-import {Toast} from './ui/feedback';
-import { FeedbackBanner } from './components/ui/primitives';
-import { selectAmbientContext } from './domain/projections';
+import { SessionSheet, TaskSheet } from './components/today/TaskPlanningSheet';
+import { FeedbackBanner, Toast } from './ui';
 import type { UnoccupiedTimeGap } from './domain/scheduling';
 import {
   detectDeviceTimeZone,
   evaluateTimeZoneStatus,
   todayLocalDateInZone,
 } from './domain/temporal';
-import { restoreTodayInteraction } from './domain/today';
 import { CalendarEvent, PlanuiDomainSnapshot, RecoverySnapshotRecord } from './domain/types';
 import { PlanuiError } from './i18n/errorsUk';
-import { PrimaryDestinationId, UK_STRINGS } from './i18n/uk';
+import { UK_STRINGS } from './i18n/uk';
 import { usePwaLifecycle } from './pwa/pwaController';
 import {
   DestinationContextMap,
   ImplementedCreationActionKind,
+  TabDestinationId,
   applyThemeAndAccessibilityToDocument,
   buildInitialCreationContext,
   createInitialDestinationContextMap,
   extractSubViewFromHash,
   formatHashForDestination,
+  onTabTap,
   parseDestinationFromHash,
   updateDestinationContext,
 } from './state/shellStore';
@@ -37,6 +35,15 @@ import { HabitsWorkspaceView } from './views/HabitsWorkspaceView';
 import { MeWorkspaceView } from './views/MeWorkspaceView';
 import { PlansView } from './views/PlansView';
 import { TodayWorkspaceView } from './views/TodayWorkspaceView';
+import {
+  easings,
+  ensureMotionRootAttribute,
+  isReducedMotion,
+  runInterruptibleAnimation,
+  smoothScrollToTop,
+  tweens,
+  wasRecentPopState,
+} from './ui/motion';
 
 const repositories = new PlanuiRepositories();
 
@@ -47,11 +54,15 @@ export function App() {
   const initialTodayDate = todayLocalDateInZone(initialZone, nowMs);
 
   const [activeDestination, setActiveDestination] =
-    useState<PrimaryDestinationId>(() =>
+    useState<TabDestinationId>(() =>
       typeof window !== 'undefined'
         ? parseDestinationFromHash(window.location.hash)
         : 'today'
     );
+
+  const [isCalendarOpen, setIsCalendarOpen] = useState<boolean>(() =>
+    typeof window !== 'undefined' && window.location.hash.startsWith('#/calendar')
+  );
 
   const [contexts, setContexts] = useState<DestinationContextMap>(() => {
     const map = createInitialDestinationContextMap(initialTodayDate);
@@ -60,11 +71,10 @@ export function App() {
       if (sub) {
         map.me.subView = sub;
       }
+      if (window.location.hash.startsWith('#/habits')) {
+        map.today.mode = 'habits';
+      }
     }
-    try {
-      Object.assign(map.today, restoreTodayInteraction(window.sessionStorage.getItem('planui.today-context.v1'), initialTodayDate));
-    } catch { /* Session storage can be unavailable; in-memory context still works. */ }
-    if (typeof window !== 'undefined' && window.location.hash.startsWith('#/habits')) map.today.mode = 'habits';
     return map;
   });
 
@@ -92,6 +102,9 @@ export function App() {
     null
   );
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastUndo, setToastUndo] = useState<(() => void) | undefined>(
+    undefined
+  );
   const [zoneNoticeMessage, setZoneNoticeMessage] = useState<string | null>(
     null
   );
@@ -116,7 +129,8 @@ export function App() {
     applyThemeAndAccessibilityToDocument(
       snap.settings.theme,
       snap.settings.reducedMotionOverride,
-      snap.settings.reducedTransparencyOverride
+      snap.settings.reducedTransparencyOverride,
+      snap.settings.textScale
     );
 
     if (!hydratedNextDayPrefRef.current) {
@@ -230,7 +244,8 @@ export function App() {
         applyThemeAndAccessibilityToDocument(
           snapshot.settings.theme,
           snapshot.settings.reducedMotionOverride,
-          snapshot.settings.reducedTransparencyOverride
+          snapshot.settings.reducedTransparencyOverride,
+          snapshot.settings.textScale
         );
       }
     };
@@ -238,36 +253,41 @@ export function App() {
     return () => mql.removeEventListener('change', handleChange);
   }, [snapshot]);
 
-  // Synchronize URL hash and window scroll per destination (3.1 Preserve route/context/scroll per destination)
+  // Synchronize URL hash and fresh-start navigation
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash;
+      if (hash.startsWith('#/calendar')) {
+        setContexts((prev) =>
+          updateDestinationContext(prev, 'calendar', {
+            selectedDate: actualTodayDate,
+            mode: 'month',
+            secondaryFilter: 'all',
+            scrollTop: 0,
+          })
+        );
+        setIsCalendarOpen(true);
+        return;
+      }
       const nextDest = parseDestinationFromHash(hash);
       const subView = extractSubViewFromHash(hash);
       if (subView) {
         setContexts((oldMap) =>
           updateDestinationContext(oldMap, 'me', { subView })
         );
+      } else if (nextDest === 'me' && hash === '#/me') {
+        setContexts((oldMap) =>
+          updateDestinationContext(oldMap, 'me', { subView: 'overview' })
+        );
       }
-      setActiveDestination((prev) => {
-        if (prev !== nextDest) {
-          const currentScroll = window.scrollY;
-          setContexts((oldMap) =>
-            updateDestinationContext(oldMap, prev, { scrollTop: currentScroll })
-          );
-        } else if (nextDest === 'me' && hash === '#/me' && !subView) {
-          setContexts((oldMap) =>
-            updateDestinationContext(oldMap, 'me', { subView: 'overview' })
-          );
-        }
-        return nextDest;
-      });
+      setActiveDestination(nextDest);
 
-      // Migrate legacy route bookmarks in browser URL
       if (hash.startsWith('#/plans')) {
         window.history.replaceState(null, '', '#/directions');
       } else if (hash.startsWith('#/habits')) {
-        setContexts(prev => updateDestinationContext(prev, 'today', {mode: 'habits'}));
+        setContexts((prev) =>
+          updateDestinationContext(prev, 'today', { mode: 'habits' })
+        );
         window.history.replaceState(null, '', '#/today');
       } else if (hash.startsWith('#/diary') || hash.startsWith('#/records')) {
         window.history.replaceState(null, '', '#/me');
@@ -275,44 +295,140 @@ export function App() {
     };
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
-  }, []);
+  }, [actualTodayDate]);
 
-  // Restore saved scroll position when switching destinations (never on clock ticks)
+  const tabContainerRef = useRef<HTMLDivElement>(null);
+  const prevDestinationRef = useRef<TabDestinationId>(activeDestination);
+  const didInitialFadeRef = useRef(false);
+
+  // Fresh start on destination change: always scroll to top and animate stage
   useLayoutEffect(() => {
-    const targetScroll = contexts[activeDestination].scrollTop ?? 0;
-    window.scrollTo({
-      top: targetScroll,
-      behavior: 'instant' as ScrollBehavior,
-    });
-  }, [activeDestination, Boolean(snapshot), contexts.today.mode]);
+    const el = tabContainerRef.current;
+    if (!el) return;
+    ensureMotionRootAttribute(el);
 
-  useEffect(() => {
-    if (activeDestination !== 'today' || !snapshot) return;
-    const save = () => {
-      try { window.sessionStorage.setItem('planui.today-context.v1', JSON.stringify({ selectedDate: contexts.today.selectedDate, mode: contexts.today.mode ?? 'day', scrollTop: window.scrollY })); } catch { /* Optional interaction context only. */ }
-    };
-    save();
-    window.addEventListener('scroll', save, { passive: true });
-    window.addEventListener('pagehide', save);
-    return () => { window.removeEventListener('scroll', save); window.removeEventListener('pagehide', save); };
-  }, [activeDestination, Boolean(snapshot), contexts.today.selectedDate, contexts.today.mode]);
+    if (!didInitialFadeRef.current && snapshot) {
+      didInitialFadeRef.current = true;
+      runInterruptibleAnimation(el, [{ opacity: 0 }, { opacity: 1 }], {
+        durationMs: isReducedMotion() ? tweens.reduced : 160,
+        easing: easings.out,
+        root: el,
+        willChange: 'opacity',
+      });
+      return;
+    }
 
-  const handleSelectDestination = (dest: PrimaryDestinationId) => {
-    if (dest === activeDestination) return;
-    const currentScroll = typeof window !== 'undefined' ? window.scrollY : 0;
-    setContexts((prev) =>
-      updateDestinationContext(prev, activeDestination, {
-        scrollTop: currentScroll,
-      })
-    );
-    setActiveDestination(dest);
-    if (typeof window !== 'undefined') {
-      const targetHash = formatHashForDestination(dest);
-      if (window.location.hash !== targetHash) {
-        window.history.pushState(null, '', targetHash);
+    if (prevDestinationRef.current !== activeDestination) {
+      prevDestinationRef.current = activeDestination;
+      window.scrollTo({
+        top: 0,
+        behavior: 'instant' as ScrollBehavior,
+      });
+      if (!wasRecentPopState()) {
+        if (isReducedMotion()) {
+          runInterruptibleAnimation(el, [{ opacity: 0 }, { opacity: 1 }], {
+            durationMs: tweens.reduced,
+            easing: easings.out,
+            root: el,
+            willChange: 'opacity',
+          });
+        } else {
+          runInterruptibleAnimation(
+            el,
+            [
+              { opacity: 0, transform: 'translate3d(0, 6px, 0)' },
+              { opacity: 1, transform: 'translate3d(0, 0, 0)' },
+            ],
+            {
+              durationMs: 180,
+              easing: easings.out,
+              root: el,
+              willChange: 'transform, opacity',
+            }
+          );
+        }
       }
     }
+  }, [activeDestination, Boolean(snapshot), contexts.today.mode]);
+
+  const resetTabToHome = useCallback(
+    (tab: TabDestinationId, smoothScroll = false) => {
+      const fresh = createInitialDestinationContextMap(actualTodayDate);
+      if (tab === 'today') {
+        setHabitHistory(false);
+        setContexts((prev) =>
+          updateDestinationContext(prev, 'today', {
+            ...fresh.today,
+            nextDayCollapsed: Boolean(snapshot?.settings.todayNextDayCollapsed),
+          })
+        );
+      } else if (tab === 'directions') {
+        setContexts((prev) =>
+          updateDestinationContext(prev, 'directions', fresh.directions)
+        );
+      } else if (tab === 'me') {
+        setContexts((prev) => updateDestinationContext(prev, 'me', fresh.me));
+        if (typeof window !== 'undefined' && window.location.hash !== '#/me') {
+          window.history.replaceState(null, '', '#/me');
+        }
+      }
+      if (typeof window !== 'undefined') {
+        if (smoothScroll) {
+          smoothScrollToTop(300);
+        } else {
+          window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+        }
+      }
+    },
+    [actualTodayDate, snapshot?.settings.todayNextDayCollapsed]
+  );
+
+  const switchToTab = useCallback(
+    (dest: TabDestinationId) => {
+      resetTabToHome(dest, false);
+      setActiveDestination(dest);
+      if (typeof window !== 'undefined') {
+        const targetHash = formatHashForDestination(dest);
+        if (window.location.hash !== targetHash) {
+          window.history.pushState(null, '', targetHash);
+        }
+      }
+    },
+    [resetTabToHome]
+  );
+
+  const handleSelectDestination = (dest: TabDestinationId) => {
+    onTabTap(dest, {
+      current: activeDestination,
+      contexts,
+      actualTodayDate,
+      onResetCurrentTabToHome: (tab) => resetTabToHome(tab, true),
+      onSwitchTab: switchToTab,
+    });
   };
+
+  const openCalendarWindow = useCallback(
+    (initialMode: 'month' | 'week' | 'work_schedule' = 'month') => {
+      setContexts((prev) =>
+        updateDestinationContext(prev, 'calendar', {
+          selectedDate: actualTodayDate,
+          mode: initialMode,
+          secondaryFilter: 'all',
+          scrollTop: 0,
+        })
+      );
+      setIsCalendarOpen(true);
+    },
+    [actualTodayDate]
+  );
+
+  const handleToggleCalendarWindow = useCallback(() => {
+    if (isCalendarOpen) {
+      setIsCalendarOpen(false);
+    } else {
+      openCalendarWindow('month');
+    }
+  }, [isCalendarOpen, openCalendarWindow]);
 
   const openGlobalCreation = (
     preferredAction?: ImplementedCreationActionKind
@@ -451,17 +567,133 @@ export function App() {
   const inlineEditorView = activeDestination === 'me' && ['records', 'life_areas'].includes(contexts.me.subView);
   const pwaState = usePwaLifecycle(anyModalOpen || inlineEditorView ? ['shared_modal_editor'] : []);
 
+  const calendarOverlayContent = snapshot ? (
+    <div className="space-y-4" data-testid="destination-view-calendar">
+      <CalendarWorkspaceView
+        roadmapSource={{ folders, goals, projects, stages, tasks }}
+        settings={snapshot.settings}
+        selectedDate={calendarCtx.selectedDate}
+        actualTodayDate={actualTodayDate}
+        mode={calendarCtx.mode}
+        secondaryFilter={calendarCtx.secondaryFilter ?? 'all'}
+        displayZone={activeZone}
+        nowMs={nowMs}
+        events={events}
+        reservations={reservations}
+        tasks={tasks}
+        dayOffAnnotations={dayOffAnnotations}
+        onInspectHabitSession={(session) => {
+          if (session.habitOccurrence) {
+            setHabitOccurrence({
+              habitId: session.habitOccurrence.habitId,
+              date: session.habitOccurrence.localDate,
+            });
+          }
+        }}
+        shiftTemplates={shiftTemplates}
+        repositories={repositories}
+        habits={habits}
+        habitEntries={habitEntries}
+        onPlanHabit={(habitId, date) =>
+          setHabitOccurrence({ habitId, date })
+        }
+        onChangeMode={(mode) =>
+          setContexts((prev) =>
+            updateDestinationContext(prev, 'calendar', { mode })
+          )
+        }
+        onChangeSecondaryFilter={(secondaryFilter) =>
+          setContexts((prev) =>
+            updateDestinationContext(prev, 'calendar', {
+              secondaryFilter,
+            })
+          )
+        }
+        onSelectDate={(selectedDate) =>
+          setContexts((prev) =>
+            updateDestinationContext(prev, 'calendar', { selectedDate })
+          )
+        }
+        onToggleTaskState={handleToggleTaskState}
+        onCancelEvent={handleCancelEvent}
+        onInspectEvent={(ev) => setInspectedEvent(ev)}
+        onOpenGapPicker={(gap) => setActiveGapForPicker(gap)}
+        onOpenGlobalCreation={openGlobalCreation}
+        onDataChanged={async (msg) => {
+          await reloadLocalData();
+          if (msg) setToastMessage(msg);
+        }}
+        onModalStateChange={setIsLocalModalOpen}
+      />
+    </div>
+  ) : null;
+
   return (
     <>
       <FloatingShell
-        ambient={selectAmbientContext({ events }, nowMs, activeDestination === 'directions' ? folders.find(folder => folder.id === directionsCtx.activeFolderId)?.name : '')}
         activeDestination={activeDestination}
+        todayMode={todayCtx.mode ?? 'day'}
+        directionsSubMode={directionsCtx.subMode ?? 'projects'}
+        meSubView={meCtx.subView}
+        calendarMode={calendarCtx.mode}
+        isCalendarOpen={isCalendarOpen}
+        habitsEnabled={snapshot?.settings.modules?.habitsEnabled !== false}
+        wishlistEnabled={snapshot?.settings.modules?.wishlistEnabled !== false}
         onSelectDestination={handleSelectDestination}
-        onOpenGlobalCreate={() => transitionCreation(() => { openGlobalCreation('task'); setQuickAdd(true); })}
-        isModalOpen={anyModalOpen}
-        isBackgroundInert={Boolean(habitOccurrence) || isEditorOpen || isLocalModalOpen || Boolean(activeGapForPicker) || Boolean(inspectedEvent)}
+        onChangeTodayMode={(mode) => {
+          setContexts((prev) =>
+            updateDestinationContext(prev, 'today', {
+              mode,
+              hasInteraction: true,
+              scrollTop: 0,
+            })
+          );
+          if (typeof window !== 'undefined') {
+            window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+          }
+        }}
+        onChangeDirectionsSubMode={(subMode) => {
+          setContexts((prev) =>
+            updateDestinationContext(prev, 'directions', { subMode })
+          );
+          if (typeof window !== 'undefined') {
+            window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+          }
+        }}
+        onChangeMeSubView={(subView) => {
+          setContexts((prev) =>
+            updateDestinationContext(prev, 'me', { subView })
+          );
+          if (typeof window !== 'undefined') {
+            const targetHash =
+              subView === 'overview' ? '#/me' : `#/${subView}`;
+            if (window.location.hash !== targetHash) {
+              window.history.replaceState(null, '', targetHash);
+            }
+            window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+          }
+        }}
+        onChangeCalendarMode={(mode) => {
+          setContexts((prev) =>
+            updateDestinationContext(prev, 'calendar', { mode })
+          );
+        }}
+        onToggleCalendarWindow={handleToggleCalendarWindow}
+        onCloseCalendarWindow={() => setIsCalendarOpen(false)}
+        calendarWindowContent={calendarOverlayContent}
+        onCenterCreateClick={() => {
+          if (isEditorOpen) {
+            transitionCreation(() => setIsEditorOpen(false));
+          } else {
+            transitionCreation(() => {
+              openGlobalCreation(undefined);
+              setQuickAdd(true);
+            });
+          }
+        }}
+        isEditorOpen={isEditorOpen}
       >
-        <div className="space-y-6">
+        <div ref={tabContainerRef} data-motion="idle" data-ui="tab-stage" className="space-y-6">
           {storageError && <FeedbackBanner tone="error" message={storageError} />}
           {externalReplacement && <div role="alert" className="rounded-2xl border border-amber-400 p-4 space-y-3">
             <p>В іншій вкладці замінено локальні дані. Незбережене введення залишено на екрані, але збереження заблоковано. Скопіюйте потрібний текст перед перезавантаженням.</p>
@@ -473,7 +705,11 @@ export function App() {
           {toastMessage && (
             <Toast
               message={toastMessage}
-              onDismiss={() => setToastMessage(null)}
+              undo={toastUndo}
+              onDismiss={() => {
+                setToastMessage(null);
+                setToastUndo(undefined);
+              }}
             />
           )}
 
@@ -490,11 +726,11 @@ export function App() {
             <TodayWorkspaceView habitHistory={habitHistory} folders={folders}
               mode={todayCtx.mode ?? 'day'}
               hasInteraction={todayCtx.hasInteraction}
-              savedScrollTop={todayCtx.scrollTop}
+              savedScrollTop={0}
               dailyPlans={snapshot.settings.dailyPlans}
               dailyPlan={snapshot.settings.dailyPlans?.[todayCtx.selectedDate]}
               onInteraction={() => { if (!todayCtx.hasInteraction) setContexts(prev => updateDestinationContext(prev, 'today', { hasInteraction: true })); }}
-              onChangeMode={mode => { const currentScroll = window.scrollY; setContexts(prev => updateDestinationContext(prev, 'today', { mode, hasInteraction: true, scrollTop: prev.today.modeScrollTops?.[mode] ?? 0, modeScrollTops: { ...prev.today.modeScrollTops, [prev.today.mode ?? 'day']: currentScroll } })); }}
+              onChangeMode={mode => { setContexts(prev => updateDestinationContext(prev, 'today', { mode, hasInteraction: true, scrollTop: 0 })); }}
               onModalStateChange={setIsLocalModalOpen}
               selectedDate={todayCtx.selectedDate}
               actualTodayDate={actualTodayDate}
@@ -552,57 +788,7 @@ export function App() {
             />
           )}
 
-          {/* DESTINATION 2: КАЛЕНДАР (Calendar — Stage 7 Month/Week/Day + Stage 8 Work Schedule) */}
-          {activeDestination === 'calendar' && snapshot && (
-            <div className="space-y-4" data-testid="destination-view-calendar">
-              <CalendarWorkspaceView
-                roadmapSource={{ folders, goals, projects, stages, tasks }}
-                settings={snapshot.settings}
-                selectedDate={calendarCtx.selectedDate}
-                actualTodayDate={actualTodayDate}
-                mode={calendarCtx.mode}
-                secondaryFilter={calendarCtx.secondaryFilter ?? 'all'}
-                displayZone={activeZone}
-                nowMs={nowMs}
-                events={events}
-                reservations={reservations}
-                tasks={tasks}
-                dayOffAnnotations={dayOffAnnotations}
-                onInspectHabitSession={session => { if(session.habitOccurrence) setHabitOccurrence({habitId: session.habitOccurrence.habitId,date: session.habitOccurrence.localDate}); }}
-              shiftTemplates={shiftTemplates}
-                repositories={repositories}
-                onChangeMode={(mode) =>
-                  setContexts((prev) =>
-                    updateDestinationContext(prev, 'calendar', { mode })
-                  )
-                }
-                onChangeSecondaryFilter={(secondaryFilter) =>
-                  setContexts((prev) =>
-                    updateDestinationContext(prev, 'calendar', {
-                      secondaryFilter,
-                    })
-                  )
-                }
-                onSelectDate={(selectedDate) =>
-                  setContexts((prev) =>
-                    updateDestinationContext(prev, 'calendar', { selectedDate })
-                  )
-                }
-                onToggleTaskState={handleToggleTaskState}
-                onCancelEvent={handleCancelEvent}
-                onInspectEvent={(ev) => setInspectedEvent(ev)}
-                onOpenGapPicker={(gap) => setActiveGapForPicker(gap)}
-                onOpenGlobalCreation={openGlobalCreation}
-                onDataChanged={async (msg) => {
-                  await reloadLocalData();
-                  if (msg) setToastMessage(msg);
-                }}
-                onModalStateChange={setIsLocalModalOpen}
-              />
-            </div>
-          )}
-
-          {/* DESTINATION 3: НАПРЯМИ (Directions - formerly Plans) */}
+          {/* DESTINATION 2: ПРОЄКТИ (Directions - formerly Plans) */}
           {(activeDestination === 'directions' || (activeDestination as string) === 'plans') && (
             <div data-testid="destination-view-directions">
               <PlansView
@@ -616,6 +802,8 @@ export function App() {
                 activeZone={activeZone}
                 actualTodayDate={actualTodayDate}
                 plansContext={directionsCtx}
+                settings={snapshot?.settings}
+                lifeAreaQuestions={snapshot?.lifeAreaQuestions}
                 repositories={repositories}
                 onUpdatePlansContext={(patch) =>
                   setContexts((prev) =>
@@ -628,18 +816,19 @@ export function App() {
                   if (msg) setToastMessage(msg);
                 }}
                 onModalStateChange={setIsLocalModalOpen}
+                onToggleTaskState={handleToggleTaskState}
               />
             </div>
           )}
 
-          {/* DESTINATION 4: Я (Me — Overview, Personal Records, Life Areas, Inspiration, Wishlist, Settings) */}
+          {/* DESTINATION 3: Я (Me — Overview/Life Areas, Statistics, Wishlist, Settings) */}
           {activeDestination === 'me' && snapshot && (
             <MeWorkspaceView
               onSettingsConfirmationChange={setIsSettingsConfirmationOpen}
               onOpenPlan={(kind, id) => {
                 const entity = kind === 'goal' ? goals.find(g => g.id === id) : projects.find(p => p.id === id);
-                setContexts(prev => updateDestinationContext(prev, 'directions', { activeFolderId: entity?.folderId ?? null, activeGoalId: kind === 'goal' ? id : projects.find(p => p.id === id)?.goalId ?? null, activeProjectId: kind === 'project' ? id : null }));
-                handleSelectDestination('directions');
+                setActiveDestination('directions');
+                setContexts(prev => updateDestinationContext(prev, 'directions', { subMode: kind === 'goal' ? 'goals' : 'projects', activeFolderId: entity?.folderId ?? null, activeGoalId: kind === 'goal' ? id : projects.find(p => p.id === id)?.goalId ?? null, activeProjectId: kind === 'project' ? id : null }));
               }}
               onInspectCalendarEvent={id => { const event = events.find(e => e.id === id); if (event) setInspectedEvent(event); }}
               subView={meCtx.subView}
@@ -681,7 +870,8 @@ export function App() {
                   applyThemeAndAccessibilityToDocument(
                     merged.theme,
                     merged.reducedMotionOverride,
-                    merged.reducedTransparencyOverride
+                    merged.reducedTransparencyOverride,
+                    merged.textScale
                   );
                   return { ...prev, settings: merged };
                 });
@@ -691,16 +881,11 @@ export function App() {
                 if (msg) setToastMessage(msg);
               }}
               onNavigateToWorkRoster={() => {
-                setContexts((prev) =>
-                  updateDestinationContext(prev, 'calendar', {
-                    mode: 'work_schedule',
-                  })
-                );
-                handleSelectDestination('calendar');
+                openCalendarWindow('work_schedule');
               }}
               onNavigateToHabits={() => {
-                setContexts(prev => updateDestinationContext(prev, 'today', {mode: 'habits'}));
-                handleSelectDestination('today');
+                setActiveDestination('today');
+                setContexts(prev => updateDestinationContext(prev, 'today', { selectedDate: actualTodayDate, mode: 'habits' }));
               }}
               onModalStateChange={setIsLocalModalOpen}
               pwaState={pwaState}
@@ -709,16 +894,49 @@ export function App() {
         </div>
       </FloatingShell>
 
-      {habitOccurrence && snapshot && habits.some(h => h.id === habitOccurrence.habitId) && <HabitSessionSheet habit={habits.find(h => h.id === habitOccurrence.habitId)!} date={habitOccurrence.date} zone={activeZone} tasks={tasks} events={events} reservations={reservations} entries={habitEntries} repositories={repositories} allowPlanning={snapshot.settings.modules?.habitsEnabled !== false} onChanged={reloadLocalData} onClose={() => setHabitOccurrence(null)} />}
+      {habitOccurrence &&
+        snapshot &&
+        habits.some((h) => h.id === habitOccurrence.habitId) && (
+          <SessionSheet
+            isOpen
+            habit={habits.find((h) => h.id === habitOccurrence.habitId)!}
+            habitEntries={habitEntries}
+            date={habitOccurrence.date}
+            zone={activeZone}
+            tasks={tasks}
+            events={events}
+            reservations={reservations}
+            repositories={repositories}
+            onSaved={async (msg) => {
+              await reloadLocalData();
+              if (msg) setToastMessage(msg);
+            }}
+            onClose={() => setHabitOccurrence(null)}
+          />
+        )}
       <SharedEditorHost
         globalQuickAdd={quickAdd}
         isOpen={isEditorOpen}
-        activeDestination={activeDestination}
+        activeDestination={isCalendarOpen ? 'calendar' : activeDestination}
         contexts={contexts}
-        initialContext={quickAdd ? { ...buildInitialCreationContext(activeDestination, contexts), targetDate: null, folderId: null, goalId: null, projectId: null, stageId: null } : buildInitialCreationContext(
-          activeDestination,
-          contexts
-        )}
+        initialContext={
+          quickAdd
+            ? {
+                ...buildInitialCreationContext(
+                  isCalendarOpen ? 'calendar' : activeDestination,
+                  contexts
+                ),
+                targetDate: null,
+                folderId: null,
+                goalId: null,
+                projectId: null,
+                stageId: null,
+              }
+            : buildInitialCreationContext(
+                isCalendarOpen ? 'calendar' : activeDestination,
+                contexts
+              )
+        }
         initialActionKind={editorInitialAction}
         enabledModules={snapshot?.settings.modules}
         activeZone={activeZone}
@@ -730,6 +948,7 @@ export function App() {
         reservations={reservations}
         events={events}
         shiftTemplates={shiftTemplates}
+        dayOffAnnotations={dayOffAnnotations}
         lifeAreaQuestions={lifeAreaQuestions}
         wishlistCategories={wishlistCategories}
         preferredWishlistCurrency={
@@ -737,9 +956,12 @@ export function App() {
         }
         repositories={repositories}
         onClose={() => transitionCreation(() => setIsEditorOpen(false))}
-        onEntityCreated={async (msg) => {
+        onEntityCreated={async (msg, undoFn) => {
           await reloadLocalData();
-          setToastMessage(msg);
+          if (msg) {
+            setToastMessage(msg);
+            setToastUndo(() => undoFn);
+          }
         }}
       />
 
@@ -759,19 +981,30 @@ export function App() {
         }}
       />
 
-      <EventDetailSheet
-        event={inspectedEvent}
-        displayZone={activeZone}
-        events={events}
-        reservations={reservations}
-        tasks={tasks}
-        repositories={repositories}
-        onClose={() => setInspectedEvent(null)}
-        onEventUpdated={async (msg) => {
-          await reloadLocalData();
-          setToastMessage(msg);
-        }}
-      />
+      {inspectedEvent && (
+        <TaskSheet
+          event={inspectedEvent}
+          date={
+            inspectedEvent.schedule.kind === 'timed'
+              ? inspectedEvent.schedule.interval.originStartLocalDate
+              : inspectedEvent.schedule.startLocalDate
+          }
+          zone={activeZone}
+          tasks={tasks}
+          events={events}
+          reservations={reservations}
+          folders={folders}
+          projects={projects}
+          goals={goals}
+          lifeAreas={lifeAreaQuestions}
+          repositories={repositories}
+          onClose={() => setInspectedEvent(null)}
+          onSaved={async (msg) => {
+            await reloadLocalData();
+            if (msg) setToastMessage(msg);
+          }}
+        />
+      )}
     </>
   );
 }

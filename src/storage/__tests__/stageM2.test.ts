@@ -28,7 +28,7 @@ describe('Stage M2: Four-Destination Application Shell & Optional Modules Tests'
     assert.equal(PRIMARY_NAV_ITEMS[1].labelUk, UK_STRINGS.nav.calendar);
 
     assert.equal(PRIMARY_NAV_ITEMS[2].id, 'directions');
-    assert.equal(PRIMARY_NAV_ITEMS[2].labelUk, 'Напрями');
+    assert.equal(PRIMARY_NAV_ITEMS[2].labelUk, 'Проєкти');
     assert.equal(PRIMARY_NAV_ITEMS[2].labelUk, UK_STRINGS.nav.directions);
 
     assert.equal(PRIMARY_NAV_ITEMS[3].id, 'me');

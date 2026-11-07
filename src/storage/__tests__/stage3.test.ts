@@ -22,7 +22,7 @@ describe('Stage 3: Design System, Floating Shell, and Creation Host Unit Tests',
     );
     assert.deepEqual(
       PRIMARY_NAV_ITEMS.map((item) => item.labelUk),
-      ['Сьогодні', 'Календар', 'Напрями', 'Я']
+      ['Сьогодні', 'Календар', 'Проєкти', 'Я']
     );
   });
 

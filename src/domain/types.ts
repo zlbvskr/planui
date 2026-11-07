@@ -23,11 +23,27 @@ export interface ZonedInterval {
   originEndLocalTime: LocalTimeString;
 }
 
+export interface MeasureLogEntry {
+  ts: IsoInstantString;
+  delta: number;
+}
+
+export interface Measure {
+  unit: string;
+  target?: number | null;
+  current: number;
+  log: MeasureLogEntry[];
+}
+
+export type FolderKind = 'tasks' | 'habits' | 'projects' | 'wishes';
+
 export interface Folder {
-  lifeAreaId?: EntityId | null;
   id: EntityId;
+  kind?: FolderKind;
   name: string;
   parentId: EntityId | null;
+  areaId?: EntityId | null;
+  lifeAreaId?: EntityId | null;
   order: number;
   createdAt: IsoInstantString;
   updatedAt: IsoInstantString;
@@ -76,9 +92,13 @@ export interface Goal extends RoadmapMetadata {
   completionCriteriaUk: string | null; // "Як я зрозумію, що ціль досягнуто"
   nextActionTaskId: EntityId | null; // посилання на канонічну справу
   timing: GoalTimingMetadata | null;
+  termStart?: LocalDateString | null;
+  termEnd?: LocalDateString | null;
   folderId: EntityId | null; // прив'язка до напряму (папки)
+  areaId?: EntityId | null;
   lifeAreaId: EntityId | null; // пряма прив'язка до сфери життя
   implementationIntentionUk: string | null; // "Якщо..., то..."
+  measure?: Measure | null;
   state: GoalState;
   archived: boolean;
   order: number;
@@ -97,7 +117,10 @@ export interface Project extends RoadmapMetadata {
   targetDate: LocalDateString | null;
   folderId: EntityId | null;
   goalId?: EntityId | null; // M1: опціональне посилання на ціль
+  areaId?: EntityId | null;
   lifeAreaId: EntityId | null;
+  measure?: Measure | null;
+  order?: number;
   collaboratorText: string | null;
   purposeUk?: string | null; // M1: сенс / мета
   completionCriteriaUk?: string | null; // M1: критерії завершення
@@ -160,7 +183,11 @@ export interface ChecklistItem {
 }
 
 export interface Task {
+  areaId?: EntityId | null;
   lifeAreaId?: EntityId | null;
+  folderId?: EntityId | null;
+  order?: number;
+  measure?: Measure | null;
   effort?: TaskEffort | null;
   id: EntityId;
   title: string;
@@ -231,7 +258,10 @@ export interface WorkShiftProperties {
 }
 
 export interface CalendarEvent {
+  areaId?: EntityId | null;
   lifeAreaId?: EntityId | null;
+  folderId?: EntityId | null;
+  order?: number;
   id: EntityId;
   title: string;
   note: string | null;
@@ -247,6 +277,9 @@ export interface CalendarEvent {
 }
 
 export interface ShiftTemplate {
+  areaId?: EntityId | null;
+  folderId?: EntityId | null;
+  order?: number;
   id: EntityId;
   name: string;
   code: string;
@@ -261,6 +294,9 @@ export interface ShiftTemplate {
 }
 
 export interface DayOffAnnotation {
+  areaId?: EntityId | null;
+  folderId?: EntityId | null;
+  order?: number;
   id: EntityId;
   localDate: LocalDateString;
   sourceZone: IanaTimeZone;
@@ -292,6 +328,9 @@ export interface HabitRuleRevision {
 }
 
 export interface Habit {
+  areaId?: EntityId | null;
+  order?: number;
+  measure?: Measure | null;
   minimumVersionUk?: string | null;
   contextCueUk?: string | null;
   reminderIntentionUk?: string | null;
@@ -347,10 +386,25 @@ export interface PersonalRecord {
   revision: number;
 }
 
+export interface LifeArea {
+  id: EntityId;
+  name: string;
+  rating: number | null;
+  ratedAt?: IsoInstantString | null;
+  goodEnough?: string | null;
+  focus?: boolean | null;
+  order?: number;
+  areaId?: EntityId;
+}
+
 export interface LifeAreaQuestion {
   archived?: boolean;
   mergedIntoId?: EntityId | null;
   goodEnoughUk?: string | null;
+  rating?: number | null;
+  ratedAt?: IsoInstantString | null;
+  goodEnough?: string | null;
+  focus?: boolean | null;
   starterKeys?: string[];
   id: EntityId;
   order: number;
@@ -463,6 +517,10 @@ export interface WishItem {
   linkUrl?: string | null;
   mediaId?: EntityId | null;
   projectId?: EntityId | null;
+  areaId?: EntityId | null;
+  folderId?: EntityId | null;
+  order?: number;
+  measure?: Measure | null;
   id: EntityId;
   title: string;
   note: string | null;
@@ -501,6 +559,8 @@ export interface PlanuiSettings {
   reducedTransparencyOverride: boolean;
   preferredWishlistCurrency: SupportedCurrencyCode | null;
   modules?: OptionalModulesSettings;
+  myLife?: string | null;
+  textScale?: 'standard' | 'larger' | 'largest' | number | null;
   dbGeneration: number;
   appVersion: string;
   dbSchemaVersion: number;

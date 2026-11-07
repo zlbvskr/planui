@@ -1,6 +1,4 @@
 import {Icon} from '../../ui/icons';
-import {projectTodayTasks} from '../../domain/today';
-import {minimumDayTasks} from '../today/minimumDayPresentation';
 import React, {
   memo,
   useEffect,
@@ -38,15 +36,17 @@ import {
 import { EMPTY_DAILY_PLAN } from "../../domain/today";
 import {
   formatDeadline,
+  formatDuration,
   formatInstant,
   formatShortDate,
   formatTime,
   formatTimeRange,
   sentenceCase,
 } from "../../lib/format";
-import { ActionMenu, ItemCard, Pill, Sheet, Row } from "../ui/design";
-import { directionFor, Effort } from "./itemPresentation";
+import { ActionMenu, ItemCard, Pill, Sheet, Row, EventBar, TintedCard, Orb } from "../../ui";
+import { directionFor, Effort, itemColor } from "./itemPresentation";
 import { dayOffset, futureGaps, minutePixels } from "./viewport";
+import { resolveArea, areaColor, SHIFT_DAY_COLOR, SHIFT_NIGHT_COLOR } from "../../domain/modelHelpers";
 export interface SharedDayTimelineProps {
   folders?: readonly Folder[];
   projects?: readonly Project[];
@@ -124,100 +124,196 @@ const TimelineItem = memo(function TimelineItem({
   shared,
   presentationKey,
   plan,
+  displayLane,
+  totalLanes,
+  overflowCount = 0,
 }: {
   plan: DailyPlan;
   presentationKey: string;
   p: ReturnType<typeof layoutTimelineOverlapLanes>["positionedItems"][number];
   height: number;
   shared: React.RefObject<SharedDayTimelineProps>;
+  displayLane: number;
+  totalLanes: number;
+  overflowCount?: number;
 }) {
-  const [detailOpen,setDetailOpen] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
   const props = shared.current;
   const { tasks, events, reservations } = props;
   const folders = props.folders ?? EMPTY,
     projects = props.projects ?? EMPTY;
   const item = p.item,
     task = tasks.find((t) => t.id === item.taskId),
-    ev = events.find((e) => e.id === item.sourceId),
-    dir = directionFor(task, folders, projects);
-  const cardHeight = Math.max(32,(p.heightPercent / 100) * height - (item.segment.continuesAfterDayEnd ? 0 : 4));
-  const reminder = cardHeight < 44;
+    ev = events.find((e) => e.id === item.sourceId);
+
+  const context = { folders, projects };
+  const areaInfo = resolveArea(task ?? ev, context);
+  const areaColorVal = areaColor(areaInfo?.rating);
+
+  const cardHeight = Math.max(34, (p.heightPercent / 100) * height - (item.segment.continuesAfterDayEnd ? 0 : 4));
+  const isCompact = cardHeight < 48;
+
+  const isShift = ev?.type === "work_shift" || item.sourceKind === "work_shift";
+  const isNightShift =
+    isShift &&
+    ev?.schedule.kind === "timed" &&
+    ev.schedule.interval.originStartLocalDate !== ev.schedule.interval.originEndLocalDate;
+
   const hue = task
-    ? dir.hue
-    : ev?.type === "work_shift"
-      ? (ev.schedule.kind==='timed'&&ev.schedule.interval.originStartLocalDate!==ev.schedule.interval.originEndLocalDate?"var(--color-night-shift)":"var(--color-day-shift)")
-      : ev?.type === "sleep"
-        ? "var(--color-sleep)"
-        : "var(--hue-relationships)";
+    ? (areaInfo ? areaColorVal : directionFor(task, folders, projects).hue)
+    : isShift
+    ? (areaInfo ? areaColorVal : (isNightShift ? SHIFT_NIGHT_COLOR : SHIFT_DAY_COLOR))
+    : ev?.type === "sleep"
+    ? "var(--color-sleep, var(--color-neutral-slate))"
+    : (areaInfo ? areaColorVal : itemColor(ev, { folders, projects }));
+
   const inspect = () => {
     const current = shared.current;
     if (task) current.onInspectTask?.(task, item.sourceId);
     else if (ev) current.onInspectEvent(ev);
   };
+
   const before = item.segment.continuesBeforeDayStart,
     after = item.segment.continuesAfterDayEnd;
-  return (<>
-    <ItemCard
-      key={item.itemKey}
-      hue={hue}
-      height={cardHeight}
-      data-source={item.sourceId}
-      data-collision={p.hasConflict}
-      data-continues-before={before}
-      data-continues-after={after}
-      className={`today-time-item ${reminder ? "today-reminder" : ""}`}
-      style={{
-        top: `${p.topPercent}%`,
-        height: cardHeight,
-        left: `calc(52px + (100% - 52px) * ${p.laneIndex / p.totalLanes})`,
-        width: `calc((100% - 52px) / ${p.totalLanes} - 2px)`,
-        borderTopLeftRadius: before ? 0 : undefined,
-        borderTopRightRadius: before ? 0 : undefined,
-        borderBottomLeftRadius: after ? 0 : undefined,
-        borderBottomRightRadius: after ? 0 : undefined,
-      }}
-    >
-      <button
-        className="today-item-open"
-        onClick={()=>setDetailOpen(true)}
-        aria-label={`Відкрити: ${item.title}`}
-      >
-        <h3>{item.title}{reminder?` · ${formatTime(item.segment.displayStartLocalTime)}`:null}</h3>
-        {cardHeight > 72 && task?.description && <p>{task.description}</p>}
-        {!reminder && (
-          <div className="ui-item-meta timeline-meta">
-            <span data-user-content>{formatTimeRange(
-              item.segment.displayStartLocalTime,
-              item.segment.displayEndLocalTime,
-            )}{" "}
-            · {task ? dir.name : item.title}</span>
-            {task?.effort && (
-              <>
-                <Effort effort={task.effort} />
-              </>
-            )}
-          </div>
-        )}
-      </button>
-      {!reminder && plan.focusTaskIds.includes(task?.id ?? "") && (
-        <span className="today-star" role="img" aria-label="Фокус дня">
-          <Icon name="star" size={14}/>
-        </span>
-      )}
-      {task?.deadline?.kind === "date_only" && (
-        <span className="today-deadline">
-          до {formatDeadline(task.deadline.localDate)}
-        </span>
-      )}
 
-    </ItemCard>
-    <Sheet title={item.title} isOpen={detailOpen} onClose={()=>setDetailOpen(false)}>
-      <p className="ui-item-meta">{formatTimeRange(item.segment.displayStartLocalTime,item.segment.displayEndLocalTime)}</p>
-      <button type="button" className="ui-disclosure" onClick={()=>{setDetailOpen(false);inspect();}}><Row title="Редагувати"/></button>
-      {task&&<button type="button" className="ui-disclosure" onClick={()=>{setDetailOpen(false);void shared.current.onToggleTaskState(task.id);}}><Row title={task.state==='completed'?'Відкрити знову':'Завершити'}/></button>}
-      {ev&&<button type="button" className="ui-disclosure" onClick={()=>{setDetailOpen(false);void shared.current.onCancelEvent(ev.id,ev.revision);}}><Row title="Скасувати подію"/></button>}
-      {reservations.find(r=>r.id===item.sourceId)?.habitOccurrence&&<button type="button" className="ui-disclosure" onClick={()=>{setDetailOpen(false);shared.current.onInspectHabitSession?.(reservations.find(r=>r.id===item.sourceId)!);}}><Row title="Запис звички"/></button>}
-    </Sheet>
+  const timeRangeLabel = formatTimeRange(
+    item.segment.displayStartLocalTime,
+    item.segment.displayEndLocalTime,
+  );
+
+  const leftCalc = `calc(52px + (100% - 52px) * ${displayLane / totalLanes})`;
+  const widthCalc = `calc((100% - 52px) / ${totalLanes} - 4px)`;
+
+  return (
+    <>
+      <div
+        key={item.itemKey}
+        data-source={item.sourceId}
+        data-collision={p.hasConflict}
+        data-continues-before={before}
+        data-continues-after={after}
+        className="timeline-item-positioned"
+        style={{
+          position: "absolute",
+          top: `${p.topPercent}%`,
+          height: cardHeight,
+          left: leftCalc,
+          width: widthCalc,
+          zIndex: 10,
+        }}
+      >
+        {task ? (
+          <TintedCard
+            color={hue}
+            compact={isCompact}
+            className="w-full h-full relative cursor-pointer select-none"
+            onClick={() => setDetailOpen(true)}
+            title={item.title}
+            meta={
+              !isCompact ? (
+                <div className="flex flex-col gap-0.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span>{timeRangeLabel}</span>
+                    {areaInfo?.name && (
+                      <span className="inline-flex items-center gap-1 font-medium text-ink">
+                        <Orb size={10} color={hue} />
+                        {areaInfo.name}
+                      </span>
+                    )}
+                    {task.effort && <Effort effort={task.effort} />}
+                  </div>
+                  {task.measure && (
+                    <div className="timeline-measure-bar mt-1">
+                      <div className="w-full bg-black/10 rounded-full h-1 overflow-hidden">
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${Math.min(100, Math.max(0, (task.measure.current / (task.measure.target || 1)) * 100))}%`,
+                            backgroundColor: hue,
+                          }}
+                        />
+                      </div>
+                      <span className="text-[11px] font-medium text-secondary tabular-nums">
+                        {task.measure.current} / {task.measure.target} {task.measure.unit}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              ) : undefined
+            }
+            trailing={
+              overflowCount > 0 ? (
+                <span className="ui-pill text-[11px] font-bold bg-ink text-white px-1.5 py-0.5 rounded-full">
+                  +{overflowCount}
+                </span>
+              ) : plan.focusTaskIds.includes(task.id) ? (
+                <Icon name="star" size={14} className="text-amber-500" />
+              ) : undefined
+            }
+          />
+        ) : (
+          <EventBar
+            color={hue}
+            icon={isShift ? (isNightShift ? "moon" : "sun") : "calendar"}
+            title={item.title}
+            meta={!isCompact ? `${timeRangeLabel}${areaInfo?.name ? ` · ${areaInfo.name}` : ""}` : undefined}
+            status={
+              overflowCount > 0 ? (
+                <span className="text-[11px] font-bold bg-white/30 text-white px-1.5 py-0.5 rounded-full backdrop-blur-sm">
+                  +{overflowCount}
+                </span>
+              ) : undefined
+            }
+            className="w-full h-full relative cursor-pointer select-none"
+            onClick={() => setDetailOpen(true)}
+          />
+        )}
+      </div>
+
+      <Sheet title={item.title} isOpen={detailOpen} onClose={() => setDetailOpen(false)}>
+        <p className="ui-item-meta">{timeRangeLabel}</p>
+        <button type="button" className="ui-disclosure" onClick={() => { setDetailOpen(false); inspect(); }}>
+          <Row title="Редагувати" />
+        </button>
+        {task && (
+          <button
+            type="button"
+            className="ui-disclosure"
+            onClick={() => {
+              setDetailOpen(false);
+              void shared.current.onToggleTaskState(task.id);
+            }}
+          >
+            <Row title={task.state === "completed" ? "Відкрити знову" : "Завершити"} />
+          </button>
+        )}
+        {ev && (
+          <button
+            type="button"
+            className="ui-disclosure"
+            onClick={() => {
+              setDetailOpen(false);
+              void shared.current.onCancelEvent(ev.id, ev.revision);
+            }}
+          >
+            <Row title="Скасувати подію" />
+          </button>
+        )}
+        {reservations.find((r) => r.id === item.sourceId)?.habitOccurrence && (
+          <button
+            type="button"
+            className="ui-disclosure"
+            onClick={() => {
+              setDetailOpen(false);
+              shared.current.onInspectHabitSession?.(
+                reservations.find((r) => r.id === item.sourceId)!,
+              );
+            }}
+          >
+            <Row title="Запис звички" />
+          </button>
+        )}
+      </Sheet>
     </>
   );
 });
@@ -243,8 +339,10 @@ const TimelineDay = memo(
     visibleEnd: number;
   }) {
     const props = shared.current;
-    const { events } = props;
-    const plan = props.plans ? props.plans[projection.localDate]??EMPTY_DAILY_PLAN : props.plan??EMPTY_DAILY_PLAN;
+    const { events, tasks, reservations } = props;
+    const folders = props.folders ?? EMPTY,
+      projects = props.projects ?? EMPTY;
+    const plan = props.plans ? props.plans[projection.localDate] ?? EMPTY_DAILY_PLAN : props.plan ?? EMPTY_DAILY_PLAN;
     const height = minutePixels(projection.dayDurationMinutes);
     const bounds = useMemo(
       () =>
@@ -272,15 +370,84 @@ const TimelineDay = memo(
     const positions = useMemo(
       () =>
         layoutTimelineOverlapLanes({
-          items: plan.minimalDay ? projection.timelineItems.filter(item=>item.taskId?minimumDayTasks(projectTodayTasks(props.tasks,props.reservations,projection.localDate,projection.displayZone,plan).relevant,plan).some(t=>t.id===item.taskId):item.sourceKind!=='reservation'&&(item.isBlocking||['sleep','rest'].includes(events.find(e=>e.id===item.sourceId)?.type??''))) : projection.timelineItems,
+          items: projection.timelineItems,
           dayDurationMinutes: projection.dayDurationMinutes,
           nowMs: initialNow,
         }).positionedItems,
-      [projection, initialNow, plan, props.tasks],
+      [projection, initialNow],
     );
-    const gap = plan.minimalDay
-      ? undefined
-      : futureGaps(projection.availability.unoccupiedGaps, initialNow).at(-1);
+
+    // Clamped overlap lanes to max 2 columns with +N on lane 1
+    const clampedLanes = useMemo(() => {
+      const overflowBuckets = new Map<number, number>();
+      positions.forEach((pos) => {
+        if (pos.laneIndex >= 2) {
+          const key = Math.floor(pos.topPercent / 5);
+          overflowBuckets.set(key, (overflowBuckets.get(key) ?? 0) + 1);
+        }
+      });
+
+      return positions
+        .filter((pos) => pos.laneIndex < 2)
+        .map((pos) => {
+          const key = Math.floor(pos.topPercent / 5);
+          const overflow = pos.laneIndex === 1 ? overflowBuckets.get(key) ?? 0 : 0;
+          return {
+            pos,
+            displayLane: pos.laneIndex,
+            totalLanes: Math.min(2, Math.max(1, pos.totalLanes)),
+            overflowCount: overflow,
+          };
+        });
+    }, [positions]);
+
+    // Categorized "Без часу" items for this date
+    const untimedShifts = useMemo(
+      () =>
+        events.filter(
+          (e) =>
+            e.type === "work_shift" &&
+            e.schedule.kind === "all_day" &&
+            (e.schedule as any).startLocalDate <= projection.localDate &&
+            projection.localDate < (e.schedule as any).endLocalDateExclusive,
+        ),
+      [events, projection.localDate],
+    );
+
+    const untimedEvents = useMemo(
+      () =>
+        events.filter(
+          (e) =>
+            e.type !== "work_shift" &&
+            e.type !== "sleep" &&
+            e.schedule.kind === "all_day" &&
+            (e.schedule as any).startLocalDate <= projection.localDate &&
+            projection.localDate < (e.schedule as any).endLocalDateExclusive,
+        ),
+      [events, projection.localDate],
+    );
+
+
+    const untimedTasks = useMemo(
+      () =>
+        tasks.filter(
+          (t) =>
+            t.state === "open" &&
+            t.plannedDate === projection.localDate &&
+            !reservations.some(
+              (r) => r.taskId === t.id && r.state === "active",
+            ),
+        ),
+      [tasks, reservations, projection.localDate],
+    );
+
+    const hasUntimed =
+      untimedShifts.length > 0 ||
+      untimedEvents.length > 0 ||
+      untimedTasks.length > 0 ||
+      projection.allDayItems.length > 0;
+
+    const gap = futureGaps(projection.availability.unoccupiedGaps, initialNow).at(-1);
     const rail = useMemo(
       () =>
         hours
@@ -321,6 +488,7 @@ const TimelineDay = memo(
           )),
       [hours, height, bounds, initialNow, today, projection.localDate],
     );
+
     return (
       <section
         className="timeline-day"
@@ -329,21 +497,97 @@ const TimelineDay = memo(
         aria-label={dayLabel}
       >
         <div className="timeline-day-boundary">
-          <span>{dayLabel}</span>
+          <span className="timeline-day-chip">{dayLabel}</span>
         </div>
-        {projection.allDayItems.length > 0 && (
-          <div className="timeline-all-day">
-            {projection.allDayItems.filter(i=>!plan.minimalDay||i.isBlocking).map((i) => (
-              <button
-                key={i.eventId}
-                onClick={() => {
-                  const e = events.find((e) => e.id === i.eventId);
-                  if (e) shared.current.onInspectEvent(e);
-                }}
-              >
-                {i.title} · Увесь день
-              </button>
-            ))}
+
+        {hasUntimed && (
+          <div className="timeline-untimed-section space-y-2 mb-3">
+            <div className="timeline-untimed-title text-[12px] font-semibold text-secondary tracking-wider px-2">
+              Без часу
+            </div>
+            {/* Category (2): Зміна */}
+            {untimedShifts.map((ev) => {
+              const areaInfo = resolveArea(ev, { folders, projects });
+              const color = areaInfo ? areaColor(areaInfo.rating) : SHIFT_DAY_COLOR;
+              return (
+                <EventBar
+                  key={ev.id}
+                  color={color}
+                  icon="sun"
+                  title={ev.title}
+                  meta={`Зміна${areaInfo?.name ? ` · ${areaInfo.name}` : ""}`}
+                  onClick={() => shared.current.onInspectEvent(ev)}
+                />
+              );
+            })}
+
+            {/* Category (3): Події */}
+            {untimedEvents.map((ev) => {
+              const areaInfo = resolveArea(ev, { folders, projects });
+              const color = areaInfo ? areaColor(areaInfo.rating) : itemColor(ev, { folders, projects });
+              return (
+                <EventBar
+                  key={ev.id}
+                  color={color}
+                  icon="calendar"
+                  title={ev.title}
+                  meta={areaInfo?.name ?? "Подія"}
+                  onClick={() => shared.current.onInspectEvent(ev)}
+                />
+              );
+            })}
+
+            {/* Legacy all-day items if not already rendered */}
+            {projection.allDayItems
+              .filter(
+                (i) =>
+                  !untimedShifts.some((s) => s.id === i.eventId) &&
+                  !untimedEvents.some((e) => e.id === i.eventId),
+              )
+              .map((i) => {
+                const e = events.find((ev) => ev.id === i.eventId);
+                const areaInfo = resolveArea(e, { folders, projects });
+                const color = areaInfo ? areaColor(areaInfo.rating) : "var(--color-brand)";
+                return (
+                  <EventBar
+                    key={i.eventId}
+                    color={color}
+                    icon="calendar"
+                    title={i.title}
+                    meta="Увесь день"
+                    onClick={() => {
+                      if (e) shared.current.onInspectEvent(e);
+                    }}
+                  />
+                );
+              })}
+
+            {/* Category (4): Завдання */}
+            {untimedTasks.map((t) => {
+              const areaInfo = resolveArea(t, { folders, projects });
+              const color = areaInfo ? areaColor(areaInfo.rating) : directionFor(t, folders, projects).hue;
+              return (
+                <TintedCard
+                  key={t.id}
+                  color={color}
+                  title={t.title}
+                  meta={
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {areaInfo?.name && (
+                        <span className="inline-flex items-center gap-1 font-medium text-ink">
+                          <Orb size={10} color={color} />
+                          {areaInfo.name}
+                        </span>
+                      )}
+                      {t.estimatedDurationMinutes && (
+                        <span>{formatDuration(t.estimatedDurationMinutes)}</span>
+                      )}
+                    </div>
+                  }
+                  onClick={() => shared.current.onInspectTask?.(t)}
+                />
+              );
+            })}
           </div>
         )}
 
@@ -376,28 +620,31 @@ const TimelineDay = memo(
             · Запланувати справу
           </button>
         )}
-        {positions
+        {clampedLanes
           .filter(
-            (p) =>
-              (p.topPercent / 100) * height <= visibleEnd &&
-              ((p.topPercent + p.heightPercent) / 100) * height >= visibleStart,
+            ({ pos }) =>
+              (pos.topPercent / 100) * height <= visibleEnd &&
+              ((pos.topPercent + pos.heightPercent) / 100) * height >= visibleStart,
           )
           .filter(
-            (p) =>
+            ({ pos }) =>
               !overnight ||
               projection.localDate !== today ||
               expanded ||
-              (p.item.itemKey !== overnight.itemKey &&
-                p.item.itemKey !== sleep?.itemKey),
+              (pos.item.itemKey !== overnight.itemKey &&
+                pos.item.itemKey !== sleep?.itemKey),
           )
-          .map((p) => (
+          .map(({ pos, displayLane, totalLanes, overflowCount }) => (
             <TimelineItem
-              key={p.item.itemKey}
-              p={p}
+              key={pos.item.itemKey}
+              p={pos}
               height={height}
               shared={shared}
               presentationKey={presentationKey}
               plan={plan}
+              displayLane={displayLane}
+              totalLanes={totalLanes}
+              overflowCount={overflowCount}
             />
           ))}
         {projection.localDate === today && (
@@ -418,6 +665,7 @@ const TimelineDay = memo(
     a.visibleStart === b.visibleStart &&
     a.visibleEnd === b.visibleEnd,
 );
+
 
 /** One scroll surface; offsets use elapsed zoned time, including 23/25-hour days.
  * Offscreen days remain geometry-only spacers. Prepending compensates before paint. */

@@ -1,310 +1,832 @@
-import React, { useEffect, useState } from 'react';
-import {
-  Calendar,
-  Compass,
-  SunMedium,
-  User,
-  Plus,
-} from '../../ui/icons';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Icon, type IconName } from '../../ui/icons';
 import { PrimaryDestinationId, UK_STRINGS } from '../../i18n/uk';
-import { PRIMARY_NAV_ITEMS } from '../../state/shellStore';
+import {
+  CalendarViewMode,
+  DirectionsSubMode,
+  MeSubViewMode,
+  PRIMARY_NAV_ITEMS,
+  TabDestinationId,
+} from '../../state/shellStore';
+import { TodayMode } from '../../domain/types';
+import {
+  AmbientCanvas,
+  animateSpringTransform,
+  captureOrbRect,
+  easings,
+  ensureMotionRootAttribute,
+  isReducedMotion,
+  runInterruptibleAnimation,
+  springs,
+  tweens,
+  usePressFeedback,
+  useSelectionThumb,
+} from '../../ui/motion';
+import {
+  closeTopmostOverlay,
+  getTopmostOverlayId,
+  hasOpenOverlay,
+  useOverlayRegistration,
+} from '../../ui/overlayStack';
 
-const NAV_ICONS: Record<PrimaryDestinationId, React.FC<{ className?: string }>> = {
-  today: SunMedium,
-  calendar: Calendar,
-  directions: Compass,
-  me: User,
+const useIsomorphicLayoutEffect =
+  typeof window !== 'undefined' ? useLayoutEffect : useEffect;
+
+export interface ContextualSegmentOption {
+  value: string;
+  label: string;
+  icon: IconName;
+  testId?: string;
+}
+
+export interface DockProps {
+  activeDestination: TabDestinationId;
+  todayMode: TodayMode;
+  directionsSubMode: DirectionsSubMode;
+  meSubView: MeSubViewMode;
+  calendarMode: CalendarViewMode;
+  isCalendarOpen: boolean;
+  isEditorOpen: boolean;
+  habitsEnabled?: boolean;
+  wishlistEnabled?: boolean;
+  onTabPress: (destination: TabDestinationId) => void;
+  onChangeTodayMode: (mode: TodayMode) => void;
+  onChangeDirectionsSubMode: (mode: DirectionsSubMode) => void;
+  onChangeMeSubView: (subView: MeSubViewMode) => void;
+  onChangeCalendarMode: (mode: 'month' | 'week') => void;
+  onToggleCalendarWindow: () => void;
+  onCenterCreateClick: () => void;
+}
+
+function DockContextualButton({
+  option,
+  selected,
+  compactUnselected,
+  onClick,
+}: {
+  option: ContextualSegmentOption;
+  selected: boolean;
+  compactUnselected: boolean;
+  onClick: () => void;
+}) {
+  const press = usePressFeedback<HTMLButtonElement>(true);
+  return (
+    <button
+      ref={press.ref}
+      type="button"
+      data-motion="idle"
+      aria-label={option.label}
+      aria-pressed={selected}
+      data-compact-unselected={compactUnselected && !selected ? 'true' : undefined}
+      data-testid={option.testId ?? `dock-context-${option.value}`}
+      onClick={onClick}
+      onPointerDown={press.onPointerDown}
+      onPointerUp={press.onPointerUp}
+      onPointerCancel={press.onPointerCancel}
+      onPointerLeave={press.onPointerLeave}
+      className="dock-ctx-btn ui-pressable"
+    >
+      <Icon name={option.icon} size={15} />
+      <span className="dock-ctx-label">{option.label}</span>
+    </button>
+  );
+}
+
+function DockTabButton({
+  id,
+  label,
+  icon,
+  active,
+  onClick,
+}: {
+  id: TabDestinationId;
+  label: string;
+  icon: IconName;
+  active: boolean;
+  onClick: () => void;
+}) {
+  const press = usePressFeedback<HTMLButtonElement>(true);
+  return (
+    <button
+      ref={press.ref}
+      type="button"
+      data-motion="idle"
+      onClick={onClick}
+      onPointerDown={press.onPointerDown}
+      onPointerUp={press.onPointerUp}
+      onPointerCancel={press.onPointerCancel}
+      onPointerLeave={press.onPointerLeave}
+      aria-label={label}
+      aria-current={active ? 'page' : undefined}
+      data-active={active ? 'true' : 'false'}
+      data-testid={`nav-tab-${id}`}
+      className="dock-tab-btn ui-pressable"
+    >
+      <Icon name={icon} size={20} strokeWidth={active ? 2 : 1.75} />
+      <span
+        className="dock-tab-label-wrap"
+        data-active={active ? 'true' : 'false'}
+        aria-hidden={!active ? 'true' : undefined}
+      >
+        <span className="dock-tab-label">{label}</span>
+      </span>
+    </button>
+  );
+}
+
+export const Dock: React.FC<DockProps> = ({
+  activeDestination,
+  todayMode,
+  directionsSubMode,
+  meSubView,
+  calendarMode,
+  isCalendarOpen,
+  isEditorOpen,
+  habitsEnabled = true,
+  wishlistEnabled = true,
+  onTabPress,
+  onChangeTodayMode,
+  onChangeDirectionsSubMode,
+  onChangeMeSubView,
+  onChangeCalendarMode,
+  onToggleCalendarWindow,
+  onCenterCreateClick,
+}) => {
+  const calPress = usePressFeedback<HTMLButtonElement>(true);
+  const orbPress = usePressFeedback<HTMLButtonElement>(true);
+  const [compactUnselected, setCompactUnselected] = useState(false);
+
+  const contextGroupKey = isCalendarOpen ? 'calendar' : activeDestination;
+  const prevContextGroupRef = useRef(contextGroupKey);
+
+  const contextualOptions: ContextualSegmentOption[] = React.useMemo(() => {
+    if (isCalendarOpen) {
+      return [
+        { value: 'month', label: 'Місяць', icon: 'calendar' },
+        { value: 'week', label: 'Тиждень', icon: 'clock' },
+      ];
+    }
+    if (activeDestination === 'today') {
+      const items: ContextualSegmentOption[] = [
+        { value: 'day', label: 'День', icon: 'sun' },
+        { value: 'tasks', label: 'Завдання', icon: 'check' },
+      ];
+      if (habitsEnabled) {
+        items.push({ value: 'habits', label: 'Звички', icon: 'sparkles' });
+      }
+      return items;
+    }
+    if (activeDestination === 'directions') {
+      return [
+        { value: 'projects', label: 'Проєкти', icon: 'folder' },
+        { value: 'goals', label: 'Цілі', icon: 'target' },
+      ];
+    }
+    const meItems: ContextualSegmentOption[] = [
+      { value: 'records', label: 'Статистика', icon: 'sparkles' },
+    ];
+    if (wishlistEnabled) {
+      meItems.push({ value: 'wishlist', label: 'Список бажань', icon: 'heart' });
+    }
+    meItems.push({ value: 'settings', label: 'Налаштування', icon: 'settings' });
+    return meItems;
+  }, [isCalendarOpen, activeDestination, habitsEnabled, wishlistEnabled]);
+
+  const activeContextValue = React.useMemo(() => {
+    if (isCalendarOpen) {
+      return calendarMode === 'week' ? 'week' : 'month';
+    }
+    if (activeDestination === 'today') {
+      if (todayMode === 'habits' && !habitsEnabled) return 'day';
+      return todayMode ?? 'day';
+    }
+    if (activeDestination === 'directions') {
+      return directionsSubMode ?? 'projects';
+    }
+    if (
+      meSubView === 'records' ||
+      (meSubView === 'wishlist' && wishlistEnabled) ||
+      meSubView === 'settings'
+    ) {
+      return meSubView;
+    }
+    return '';
+  }, [
+    isCalendarOpen,
+    calendarMode,
+    activeDestination,
+    todayMode,
+    habitsEnabled,
+    directionsSubMode,
+    meSubView,
+    wishlistEnabled,
+  ]);
+
+  const { containerRef: ctxTrackRef, thumbRef: ctxThumbRef } =
+    useSelectionThumb(activeContextValue || '__none__', {
+      dynamicLayout: true,
+      layoutKey: contextGroupKey,
+    });
+
+  const { containerRef: tabTrackRef, thumbRef: tabThumbRef } =
+    useSelectionThumb(activeDestination, {
+      dynamicLayout: true,
+    });
+
+  // Animate contextual bar segments when context group changes (tab switch or calendar open)
+  useIsomorphicLayoutEffect(() => {
+    const track = ctxTrackRef.current;
+    if (!track) return;
+    if (prevContextGroupRef.current !== contextGroupKey) {
+      prevContextGroupRef.current = contextGroupKey;
+      const buttons = Array.from(track.querySelectorAll<HTMLElement>('button'));
+      const reduced = isReducedMotion();
+      buttons.forEach((btn) => {
+        if (reduced) {
+          runInterruptibleAnimation(btn, [{ opacity: 0 }, { opacity: 1 }], {
+            durationMs: tweens.reduced,
+            easing: easings.out,
+            root: track,
+            willChange: 'opacity',
+          });
+        } else {
+          runInterruptibleAnimation(
+            btn,
+            [
+              { opacity: 0, transform: 'translate3d(0, 8px, 0)' },
+              { opacity: 1, transform: 'translate3d(0, 0, 0)' },
+            ],
+            {
+              durationMs: 180,
+              easing: easings.out,
+              root: track,
+              willChange: 'transform, opacity',
+            }
+          );
+        }
+      });
+    }
+  }, [contextGroupKey, ctxTrackRef]);
+
+  useIsomorphicLayoutEffect(() => {
+    const track = ctxTrackRef.current;
+    if (!track) return;
+    const totalChars = contextualOptions.reduce((sum, o) => sum + o.label.length, 0);
+    const updateFit = () => {
+      const w = track.clientWidth || 260;
+      setCompactUnselected(contextualOptions.length >= 3 && (w < 290 || totalChars > 20));
+    };
+    updateFit();
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(updateFit);
+      ro.observe(track);
+      return () => ro.disconnect();
+    }
+  }, [contextualOptions, ctxTrackRef]);
+
+  const handleContextSelect = (val: string) => {
+    if (isCalendarOpen) {
+      onChangeCalendarMode(val === 'week' ? 'week' : 'month');
+      return;
+    }
+    if (activeDestination === 'today') {
+      onChangeTodayMode(val as TodayMode);
+      return;
+    }
+    if (activeDestination === 'directions') {
+      onChangeDirectionsSubMode(val as DirectionsSubMode);
+      return;
+    }
+    if (activeDestination === 'me') {
+      const next = val as MeSubViewMode;
+      // Tapping the already-selected segment returns to the life-areas page ('overview')
+      if (activeContextValue === next) {
+        onChangeMeSubView('overview');
+      } else {
+        onChangeMeSubView(next);
+      }
+    }
+  };
+
+  const tabIcons: Record<TabDestinationId, IconName> = {
+    today: 'sun',
+    directions: 'folder',
+    me: 'user',
+  };
+
+  return (
+    <div
+      className="planui-dock"
+      data-ui="dock"
+      data-testid="bottom-dock"
+    >
+      <div
+        className="planui-dock-left planui-floating-capsule"
+        data-ui="dock-left"
+      >
+        {/* Row 1: Contextual bar (segmented 40px) */}
+        <div
+          ref={ctxTrackRef as React.RefObject<HTMLDivElement>}
+          data-motion="idle"
+          data-ui="dock-contextual-bar"
+          data-testid="dock-contextual-bar"
+          role="group"
+          aria-label="Контекстний перемикач"
+          className="planui-dock-context-track"
+        >
+          <span
+            ref={ctxThumbRef}
+            aria-hidden="true"
+            data-ui="selection-thumb"
+            className="ui-selection-thumb planui-dock-context-thumb"
+            style={{ opacity: activeContextValue ? 1 : 0 }}
+          />
+          {contextualOptions.map((opt) => (
+            <DockContextualButton
+              key={opt.value}
+              option={opt}
+              selected={opt.value === activeContextValue}
+              compactUnselected={compactUnselected}
+              onClick={() => handleContextSelect(opt.value)}
+            />
+          ))}
+        </div>
+
+        {/* Row 2: Tab capsule (56px) */}
+        <nav
+          ref={tabTrackRef as React.RefObject<HTMLElement>}
+          data-motion="idle"
+          aria-label={UK_STRINGS.app.mainNavigationAria}
+          data-ui="dock-tabs"
+          className="planui-dock-tabs"
+        >
+          <span
+            ref={tabThumbRef}
+            aria-hidden="true"
+            data-ui="selection-thumb"
+            className="ui-selection-thumb planui-dock-tab-thumb"
+          />
+          {PRIMARY_NAV_ITEMS.map((item) => (
+            <DockTabButton
+              key={item.id}
+              id={item.id}
+              label={item.labelUk}
+              icon={tabIcons[item.id]}
+              active={activeDestination === item.id}
+              onClick={() => onTabPress(item.id)}
+            />
+          ))}
+        </nav>
+      </div>
+
+      {/* Right vertical stack: Calendar button (48px) above + orb (56px) */}
+      <div className="planui-dock-right" data-ui="dock-right">
+        <button
+          ref={calPress.ref}
+          type="button"
+          data-motion="idle"
+          aria-label={isCalendarOpen ? 'Закрити календар' : 'Календар'}
+          aria-pressed={isCalendarOpen}
+          data-open={isCalendarOpen ? 'true' : 'false'}
+          data-testid="dock-calendar-button"
+          onClick={onToggleCalendarWindow}
+          onPointerDown={calPress.onPointerDown}
+          onPointerUp={calPress.onPointerUp}
+          onPointerCancel={calPress.onPointerCancel}
+          onPointerLeave={calPress.onPointerLeave}
+          className="planui-dock-calendar-btn ui-pressable planui-floating-capsule"
+        >
+          <span
+            className="dock-cal-icon-stack"
+            data-open={isCalendarOpen ? 'true' : 'false'}
+          >
+            <span className="dock-cal-icon-cal" aria-hidden={isCalendarOpen ? 'true' : undefined}>
+              <Icon name="calendar" size={20} />
+            </span>
+            <span className="dock-cal-icon-close" aria-hidden={!isCalendarOpen ? 'true' : undefined}>
+              <Icon name="x" size={20} />
+            </span>
+          </span>
+        </button>
+
+        <button
+          ref={orbPress.ref}
+          type="button"
+          data-motion="idle"
+          data-ui="create-orb"
+          data-open={isEditorOpen ? 'true' : 'false'}
+          aria-label={
+            isEditorOpen
+              ? 'Закрити створення'
+              : UK_STRINGS.app.globalCreateButtonAria
+          }
+          aria-expanded={isEditorOpen}
+          data-testid="nav-create-Action"
+          onClick={(e) => {
+            captureOrbRect(e.currentTarget);
+            onCenterCreateClick();
+          }}
+          onPointerDown={orbPress.onPointerDown}
+          onPointerUp={orbPress.onPointerUp}
+          onPointerCancel={orbPress.onPointerCancel}
+          onPointerLeave={orbPress.onPointerLeave}
+          className="planui-dock-orb ui-pressable"
+        >
+          <span
+            className="planui-dock-orb-glyph"
+            style={{
+              transform: isEditorOpen ? 'rotate(45deg)' : 'rotate(0deg)',
+            }}
+          >
+            <Icon name="plus" size={24} />
+          </span>
+        </button>
+      </div>
+    </div>
+  );
+};
+
+export interface CalendarWindowProps {
+  isOpen: boolean;
+  onClose: () => void;
+  children: React.ReactNode;
+}
+
+export const CalendarWindow: React.FC<CalendarWindowProps> = ({
+  isOpen,
+  onClose,
+  children,
+}) => {
+  const [closing, setClosing] = useState(false);
+  const wasOpenRef = useRef(isOpen);
+  const windowRef = useRef<HTMLDivElement>(null);
+  const scrimRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{
+    startY: number;
+    lastY: number;
+    lastT: number;
+    velocity: number;
+    active: boolean;
+    fromBody: boolean;
+  } | null>(null);
+
+  useOverlayRegistration(isOpen, onClose, 'calendar-window');
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const bgRoot = document.querySelector<HTMLElement>('[data-testid="shell-background-root"]');
+    if (!bgRoot) return;
+    if (isOpen) {
+      bgRoot.setAttribute('data-sheet-open', 'true');
+    } else if (!document.querySelector('[data-ui="sheet"]:not([data-closing="true"])')) {
+      bgRoot.removeAttribute('data-sheet-open');
+    }
+    return () => {
+      if (!document.querySelector('[data-ui="sheet"]:not([data-closing="true"])')) {
+        bgRoot.removeAttribute('data-sheet-open');
+      }
+    };
+  }, [isOpen]);
+
+  useIsomorphicLayoutEffect(() => {
+    const win = windowRef.current;
+    const scrim = scrimRef.current;
+    const reduced = isReducedMotion();
+
+    if (isOpen) {
+      wasOpenRef.current = true;
+      if (closing) setClosing(false);
+      if (bodyRef.current) {
+        bodyRef.current.scrollTop = 0;
+      }
+      if (!win) return;
+      ensureMotionRootAttribute(win);
+      win.style.transform = '';
+      if (scrim) {
+        runInterruptibleAnimation(scrim, [{ opacity: 0 }, { opacity: 1 }], {
+          durationMs: reduced ? tweens.reduced : tweens.base,
+          easing: easings.out,
+          root: win,
+          willChange: 'opacity',
+        });
+      }
+      animateSpringTransform(
+        win,
+        'translate3d(0px, 100%, 0)',
+        'translate3d(0px, 0%, 0)',
+        springs.sheet,
+        {
+          fromOpacity: reduced ? 0 : 1,
+          toOpacity: 1,
+          root: win,
+        }
+      );
+    } else if (wasOpenRef.current) {
+      wasOpenRef.current = false;
+      if (!win) {
+        setClosing(false);
+        return;
+      }
+      setClosing(true);
+      if (scrim) {
+        runInterruptibleAnimation(scrim, [{ opacity: 1 }, { opacity: 0 }], {
+          durationMs: reduced ? tweens.reduced : tweens.base,
+          easing: easings.out,
+          root: win,
+          willChange: 'opacity',
+        });
+      }
+      animateSpringTransform(
+        win,
+        'translate3d(0px, 0%, 0)',
+        'translate3d(0px, 100%, 0)',
+        springs.sheet,
+        {
+          fromOpacity: 1,
+          toOpacity: reduced ? 0 : 1,
+          root: win,
+          onFinish: () => setClosing(false),
+        }
+      );
+    }
+  }, [isOpen]);
+
+  const isClosing = !isOpen && (closing || wasOpenRef.current);
+  if (!isOpen && !isClosing) return null;
+
+  const beginDrag = (clientY: number, fromBody = false) => {
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    dragRef.current = {
+      startY: clientY,
+      lastY: clientY,
+      lastT: now,
+      velocity: 0,
+      active: !fromBody,
+      fromBody,
+    };
+  };
+
+  const moveDrag = (clientY: number) => {
+    const state = dragRef.current;
+    const win = windowRef.current;
+    if (!state || !win) return;
+    const deltaY = clientY - state.startY;
+    if (state.fromBody && !state.active) {
+      if (bodyRef.current && bodyRef.current.scrollTop <= 0 && deltaY > 6) {
+        state.active = true;
+        state.startY = clientY;
+      } else if (Math.abs(deltaY) > 6) {
+        dragRef.current = null;
+        return;
+      } else {
+        return;
+      }
+    }
+    if (!state.active) return;
+
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const dt = Math.max(1, now - state.lastT);
+    state.velocity = (clientY - state.lastY) / dt;
+    state.lastY = clientY;
+    state.lastT = now;
+
+    const activeDelta = clientY - state.startY;
+    const offsetY = activeDelta < 0 ? activeDelta * 0.25 : activeDelta;
+    if (!isReducedMotion()) {
+      win.style.willChange = 'transform';
+      win.style.transform = `translate3d(0px, ${Math.round(offsetY)}px, 0)`;
+    }
+  };
+
+  const endDrag = (clientY: number) => {
+    const state = dragRef.current;
+    dragRef.current = null;
+    const win = windowRef.current;
+    if (!state || !state.active) return;
+    const deltaY = clientY - state.startY;
+    const velocity = state.velocity;
+    const h = win?.getBoundingClientRect().height || 520;
+    if (win) {
+      win.style.willChange = '';
+      win.style.transform = '';
+    }
+    if (velocity > 0.5 || deltaY > h * 0.3) {
+      onClose();
+    } else if (win && Math.abs(deltaY) > 2) {
+      const fromOffset = Math.round(deltaY < 0 ? deltaY * 0.25 : deltaY);
+      animateSpringTransform(
+        win,
+        `translate3d(0px, ${fromOffset}px, 0)`,
+        'translate3d(0px, 0px, 0)',
+        springs.sheet,
+        { root: win }
+      );
+    }
+  };
+
+  return (
+    <div
+      ref={scrimRef}
+      data-ui="calendar-window-scrim"
+      data-testid="calendar-window-scrim"
+      data-closing={!isOpen ? 'true' : undefined}
+      style={{ pointerEvents: isOpen ? undefined : 'none' }}
+      className="planui-calendar-window-scrim"
+      onClick={(e) => {
+        if (isOpen && e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <section
+        ref={windowRef}
+        role={isOpen ? 'dialog' : undefined}
+        aria-modal={isOpen ? 'true' : undefined}
+        aria-hidden={!isOpen ? 'true' : undefined}
+        aria-label="Календар"
+        data-ui="calendar-window"
+        data-testid="calendar-window"
+        data-motion="idle"
+        className="planui-calendar-window planui-floating-capsule"
+      >
+        <div
+          className="quick-grabber"
+          onTouchStart={(e) => beginDrag(e.touches[0].clientY)}
+          onTouchMove={(e) => moveDrag(e.touches[0].clientY)}
+          onTouchEnd={(e) => endDrag(e.changedTouches[0].clientY)}
+          onPointerDown={(e) => {
+            beginDrag(e.clientY);
+            e.currentTarget.setPointerCapture?.(e.pointerId);
+          }}
+          onPointerMove={(e) => moveDrag(e.clientY)}
+          onPointerUp={(e) => endDrag(e.clientY)}
+          onPointerCancel={(e) => endDrag(e.clientY)}
+        >
+          <i />
+        </div>
+        <div
+          className="planui-calendar-window-bar"
+          onTouchStart={(e) => {
+            if ((e.target as HTMLElement).closest('button')) return;
+            beginDrag(e.touches[0].clientY);
+          }}
+          onTouchMove={(e) => moveDrag(e.touches[0].clientY)}
+          onTouchEnd={(e) => endDrag(e.changedTouches[0].clientY)}
+          onPointerDown={(e) => {
+            if ((e.target as HTMLElement).closest('button')) return;
+            beginDrag(e.clientY);
+            e.currentTarget.setPointerCapture?.(e.pointerId);
+          }}
+          onPointerMove={(e) => moveDrag(e.clientY)}
+          onPointerUp={(e) => endDrag(e.clientY)}
+          onPointerCancel={(e) => endDrag(e.clientY)}
+        >
+          <span className="planui-calendar-window-title">Календар</span>
+          <button
+            type="button"
+            aria-label="Закрити календар"
+            data-testid="calendar-window-close"
+            onClick={onClose}
+            className="ui-round ui-pressable planui-floating-capsule"
+          >
+            <Icon name="x" size={18} />
+          </button>
+        </div>
+        <div
+          ref={bodyRef}
+          className="planui-calendar-window-body"
+          data-testid="calendar-window-body"
+          onTouchStart={(e) => {
+            if (bodyRef.current && bodyRef.current.scrollTop <= 0) {
+              beginDrag(e.touches[0].clientY, true);
+            }
+          }}
+          onTouchMove={(e) => moveDrag(e.touches[0].clientY)}
+          onTouchEnd={(e) => endDrag(e.changedTouches[0].clientY)}
+        >
+          {children}
+        </div>
+      </section>
+    </div>
+  );
 };
 
 export interface FloatingShellProps {
-  ambient?: 'night' | 'creative' | 'neutral';
   activeDestination: PrimaryDestinationId;
-  onSelectDestination: (dest: PrimaryDestinationId) => void;
-  onOpenGlobalCreate: () => void;
-  isModalOpen: boolean;
-  isBackgroundInert?: boolean;
+  todayMode?: TodayMode;
+  directionsSubMode?: DirectionsSubMode;
+  meSubView?: MeSubViewMode;
+  calendarMode?: CalendarViewMode;
+  isCalendarOpen?: boolean;
+  habitsEnabled?: boolean;
+  wishlistEnabled?: boolean;
+  onSelectDestination: (destination: TabDestinationId) => void;
+  onChangeTodayMode?: (mode: TodayMode) => void;
+  onChangeDirectionsSubMode?: (mode: DirectionsSubMode) => void;
+  onChangeMeSubView?: (subView: MeSubViewMode) => void;
+  onChangeCalendarMode?: (mode: 'month' | 'week') => void;
+  onToggleCalendarWindow?: () => void;
+  onCenterCreateClick: () => void;
+  isEditorOpen: boolean;
+  calendarWindowContent?: React.ReactNode;
+  onCloseCalendarWindow?: () => void;
+  topStatusSlot?: React.ReactNode;
   children: React.ReactNode;
 }
 
 export const FloatingShell: React.FC<FloatingShellProps> = ({
-  ambient = 'neutral',
   activeDestination,
+  todayMode = 'day',
+  directionsSubMode = 'projects',
+  meSubView = 'overview',
+  calendarMode = 'month',
+  isCalendarOpen = false,
+  habitsEnabled = true,
+  wishlistEnabled = true,
   onSelectDestination,
-  onOpenGlobalCreate,
-  isModalOpen,
-  isBackgroundInert = isModalOpen,
+  onChangeTodayMode = () => {},
+  onChangeDirectionsSubMode = () => {},
+  onChangeMeSubView = () => {},
+  onChangeCalendarMode = () => {},
+  onToggleCalendarWindow = () => {},
+  onCenterCreateClick,
+  isEditorOpen,
+  calendarWindowContent,
+  onCloseCalendarWindow = () => {},
+  topStatusSlot,
   children,
 }) => {
-  const [collapsed, setCollapsed] = useState(false);
-  useEffect(() => {
-    let previous = window.scrollY;
-    const onScroll = () => {
-      const next = window.scrollY;
-      if (Math.abs(next - previous) > 8) { setCollapsed(next > previous && next > 96); previous = next; }
-    };
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
-  }, []);
-  const [isInputFocusedOnMobile, setIsInputFocusedOnMobile] = useState(false);
+  const tabDest: TabDestinationId =
+    activeDestination === 'directions' || activeDestination === 'me'
+      ? activeDestination
+      : 'today';
 
-  useEffect(() => { if (!isModalOpen) setIsInputFocusedOnMobile(false); }, [isModalOpen]);
-
-  // C17: During keyboard entry, do not let both floating controls jump unpredictably above the keyboard.
-  useEffect(() => {
-    const handleFocusIn = (e: FocusEvent) => {
-      const target = e.target as HTMLElement | null;
-      if (!target) return;
-      const tag = target.tagName;
-      const isTextControl =
-        tag === 'INPUT' ||
-        tag === 'TEXTAREA' ||
-        tag === 'SELECT' ||
-        target.isContentEditable;
-      if (isTextControl && window.innerWidth < 1024) {
-        const inputType = (target as HTMLInputElement).type;
-        if (
-          inputType !== 'checkbox' &&
-          inputType !== 'radio' &&
-          inputType !== 'file' &&
-          inputType !== 'button'
-        ) {
-          setIsInputFocusedOnMobile(true);
-        }
+  const handleCalendarButtonPress = () => {
+    // Requirement 6: The calendar button also closes another open overlay first.
+    if (hasOpenOverlay()) {
+      const topmostId = getTopmostOverlayId();
+      if (topmostId && topmostId !== 'calendar-window') {
+        closeTopmostOverlay();
+        return;
       }
-    };
-
-    const handleFocusOut = () => {
-      window.setTimeout(() => {
-        const active = document.activeElement as HTMLElement | null;
-        if (!active) {
-          setIsInputFocusedOnMobile(false);
-          return;
-        }
-        const tag = active.tagName;
-        const stillText =
-          tag === 'INPUT' ||
-          tag === 'TEXTAREA' ||
-          tag === 'SELECT' ||
-          active.isContentEditable;
-        if (!stillText) {
-          setIsInputFocusedOnMobile(false);
-        }
-      }, 60);
-    };
-
-    window.addEventListener('focusin', handleFocusIn);
-    window.addEventListener('focusout', handleFocusOut);
-    return () => {
-      window.removeEventListener('focusin', handleFocusIn);
-      window.removeEventListener('focusout', handleFocusOut);
-    };
-  }, []);
-
-  const hideFloatingControls = isModalOpen || isInputFocusedOnMobile;
+    }
+    onToggleCalendarWindow();
+  };
 
   return (
     <div
-      className="planui-canvas min-h-[100dvh] flex flex-col lg:flex-row"
-      data-ambient={ambient}
-      style={{ backgroundColor: 'var(--bg-canvas)', color: 'var(--text-primary)' }}
-      inert={isBackgroundInert ? true : undefined}
-      aria-hidden={isBackgroundInert ? 'true' : undefined}
       data-testid="shell-background-root"
+      className="min-h-dvh flex flex-col relative selection:bg-blue-500/20"
+      style={{
+        backgroundColor: 'var(--bg-canvas)',
+        color: 'var(--text-primary)',
+      }}
     >
-      <svg aria-hidden="true" width="0" height="0" className="absolute pointer-events-none">
-        <defs><filter id="planui-edge-refraction" x="-10%" y="-10%" width="120%" height="120%" colorInterpolationFilters="sRGB"><feTurbulence type="fractalNoise" baseFrequency="0.025" numOctaves="1" seed="7" result="rim-map" /><feDisplacementMap in="SourceGraphic" in2="rim-map" scale="5" xChannelSelector="R" yChannelSelector="G" /></filter></defs>
-      </svg>
-      <a
-        href="#planui-main-content"
-        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:px-4 focus:py-2 focus:rounded-xl"
-        style={{
-          backgroundColor: 'var(--bg-surface)',
-          color: 'var(--text-primary)',
-          border: '2px solid var(--color-brand)',
-        }}
-      >
-        {UK_STRINGS.app.skipToContent}
-      </a>
-
-      {/* Desktop Sidebar Navigation (>= 1024px) — C18 desktop adaptation with one global creation mechanism */}
-      <aside
-        aria-label={UK_STRINGS.app.desktopNavigationAria}
-        className="hidden lg:flex lg:flex-col lg:w-[264px] lg:shrink-0 lg:sticky lg:top-0 lg:h-[100dvh] px-4 py-6 border-r justify-between"
-        style={{
-          backgroundColor: 'var(--bg-surface)',
-          borderColor: 'var(--border-subtle)',
-        }}
-        data-testid="desktop-sidebar-nav"
-      >
-        <div className="space-y-6">
-          <div className="px-3 flex items-center justify-between">
-            <div>
-              <span
-                className="text-[1.25rem] font-bold tracking-tight block leading-none"
-                style={{ color: 'var(--text-primary)' }}
-              >
-                {UK_STRINGS.app.brand}
-              </span>
-              <span
-                className="text-[0.75rem] mt-1 block"
-                style={{ color: 'var(--text-secondary)' }}
-              >
-                {UK_STRINGS.app.subtitle}
-              </span>
-            </div>
-          </div>
-
-          {!isModalOpen && (
-            <button
-              type="button"
-              onClick={onOpenGlobalCreate}
-              aria-label={UK_STRINGS.app.globalCreateButtonAria}
-              data-testid="desktop-global-create-button"
-              className="w-full min-h-[46px] px-4 py-2.5 rounded-2xl font-medium text-[0.9375rem] flex items-center justify-center gap-2 planui-transition-micro cursor-pointer active:scale-[0.98] "
-              style={{
-                viewTransitionName: 'planui-create',
-                backgroundColor: 'var(--glass-bg)',
-                color: 'var(--color-brand)',
-              }}
-            >
-              <Plus className="w-5 h-5 stroke-[2.25]" aria-hidden="true" />
-              <span>{UK_STRINGS.app.globalCreateButtonLabel}</span>
-            </button>
-          )}
-
-          <nav aria-label={UK_STRINGS.app.mainNavigationAria} className="space-y-1">
-            {PRIMARY_NAV_ITEMS.map((item) => {
-              const Icon = NAV_ICONS[item.id];
-              const isActive = activeDestination === item.id;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => onSelectDestination(item.id)}
-                  aria-label={item.labelUk}
-                    aria-current={isActive ? 'page' : undefined}
-                  data-testid={`desktop-nav-item-${item.id}`}
-                  data-active={isActive ? 'true' : 'false'}
-                  className="w-full min-h-[46px] px-3.5 py-2.5 rounded-xl flex items-center gap-3 text-[0.9375rem] font-medium planui-transition-micro cursor-pointer text-left"
-                  style={{
-                    backgroundColor: isActive ? 'var(--bg-elevated)' : 'transparent',
-                    color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
-                    border: isActive
-                      ? '1px solid var(--border-subtle)'
-                      : '1px solid transparent',
-                  }}
-                >
-                  <Icon
-                    className="w-5 h-5 shrink-0"
-                    aria-hidden="true"
-                  />
-                  <span className="truncate">{item.labelUk}</span>
-                </button>
-              );
-            })}
-          </nav>
-        </div>
-
+      <AmbientCanvas />
+      {topStatusSlot && (
         <div
-          className="px-3 py-3 rounded-xl text-[0.75rem] leading-relaxed"
+          className="sticky top-0 z-30 w-full px-3 pt-2 pointer-events-none"
           style={{
-            backgroundColor: 'var(--bg-elevated)',
-            color: 'var(--text-secondary)',
+            paddingTop: 'max(0.5rem, env(safe-area-inset-top, 0px))',
           }}
         >
-          Локальне сховище браузера (IndexedDB) • 24-годинний формат
+          <div className="max-w-[720px] mx-auto pointer-events-auto">
+            {topStatusSlot}
+          </div>
         </div>
-      </aside>
+      )}
 
-      {/* Main Content Area with Measured Bottom Scroll Clearance on Mobile/Tablet */}
       <main
         id="planui-main-content"
-        className="flex-1 w-full max-w-[1080px] mx-auto px-4 sm:px-6 lg:px-8 pt-5 lg:py-8"
-        style={{
-          paddingBottom: 'var(--floating-scroll-clearance)',
-        }}
-        data-testid="main-scroll-container"
+        className="flex-1 w-full max-w-[720px] mx-auto px-4 pt-3 planui-main-canvas relative z-10"
       >
         {children}
       </main>
 
-      {/* Mobile & Tablet Floating Controls (< 1024px) — C17 */}
-      {!hideFloatingControls && (
-        <div
-          className="lg:hidden fixed z-40 pointer-events-none"
-          style={{
-            left: '20px',
-            right: '20px',
-            bottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)',
-          }}
-          data-testid="mobile-floating-zone"
-        >
-          <div className="max-w-[520px] mx-auto flex flex-row-reverse items-center gap-3">
-            {/* Separate Global Creation Button above the capsule on the right (48–52px target, 14px gap) */}
-            <button
-              type="button"
-              onClick={onOpenGlobalCreate}
-              aria-label={UK_STRINGS.app.globalCreateButtonAria}
-              data-testid="mobile-global-create-button"
-              className="planui-floating-capsule pointer-events-auto w-[64px] h-[64px] min-w-[64px] min-h-[64px] rounded-full flex items-center justify-center planui-transition-micro cursor-pointer active:scale-95 "
-              style={{
-                viewTransitionName: 'planui-create',
-                backgroundColor: 'var(--glass-bg)',
-                color: 'var(--color-brand)',
-                boxShadow: 'var(--glass-shadow)',
-                border: '1px solid rgba(255, 255, 255, 0.18)',
-              }}
-            >
-              <Plus className="w-6 h-6 stroke-[2.4]" aria-hidden="true" />
-            </button>
+      <CalendarWindow isOpen={isCalendarOpen} onClose={onCloseCalendarWindow}>
+        {calendarWindowContent}
+      </CalendarWindow>
 
-            {/* Inset Floating Navigation Capsule (4 equal columns for 4 destinations) */}
-            <nav
-              aria-label={UK_STRINGS.app.mainNavigationAria}
-              data-testid="mobile-floating-capsule"
-              data-collapsed={collapsed}
-              onFocusCapture={() => setCollapsed(false)}
-              style={{ position: 'relative' }}
-              className="pointer-events-auto w-full min-h-[64px] px-1.5 py-1.5 rounded-full planui-floating-capsule grid grid-cols-4 items-stretch gap-1"
-            >
-              <span aria-hidden="true" className="planui-selection" style={{ transform: `translateX(${PRIMARY_NAV_ITEMS.findIndex(item => item.id === activeDestination) * 100}%)` }} />
-              {PRIMARY_NAV_ITEMS.map((item) => {
-                const Icon = NAV_ICONS[item.id];
-                const isActive = activeDestination === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => onSelectDestination(item.id)}
-                    aria-label={item.labelUk}
-                    aria-current={isActive ? 'page' : undefined}
-                    data-testid={`mobile-nav-item-${item.id}`}
-                    data-active={isActive ? 'true' : 'false'}
-                    data-center={item.isCenter ? 'true' : 'false'}
-                    className="min-h-[50px] min-w-[44px] px-1 py-1.5 rounded-[22px] flex flex-col items-center justify-center gap-0.5 planui-transition-micro cursor-pointer select-none"
-                    style={{
-                      backgroundColor: 'transparent',
-                      position: 'relative',
-                      color: isActive
-                        ? 'var(--color-brand)'
-                        : 'var(--text-secondary)',
-                      fontWeight: isActive ? 600 : 500,
-                    }}
-                  >
-                    <Icon
-                      className="w-5 h-5 shrink-0"
-                      aria-hidden="true"
-                    />
-                    <span className="text-[0.6875rem] sm:text-[0.75rem] leading-tight text-center break-words max-w-full px-0.5">
-                      {item.labelUk}
-                    </span>
-                  </button>
-                );
-              })}
-            </nav>
-          </div>
-        </div>
-      )}
+      <Dock
+        activeDestination={tabDest}
+        todayMode={todayMode}
+        directionsSubMode={directionsSubMode}
+        meSubView={meSubView}
+        calendarMode={calendarMode}
+        isCalendarOpen={isCalendarOpen}
+        isEditorOpen={isEditorOpen}
+        habitsEnabled={habitsEnabled}
+        wishlistEnabled={wishlistEnabled}
+        onTabPress={onSelectDestination}
+        onChangeTodayMode={onChangeTodayMode}
+        onChangeDirectionsSubMode={onChangeDirectionsSubMode}
+        onChangeMeSubView={onChangeMeSubView}
+        onChangeCalendarMode={onChangeCalendarMode}
+        onToggleCalendarWindow={handleCalendarButtonPress}
+        onCenterCreateClick={onCenterCreateClick}
+      />
     </div>
   );
 };
+

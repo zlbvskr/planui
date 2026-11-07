@@ -1,28 +1,27 @@
 import {Icon} from '../ui/icons';
-import {minimumDayTasks} from '../components/today/minimumDayPresentation';
-import {DeferredTasks} from '../components/today/DeferredTasks';
-import { DateField, Row, Section } from '../ui';
-import { formatDate, formatSubtitle, formatDuration, formatTimeRange } from "../lib/format";
-import { evaluateHabitOnDate } from "../domain/habits";
-import { DayCanvas } from "../components/today/DayCanvas";
-import { Leaf } from "../ui/icons";
 import {
+  DateField,
+  Row,
+  Section,
   Sheet,
-  ActionMenu,
   RoundButton,
   WeekStrip,
-  Segmented,
-} from "../components/ui/design";
+  Button,
+} from '../ui';
+import { formatDate, formatSubtitle, formatDuration } from "../lib/format";
+import { evaluateHabitOnDate } from "../domain/habits";
+import { DayCanvas } from "../components/today/DayCanvas";
 import { selectTaskReviewState } from "../domain/projections";
 import { TodayMode, DailyPlan } from "../domain/types";
 import {
   EMPTY_DAILY_PLAN,
-  projectTodayTasks,
   deadlineDate,
 } from "../domain/today";
 import { DailyFocusPanel } from "../components/today/DailyFocusPanel";
 import { TodayTasksPanel } from "../components/today/TodayTasksPanel";
 import { TaskPlanningSheet } from "../components/today/TaskPlanningSheet";
+import { HabitBand } from "../components/today/HabitBand";
+import { resolveArea, areaColor } from "../domain/modelHelpers";
 import React, { useEffect, useRef, useMemo, useState } from "react";
 import {
   CalendarEvent,
@@ -48,7 +47,7 @@ import {
 } from "../storage/repositories";
 import { ImplementedCreationActionKind } from "../state/shellStore";
 import { UK_STRINGS } from "../i18n/uk";
-import { Button } from "../components/ui/primitives";
+import { useHeaderScrollCollapse } from "../ui/motion";
 
 export interface TodayWorkspaceViewProps {
   habitHistory?: boolean;
@@ -153,6 +152,7 @@ export function TodayWorkspaceView({
   const triageTask=triageTasks[triageIndex];
   const [reviewOpen, setReviewOpen] = useState(false);
   const [focusOpen, setFocusOpen] = useState(false);
+  const { headerRef: todayHeaderRef, compact: todayCompact } = useHeaderScrollCollapse(64);
   useEffect(() => {
     const header = rootRef.current?.querySelector(".today-heading");
     if (!header) return;
@@ -206,6 +206,53 @@ export function TodayWorkspaceView({
     [selectedDate, activeZone, events, reservations, tasks, dayOffAnnotations],
   );
 
+  const weekMarkers = useMemo(() => {
+    const result: Record<string, any> = {};
+
+    // 1. Shifts: yellow sun or violet moon
+    events
+      .filter((e) => e.type === "work_shift" && e.schedule.kind === "timed")
+      .forEach((e) => {
+        const i = (e.schedule as any).interval;
+        const isNight = i.originEndLocalDate !== i.originStartLocalDate;
+        result[i.originStartLocalDate] = {
+          ...(result[i.originStartLocalDate] ?? {}),
+          shift: isNight ? "night" : "day",
+        };
+      });
+
+    // 2. Explicit day off
+    dayOffAnnotations.forEach((d) => {
+      result[d.localDate] = {
+        ...(result[d.localDate] ?? {}),
+        dayOff: true,
+      };
+    });
+
+    // 3. Up to 2 colored dots for events
+    events
+      .filter((e) => e.type !== "work_shift" && e.type !== "sleep")
+      .forEach((e) => {
+        const d =
+          e.schedule.kind === "timed"
+            ? (e.schedule as any).interval.originStartLocalDate
+            : (e.schedule as any).localDate;
+        if (d) {
+          const areaInfo = resolveArea(e, { folders, projects });
+          const color = areaInfo ? areaColor(areaInfo.rating) : "var(--color-brand)";
+          const prev = result[d]?.eventColors ?? [];
+          if (prev.length < 2 && !prev.includes(color)) {
+            result[d] = {
+              ...(result[d] ?? {}),
+              eventColors: [...prev, color],
+            };
+          }
+        }
+      });
+
+    return result;
+  }, [events, dayOffAnnotations, folders, projects]);
+
   return (
     <div
       ref={rootRef}
@@ -215,107 +262,73 @@ export function TodayWorkspaceView({
       onWheelCapture={onInteraction}
       onKeyDownCapture={onInteraction}
     >
-      <header className="today-heading" hidden={effectiveMode==='habits'&&habitHistory}>
+      <header
+        ref={todayHeaderRef as React.RefObject<HTMLElement>}
+        data-compact={todayCompact}
+        data-motion="idle"
+        className="today-heading"
+        hidden={effectiveMode === "habits" && habitHistory}
+      >
         <div>
           <h1>Сьогодні</h1>
           <p data-testid="today-selected-date-heading">
             {formatSubtitle(effectiveMode === "day" ? viewDate : selectedDate)}
           </p>
         </div>
-        <div className="today-heading-actions">
-          <RoundButton
-            aria-label={`Мінімальний день: ${actionPlan.minimalDay?"увімкнено":"вимкнено"}`}
-            aria-pressed={actionPlan.minimalDay}
-            onClick={async () => {
-              try {
-                await repositories.saveDailyPlan(
-                  actionDate,
-                  { ...actionPlan, minimalDay: !actionPlan.minimalDay },
-                  actionPlan,
-                );
-                await onDataChanged();
-              } catch {
-                window.alert(
-                  "Не вдалося змінити вигляд дня. Оновіть дані й повторіть.",
-                );
-              }
-            }}
-          >
-            <Leaf aria-hidden="true" size={22} />
-          </RoundButton>
-          <div className="today-round-menu planui-floating-capsule">
-            <ActionMenu
-              label="Інші дії дня"
-              items={[
-                { label: "Повернути все", onSelect: async () => { await repositories.saveDailyPlan(actionDate,{...actionPlan,minimalDay:false},actionPlan); await onDataChanged(); } },
-                { label: "Фокус дня", onSelect: () => setFocusOpen(true) },
-                {
-                  label: "Переглянути попередні плани",
-                  onSelect: () => setReviewOpen(true),
-                },
-                {
-                  label: "Попередній тиждень",
-                  onSelect: () =>
-                    onSelectDate(addDaysToLocalDate(viewDate, -7)),
-                },
-                {
-                  label: "Наступний тиждень",
-                  onSelect: () => onSelectDate(addDaysToLocalDate(viewDate, 7)),
-                },
-                {
-                  label: "Сьогодні",
-                  onSelect: () => onSelectDate(actualTodayDate),
-                },
-              ]}
-            />
-          </div>
-        </div>
       </header>
-      <div className="today-mode-bar" hidden={effectiveMode==='habits'&&habitHistory}>
-        <span className="today-compact-title">Сьогодні</span>
-        <Segmented<TodayMode>
-          label="Режими Сьогодні"
-          value={effectiveMode}
-          onChange={next=>{if(effectiveMode==='day'&&next!=='day'&&viewDate!==selectedDate)onSelectDate(viewDate);onChangeMode(next);}}
-          options={[
-            { value: "day", label: "День" },
-            { value: "tasks", label: "Завдання" },
-            ...(habitsEnabled
-              ? [{ value: "habits" as const, label: "Звички" }]
-              : []),
-          ]}
+      <div hidden={effectiveMode === "habits" && habitHistory}>
+        <WeekStrip
+          date={effectiveMode === "day" ? viewDate : selectedDate}
+          today={actualTodayDate}
+          onChange={onSelectDate}
+          markers={weekMarkers}
         />
       </div>
-      <div hidden={effectiveMode==='habits'&&habitHistory}><WeekStrip
-        date={effectiveMode === "day" ? viewDate : selectedDate}
-        today={actualTodayDate}
-        onChange={onSelectDate}
-        markers={Object.fromEntries(
-          events
-            .filter(
-              (e) => e.type === "work_shift" && e.schedule.kind === "timed",
-            )
-            .map((e) => {
-              const i = (
-                e.schedule as {
-                  interval: {
-                    originStartLocalDate: string;
-                    originStartLocalTime: string;
-                    originEndLocalDate: string;
-                  };
-                }
-              ).interval;
-              return [
-                i.originStartLocalDate,
-                i.originEndLocalDate !== i.originStartLocalDate
-                  ? "night"
-                  : "day",
-              ];
-            }),
-        )}
-      /></div>
 
-      {effectiveMode!=='habits'&&!triageDismissed&&triageTasks.length>0&&<div data-ui="content-start"><Section><Row title={<button type="button" className="text-left w-full" onClick={()=>{setTriageIndex(0);setReviewOpen(true);}}>Переглянути попередні плани</button>} trailing={<RoundButton aria-label="Приховати пропозицію" onClick={()=>setTriageDismissed(true)}><Icon name="x"/></RoundButton>}/></Section></div>}
+      {/* Habit band: horizontal row of habit chips above everything in Day and Tasks modes */}
+      {effectiveMode !== "habits" && habitsEnabled && (
+        <HabitBand
+          habits={habits}
+          habitEntries={habitEntries}
+          date={effectiveMode === "day" ? viewDate : selectedDate}
+          daysOff={dayOffAnnotations.map((d) => d.localDate)}
+          folders={folders}
+          projects={projects}
+          repositories={repositories}
+          onChanged={() => onDataChanged()}
+          habitsEnabled={habitsEnabled}
+        />
+      )}
+
+      {effectiveMode !== "habits" && !triageDismissed && triageTasks.length > 0 && (
+        <div data-ui="content-start">
+          <Section>
+            <Row
+              title={
+                <button
+                  type="button"
+                  className="text-left w-full"
+                  onClick={() => {
+                    setTriageIndex(0);
+                    setReviewOpen(true);
+                  }}
+                >
+                  Переглянути попередні плани
+                </button>
+              }
+              trailing={
+                <RoundButton
+                  aria-label="Приховати пропозицію"
+                  onClick={() => setTriageDismissed(true)}
+                >
+                  <Icon name="x" />
+                </RoundButton>
+              }
+            />
+          </Section>
+        </div>
+      )}
+
       <Sheet title="Попередні плани" isOpen={reviewOpen} onClose={()=>setReviewOpen(false)}>
         {triageTask?<div className="space-y-4"><div className="review-dots" role="group" aria-label={`${triageIndex+1} з ${triageTasks.length}`}>{triageTasks.map((task,i)=><span key={task.id} data-active={i===triageIndex}/>)}<small>{triageIndex+1} з {triageTasks.length}</small></div><h2>{triageTask.title}</h2><p>{triageTask.estimatedDurationMinutes?formatDuration(triageTask.estimatedDurationMinutes):"Без оцінки тривалості"}</p><div className="flex flex-wrap gap-2">{['Перенести','Зменшити обсяг','Розділити','Поставити на паузу','Відмовитися'].map(action=><button type="button" className="ui-pill" key={action} onClick={()=>action==='Перенести'?setRescheduleOpen(!rescheduleOpen):setPlanningTask({task:triageTask,reviewAction:action})}>{action}</button>)}</div>{rescheduleOpen&&<Section>{['Сьогодні ввечері','Завтра'].map(label=><Row key={label} title={label} trailing={<Button onClick={()=>{setRescheduleOpen(false);setPlanningTask({task:triageTask,reviewAction:'Перенести',initialDate:label==='Завтра'?addDaysToLocalDate(actualTodayDate,1):actualTodayDate,initialTime:label==='Сьогодні ввечері'?'18:00':undefined});}}>Обрати</Button>}/>)}<DateField label="Інша дата" value={triageDate} onChange={e=>{setTriageDate(e.target.value);setPlanningTask({task:triageTask,reviewAction:'Перенести',initialDate:e.target.value});}}/></Section>}<button type="button" className="triage-keep" onClick={()=>{setRescheduleOpen(false);if(triageIndex+1<triageTasks.length)setTriageIndex(triageIndex+1);else setReviewOpen(false);}}>Залишити як є</button></div>:<p>Усе переглянуто</p>}
       </Sheet>
@@ -331,7 +344,6 @@ export function TodayWorkspaceView({
         onClose={() => setFocusOpen(false)}
         onChanged={() => onDataChanged()}
       />
-      {dailyPlan.minimalDay&&effectiveMode==='tasks'&&(todayProjection.timelineItems.some(i=>!i.taskId&&(i.isBlocking||events.some(e=>e.id===i.sourceId&&['sleep','rest'].includes(e.type))))||todayProjection.allDayItems.some(i=>i.isBlocking))&&<Section title="Зобов’язання і відновлення">{todayProjection.timelineItems.filter(i=>!i.taskId&&(i.isBlocking||events.some(e=>e.id===i.sourceId&&['sleep','rest'].includes(e.type)))).map(item=><Row key={item.itemKey} title={item.title} secondary={formatTimeRange(item.segment.displayStartLocalTime,item.segment.displayEndLocalTime)}/>)}{todayProjection.allDayItems.filter(i=>i.isBlocking).map(item=><Row key={item.eventId} title={item.title} secondary="Увесь день"/>)}</Section>}
       {planningTask && (
         <TaskPlanningSheet
           key={planningTask.task.id + ":" + (planningTask.reservationId ?? "") + (planningTask.initialDate??'') + (planningTask.initialTime??'')}
@@ -345,6 +357,8 @@ export function TodayWorkspaceView({
           tasks={tasks}
           events={events}
           reservations={reservations}
+          folders={folders}
+          projects={projects}
           repositories={repositories}
           onClose={() => setPlanningTask(null)}
           onSaved={() => onDataChanged()}
@@ -367,7 +381,7 @@ export function TodayWorkspaceView({
           </span>
           <div className="flex items-center gap-2">
             <Button
-              variant="primary"
+              variant="secondary"
               size="sm"
               data-testid="today-midnight-jump-button"
               onClick={() => {
@@ -440,7 +454,6 @@ export function TodayWorkspaceView({
       )}
       {effectiveMode === "day" && (
         <>
-          {actionPlan.minimalDay&&<><Section title="Залишити на сьогодні">{minimumDayTasks(projectTodayTasks(tasks,reservations,actionDate,activeZone,actionPlan).relevant,actionPlan).filter(t=>!reservations.some(r=>r.taskId===t.id&&r.state==='active')).map(task=><Row key={task.id} title={task.title} secondary={task.deadline?'Важливий термін':task.estimatedDurationMinutes?formatDuration(task.estimatedDurationMinutes):undefined} trailing={<Button aria-label={`Планувати: ${task.title}`} onClick={()=>setPlanningTask({task})}><Icon name="chevron-right"/></Button>}/>)}</Section><DeferredTasks tasks={projectTodayTasks(tasks,reservations,actionDate,activeZone,actionPlan).relevant.filter(t=>!minimumDayTasks(projectTodayTasks(tasks,reservations,actionDate,activeZone,actionPlan).relevant,actionPlan).includes(t))} repositories={repositories} onChanged={()=>onDataChanged()} onPlan={task=>setPlanningTask({task,reviewAction:'Перенести'})}/></>}
           {/* 5. Main Proportional Timeline for Selected Date (6.1 / 6.5) */}
           <DayCanvas
             plans={dailyPlans}

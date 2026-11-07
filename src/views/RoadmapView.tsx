@@ -9,6 +9,7 @@ import {
   InfoSheet,
   SelectField,
   DateField,
+  StageSheet,
 } from "../ui";
 import { previewStageShift } from "../domain/stageDependencies";
 import type { ProjectStage } from "../domain/types";
@@ -33,7 +34,7 @@ import {
 } from "../domain/roadmap";
 import { addDaysToLocalDate } from "../domain/temporal";
 import { PlanuiRepositories } from "../storage/repositories";
-import { Button, InputField } from "../components/ui/primitives";
+import { Button, InputField } from "../ui";
 
 const stateLabels: Record<PlanningEntityState, string> = {
   active: "Активні",
@@ -463,7 +464,7 @@ export function RoadmapView({
 }) {
   const [states, setStates] = useState<PlanningEntityState[]>(["active"]);
   const [editing, setEditing] = useState<string | null>(null);
-  const [newTitle, setNewTitle] = useState("");
+  const [addingStageOpen, setAddingStageOpen] = useState(false);
   const [error, setError] = useState("");
   const all = projectRoadmap(source, ["active", "idea", "paused", "completed"]);
   const items = projectRoadmap(source, [selectedState]).filter(
@@ -636,56 +637,67 @@ export function RoadmapView({
                     }
                   />
                 ))}
-                <Sheet
-                  title="Дати й контрольні точки"
-                  isOpen={editing === key}
-                  onClose={() => setEditing(null)}
-                >
-                  <RoadmapItemEditor
-                    item={item}
-                    relatedItems={all}
-                    relatedTasks={source.tasks}
+                {item.owner.kind === "stage" ? (
+                  <StageSheet
+                    isOpen={editing === key}
+                    stage={item.record as ProjectStage}
+                    goalId={(item.record as ProjectStage).goalId}
+                    projectId={(item.record as ProjectStage).projectId}
+                    stages={source.stages.filter((s) =>
+                      (item.record as ProjectStage).goalId
+                        ? s.goalId === (item.record as ProjectStage).goalId
+                        : s.projectId === (item.record as ProjectStage).projectId
+                    )}
                     repositories={repositories}
-                    onChanged={onChanged}
-                    onCancel={() => setEditing(null)}
+                    onClose={() => setEditing(null)}
+                    onSaved={async () => {
+                      setEditing(null);
+                      await onChanged();
+                    }}
                   />
-                </Sheet>
+                ) : (
+                  <Sheet
+                    title="Дати й контрольні точки"
+                    isOpen={editing === key}
+                    onClose={() => setEditing(null)}
+                  >
+                    <RoadmapItemEditor
+                      item={item}
+                      relatedItems={all}
+                      relatedTasks={source.tasks}
+                      repositories={repositories}
+                      onChanged={onChanged}
+                      onCancel={() => setEditing(null)}
+                    />
+                  </Sheet>
+                )}
               </div>
             );
           })}
         </Section>
       ))}
       {initialOwner && initialOwner.kind !== "stage" && (
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void action(async () => {
-              const now = new Date().toISOString();
-              await repositories.saveStage({
-                id: crypto.randomUUID(),
-                projectId:
-                  initialOwner.kind === "project" ? initialOwner.id : null,
-                goalId: initialOwner.kind === "goal" ? initialOwner.id : null,
-                title: newTitle,
-                expectedOutcome: null,
-                targetDate: null,
-                order: source.stages.length,
-                createdAt: now,
-                updatedAt: now,
-                revision: 1,
-              });
-              setNewTitle("");
-            });
-          }}
-        >
-          <InputField
-            label="Назва нового етапу"
-            required
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
+        <>
+          <Button variant="secondary" onClick={() => setAddingStageOpen(true)}>
+            + Додати етап
+          </Button>
+          <StageSheet
+            isOpen={addingStageOpen}
+            goalId={initialOwner.kind === "goal" ? initialOwner.id : null}
+            projectId={initialOwner.kind === "project" ? initialOwner.id : null}
+            stages={source.stages.filter((s) =>
+              initialOwner.kind === "goal"
+                ? s.goalId === initialOwner.id
+                : s.projectId === initialOwner.id
+            )}
+            repositories={repositories}
+            onClose={() => setAddingStageOpen(false)}
+            onSaved={async () => {
+              setAddingStageOpen(false);
+              await onChanged();
+            }}
           />
-          <Button type="submit">Додати етап</Button>
-        </form>
+        </>
       )}
     </div>
   );
@@ -699,7 +711,7 @@ function directionPath(folders: readonly Folder[], id: string | null): string {
     const folder = folders.find((f) => f.id === id);
     if (!folder) break;
     names.unshift(folder.name);
-    id = folder.parentId;
+    id = folder.parentId ?? null;
   }
   return names.join(" / ") || "Без напряму";
 }

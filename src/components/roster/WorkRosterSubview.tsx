@@ -58,7 +58,7 @@ import {
   FeedbackBanner,
   InputField,
   TextAreaField,
-} from "../ui/primitives";
+} from "../../ui";
 
 export interface WorkRosterSubviewProps {
   stampMode?: boolean;
@@ -1190,7 +1190,7 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
                 trailing={
                   <button
                     type="button"
-                    className="ui-primary"
+                    className="ui-pill"
                     disabled={!multiDateBatchPreview || isApplyingBatch}
                     onClick={() => void handleCommitMultiDateBatch()}
                   >
@@ -1557,15 +1557,13 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
             />
           )}
 
-          <div className="flex justify-end gap-2 pt-2">
-            <Button
-              type="submit"
-              variant="primary"
-              data-testid="template-save-button"
-            >
-              Зберегти шаблон
-            </Button>
-          </div>
+          <Button
+            type="submit"
+            variant="primary"
+            data-testid="template-save-button"
+          >
+            Зберегти шаблон
+          </Button>
         </form>
       </Sheet>
 
@@ -1800,16 +1798,14 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
             />
           )}
 
-          <div className="flex justify-end gap-2 pt-2">
-            <Button
-              type="button"
-              variant="primary"
-              onClick={handleCommitPeriodGenerator}
-              data-testid="period-generator-commit-button"
-            >
-              Створити незалежні записи
-            </Button>
-          </div>
+          <Button
+            type="button"
+            variant="primary"
+            onClick={handleCommitPeriodGenerator}
+            data-testid="period-generator-commit-button"
+          >
+            Створити незалежні записи
+          </Button>
         </div>
       </Sheet>
 
@@ -2072,17 +2068,15 @@ export const WorkRosterSubview: React.FC<WorkRosterSubviewProps> = ({
             />
           )}
 
-          <div className="flex justify-end gap-2 pt-2">
-            <Button
-              type="button"
-              variant="primary"
-              disabled={!textParserPreview || !textParserPreview.canCommit}
-              onClick={handleCommitTextParser}
-              data-testid="text-parser-commit-button"
-            >
-              Зберегти розпізнаний графік
-            </Button>
-          </div>
+          <Button
+            type="button"
+            variant="primary"
+            disabled={!textParserPreview || !textParserPreview.canCommit}
+            onClick={handleCommitTextParser}
+            data-testid="text-parser-commit-button"
+          >
+            Зберегти розпізнаний графік
+          </Button>
         </div>
       </Sheet>
     </div>

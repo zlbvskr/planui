@@ -4,8 +4,7 @@ import {
   WifiOff,
 } from '../../ui/icons';
 import { PwaLifecycleState } from '../../pwa/pwaController';
-import { Disclosure, Row, Section, Sheet } from '../../ui';
-import { Button } from '../ui/primitives';
+import { Disclosure, Row, Section, Sheet, Button } from '../../ui';
 
 export interface PwaStatusBannerProps {
   pwaState: PwaLifecycleState;

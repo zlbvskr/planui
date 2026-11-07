@@ -134,6 +134,7 @@ export async function navigateToRoute(page: Page, baseUrl: string, route: RouteS
     else { await page.getByRole('button',{name:'Створити новий запис у поточному розділі',exact:true}).last().click(); if(route.overlay!=='task')await page.getByRole('button',{name:route.overlay==='event'?'Подія':'Звичка',exact:true}).click(); }
     await page.waitForTimeout(100);
   }
+  await page.evaluate(()=>{scrollTo(0,0);document.getAnimations().forEach(a=>{try{a.finish();}catch{}});});
 }
 
 async function runWithConcurrency<T>(items: readonly T[], limit: number, worker: (item: T) => Promise<void>) {

@@ -10,8 +10,9 @@ import {
   SelectField,
   DateField,
   Row,
+  InputField,
+  Button,
 } from "../ui";
-import { InputField, Button } from "../components/ui/primitives";
 import { periodLabelUk } from "../domain/roadmap";
 import { formatDayMonth, formatInstant, formatMonthYear } from "../lib/format";
 const labels = [

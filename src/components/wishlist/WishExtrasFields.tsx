@@ -5,8 +5,7 @@ import {
   validateAndPrepareRasterMedia,
   validateSafeHttpUrl,
 } from '../../domain/personalSpace';
-import { SelectField } from '../../ui';
-import { InputField } from '../ui/primitives';
+import { SelectField, InputField } from '../../ui';
 
 export interface WishExtrasValue {
   linkUrl: string;

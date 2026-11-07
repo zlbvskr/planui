@@ -1,81 +1,56 @@
-import {Icon} from '../ui/icons';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Icon } from "../ui/icons";
 import {
   PageHeader,
-  SubHeader,
-  Segmented,
-  PillRow,
   RoundButton,
+  PillRow,
+  Card,
   Section,
   Row,
-  Toggle,
+  TintedCard,
+  Orb,
   ActionMenu,
   Sheet,
+  AlertSheet,
   EmptyState,
-  Disclosure,
   DateField,
-  TimeField,
+  StageSheet,
 } from "../ui";
-import { formatDate, formatDuration } from "../lib/format";
-import { PlanDetail } from "./PlanDetail";
-import { RoadmapView } from './RoadmapView';
-import React, { useMemo, useState } from 'react';
 import {
-  Folder as FolderIcon,
-  CheckCircle2,
-  Circle,
-  ArrowUp,
-  ArrowDown,
-  Trash2,
-  Search,
-  ArrowUpRight,
-  Plus,
-} from '../ui/icons';
-import { UK_STRINGS } from '../i18n/uk';
+  easings,
+  ensureMotionRootAttribute,
+  isReducedMotion,
+  runInterruptibleAnimation,
+  tweens,
+  useSubScreenTransition,
+} from "../ui/motion";
+import { formatDate, formatShortDate, formatTimeRange } from "../lib/format";
+import { areaColor, itemColor, logMeasure, resolveArea } from "../domain/modelHelpers";
+
+function formatTaskDeadline(deadline: Task["deadline"]): string {
+  if (!deadline) return "";
+  if (deadline.kind === "date_only") return formatShortDate(deadline.localDate);
+  return formatShortDate(deadline.instant.slice(0, 10));
+}
 import {
   CalendarEvent,
-  ChecklistItem,
+  EntityId,
   Folder,
   Goal,
-  GoalState,
+  LifeAreaQuestion,
+  PlanuiSettings,
   Project,
   ProjectStage,
-  ProjectResultState,
   Task,
-  TaskDeadline,
-  TaskOwnership,
-  TaskPriority,
   TaskReservation,
-} from '../domain/types';
-import {
-  buildAbbreviatedBreadcrumbs,
-  computeFolderDeleteImpact,
-  getAllowedMoveTargetFolders,
-  getUnresolvedProjectTasks,
-} from '../domain/plans';
-import {
-  buildZonedIntervalFromLocalInput,
-  computeElapsedDurationMinutes,
-  suggestEndDateForClockRange,
-} from '../domain/temporal';
-import { detectScheduleConflicts } from '../domain/scheduling';
+} from "../domain/types";
 import {
   DestinationContextMap,
   ImplementedCreationActionKind,
-  PlansPriorityFilter,
-} from '../state/shellStore';
-import {
-  PlanuiRepositories,
-  TaskLifecycleUndoToken,
-} from '../storage/repositories';
-import {
-  Button,
-  InputField,
-  ModalSheet,
-  SegmentedControl,
-  SelectField,
-  TextAreaField,
-  FeedbackBanner,
-} from '../components/ui/primitives';
+} from "../state/shellStore";
+import { PlanuiRepositories } from "../storage/repositories";
+import { previewStageShift } from "../domain/stageDependencies";
+import { computeFolderDeleteImpact, getAllowedMoveTargetFolders } from "../domain/plans";
 
 export interface PlansViewProps {
   folders: Folder[];
@@ -87,3272 +62,1661 @@ export interface PlansViewProps {
   events?: CalendarEvent[];
   activeZone?: string;
   actualTodayDate: string;
-  plansContext: DestinationContextMap['plans'];
+  plansContext: DestinationContextMap["plans"];
+  settings?: PlanuiSettings;
+  lifeAreaQuestions?: readonly LifeAreaQuestion[];
   repositories: PlanuiRepositories;
-  onUpdatePlansContext: (
-    patch: Partial<DestinationContextMap['plans']>
-  ) => void;
+  onUpdatePlansContext: (patch: Partial<DestinationContextMap["plans"]>) => void;
   onOpenGlobalCreation: (preferredAction?: ImplementedCreationActionKind) => void;
   onDataChanged: (feedbackMessage?: string) => Promise<void>;
   onModalStateChange?: (isAnyModalOpen: boolean) => void;
+  onToggleTaskState?: (taskId: EntityId) => Promise<void> | void;
 }
+
+const MONTH_NAMES_UK = [
+  "Січ", "Лют", "Бер", "Кві", "Тра", "Чер",
+  "Лип", "Сер", "Вер", "Жов", "Лис", "Гру",
+];
 
 export const PlansView: React.FC<PlansViewProps> = ({
   folders,
   goals = [],
-  projects,
-  stages,
-  tasks,
-  reservations,
+  projects = [],
+  stages = [],
+  tasks = [],
+  reservations = [],
   events = [],
-  activeZone = '',
+  activeZone = "UTC",
   actualTodayDate,
   plansContext,
+  settings,
+  lifeAreaQuestions = [],
   repositories,
   onUpdatePlansContext,
   onOpenGlobalCreation,
   onDataChanged,
   onModalStateChange,
+  onToggleTaskState,
 }) => {
+  const isGoalsView = plansContext.subMode === "goals";
   const [searchOpen, setSearchOpen] = useState(false);
-  const [filtersOpen, setFiltersOpen] = useState(false);
-  const [reorderOpen, setReorderOpen] = useState(false);
-  const [showRoadmap, setShowRoadmap] = useState(false);
-  // Modal states inside Plans
-  const [showFullAncestorModal, setShowFullAncestorModal] = useState(false);
-  const [editingFolder, setEditingFolder] = useState<Folder | null>(null);
-  const [folderEditName, setFolderEditName] = useState('');
-  const [folderEditParentId, setFolderEditParentId] = useState<string | null>(
-    null
-  );
+  const [searchQuery, setSearchQuery] = useState(plansContext.searchQuery ?? "");
+  const [statusFilter, setStatusFilter] = useState<"active" | "idea" | "paused" | "completed">("active");
 
-  const [deletingFolder, setDeletingFolder] = useState<Folder | null>(null);
-  const [folderDeleteStrategy, setFolderDeleteStrategy] = useState<
-    'rehome_to_parent' | 'recursive_delete'
-  >('rehome_to_parent');
-  const [folderDeleteConfirmed, setFolderDeleteConfirmed] = useState(false);
+  // Timeline year state (defaults to today's year)
+  const currentActualYear = Number(actualTodayDate.slice(0, 4)) || 2026;
+  const [timelineYear, setTimelineYear] = useState(currentActualYear);
 
-  const [editingProject, setEditingProject] = useState<Project | null>(null);
-  const [projEditTitle, setProjEditTitle] = useState('');
-  const [projEditOutcome, setProjEditOutcome] = useState('');
-  const [projEditCriteria, setProjEditCriteria] = useState('');
-  const [projEditDescription, setProjEditDescription] = useState('');
-  const [projEditTargetDate, setProjEditTargetDate] = useState<string | null>(
-    null
-  );
-  const [projEditCollaborators, setProjEditCollaborators] = useState('');
-  const [projEditFolderId, setProjEditFolderId] = useState<string | null>(null);
-  const [projEditState, setProjEditState] =
-    useState<ProjectResultState>('active');
+  // Active folder navigation
+  const activeFolderId = plansContext.activeFolderId ?? null;
 
-  const [completingProject, setCompletingProject] = useState<Project | null>(
-    null
-  );
-  const [archivingProject, setArchivingProject] = useState<Project | null>(
-    null
-  );
-  const [archivePlanningChoice, setArchivePlanningChoice] = useState<
-    'retain_planning' | 'remove_planning'
-  >('retain_planning');
-  const [deletingProject, setDeletingProject] = useState<Project | null>(null);
-  const [projectDeleteTaskMode, setProjectDeleteTaskMode] = useState<
-    'rehome_to_folder' | 'delete_tasks'
-  >('rehome_to_folder');
-
-  // Goal modal states (Stage M3)
-  const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
-  const [goalEditTitle, setGoalEditTitle] = useState('');
-  const [goalEditPurpose, setGoalEditPurpose] = useState('');
-  const [goalEditCriteria, setGoalEditCriteria] = useState('');
-  const [goalEditIntention, setGoalEditIntention] = useState('');
-  const [goalEditTargetDate, setGoalEditTargetDate] = useState<string | null>(
-    null
-  );
-  const [goalEditTargetPeriod, setGoalEditTargetPeriod] = useState('');
-  const [goalEditFolderId, setGoalEditFolderId] = useState<string | null>(null);
-  const [goalEditState, setGoalEditState] = useState<GoalState>('active');
-  const [goalEditNextActionTaskId, setGoalEditNextActionTaskId] = useState<
-    string | null
-  >(null);
-
-  const [deletingGoal, setDeletingGoal] = useState<Goal | null>(null);
-  const [goalDeleteMode, setGoalDeleteMode] = useState<
-    'unlink_children' | 'delete_direct_tasks'
-  >('unlink_children');
-
-  const [editingStage, setEditingStage] = useState<ProjectStage | null>(null);
-  const [stageEditTitle, setStageEditTitle] = useState('');
-  const [stageEditOutcome, setStageEditOutcome] = useState('');
-
-  // Task Detail / Editor Sheet state
-  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
-  const editingTask = useMemo(
-    () => tasks.find((t) => t.id === editingTaskId) ?? null,
-    [tasks, editingTaskId]
-  );
-
-  const [taskEditTitle, setTaskEditTitle] = useState('');
-  const [taskEditDescription, setTaskEditDescription] = useState('');
-  const [taskEditPriority, setTaskEditPriority] =
-    useState<TaskPriority>('normal');
-  const [taskEditPlannedDate, setTaskEditPlannedDate] = useState<string | null>(
-    null
-  );
-  const [taskEditEstimate, setTaskEditEstimate] = useState<string>('');
-  const [taskEditDeadlineKind, setTaskEditDeadlineKind] = useState<
-    'none' | 'date_only' | 'exact_instant'
-  >('none');
-  const [taskEditDeadlineDate, setTaskEditDeadlineDate] = useState('');
-  const [taskEditDeadlineInstant, setTaskEditDeadlineInstant] = useState('');
-  const [taskEditOwnershipMode, setTaskEditOwnershipMode] = useState<
-    'standalone' | 'folder' | 'goal' | 'project'
-  >('standalone');
-  const [taskEditFolderId, setTaskEditFolderId] = useState<string | null>(null);
-  const [taskEditGoalId, setTaskEditGoalId] = useState<string | null>(null);
-  const [taskEditProjectId, setTaskEditProjectId] = useState<string | null>(
-    null
-  );
-  const [taskEditStageId, setTaskEditStageId] = useState<string | null>(null);
-  const [newChecklistTitle, setNewChecklistTitle] = useState('');
-
-  // Stage 5: Bounded immediate lifecycle undo
-  const [lastUndoToken, setLastUndoToken] =
-    useState<TaskLifecycleUndoToken | null>(null);
-
-  // Stage 5: Add / Reschedule Reservation Session state inside Task Sheet
-  const [showAddSessionForm, setShowAddSessionForm] = useState(false);
-  const [newSessionStartDate, setNewSessionStartDate] =
-    useState(actualTodayDate);
-  const [newSessionStartTime, setNewSessionStartTime] = useState('10:00');
-  const [newSessionEndDate, setNewSessionEndDate] = useState(actualTodayDate);
-  const [newSessionEndTime, setNewSessionEndTime] = useState('11:00');
-  const [newSessionOverlapConfirmed, setNewSessionOverlapConfirmed] =
-    useState(false);
-
-  const [rescheduleResId, setRescheduleResId] = useState<string | null>(null);
-  const [rescheduleStartDate, setRescheduleStartDate] =
-    useState(actualTodayDate);
-  const [rescheduleStartTime, setRescheduleStartTime] = useState('10:00');
-  const [rescheduleEndDate, setRescheduleEndDate] = useState(actualTodayDate);
-  const [rescheduleEndTime, setRescheduleEndTime] = useState('11:00');
-  const [rescheduleOverlapConfirmed, setRescheduleOverlapConfirmed] =
-    useState(false);
-
-  const [modalError, setModalError] = useState<string | null>(null);
-
-  const isAnyLocalModalOpen = Boolean(
-    showFullAncestorModal ||
-      editingFolder ||
-      deletingFolder ||
-      editingGoal ||
-      deletingGoal ||
-      editingProject ||
-      completingProject ||
-      archivingProject ||
-      deletingProject ||
-      editingStage ||
-      editingTask
-  );
-
-  React.useEffect(() => {
-    onModalStateChange?.(isAnyLocalModalOpen);
-  }, [isAnyLocalModalOpen, onModalStateChange]);
-
-  const activeFolder = useMemo(
-    () => folders.find((f) => f.id === plansContext.activeFolderId) ?? null,
-    [folders, plansContext.activeFolderId]
-  );
-
-  const activeGoal = useMemo(
-    () => goals.find((g) => g.id === plansContext.activeGoalId) ?? null,
-    [goals, plansContext.activeGoalId]
-  );
-
+  // Selected project for detail sub-screen
+  const activeProjectId = plansContext.activeProjectId ?? null;
   const activeProject = useMemo(
-    () => projects.find((p) => p.id === plansContext.activeProjectId) ?? null,
-    [projects, plansContext.activeProjectId]
+    () => projects.find((p) => p.id === activeProjectId) ?? null,
+    [projects, activeProjectId],
   );
 
-  const breadcrumbData = useMemo(
-    () => buildAbbreviatedBreadcrumbs(folders, plansContext.activeFolderId, 3),
-    [folders, plansContext.activeFolderId]
-  );
+  // Selected goal for goal sheet
+  const [activeGoal, setActiveGoal] = useState<Goal | null>(null);
 
-  const openTaskEditor = (task: Task) => {
-    setModalError(null);
-    setEditingTaskId(task.id);
-    setTaskEditTitle(task.title);
-    setTaskEditDescription(task.description ?? '');
-    setTaskEditPriority(task.priority);
-    setTaskEditPlannedDate(
-      task.planningState === 'date_only' ? task.plannedDate : null
-    );
-    setTaskEditEstimate(
-      task.estimatedDurationMinutes !== null
-        ? String(task.estimatedDurationMinutes)
-        : ''
-    );
-    if (!task.deadline) {
-      setTaskEditDeadlineKind('none');
-      setTaskEditDeadlineDate('');
-      setTaskEditDeadlineInstant('');
-    } else if (task.deadline.kind === 'date_only') {
-      setTaskEditDeadlineKind('date_only');
-      setTaskEditDeadlineDate(task.deadline.localDate);
-      setTaskEditDeadlineInstant('');
-    } else {
-      setTaskEditDeadlineKind('exact_instant');
-      setTaskEditDeadlineDate('');
-      setTaskEditDeadlineInstant(task.deadline.instant.slice(0, 16));
-    }
+  // Folder editing modals
+  const [renameFolder, setRenameFolder] = useState<Folder | null>(null);
+  const [renameFolderName, setRenameFolderName] = useState("");
+  const [moveFolder, setMoveFolder] = useState<Folder | null>(null);
+  const [moveFolderTargetParentId, setMoveFolderTargetParentId] = useState<string | null>(null);
+  const [deleteFolderAlert, setDeleteFolderAlert] = useState<Folder | null>(null);
 
-    if (task.ownership.kind === 'project') {
-      setTaskEditOwnershipMode('project');
-      setTaskEditProjectId(task.ownership.projectId);
-      setTaskEditStageId(task.ownership.stageId);
-      setTaskEditGoalId(null);
-      setTaskEditFolderId(null);
-    } else if (task.ownership.kind === 'goal') {
-      setTaskEditOwnershipMode('goal');
-      setTaskEditGoalId(task.ownership.goalId);
-      setTaskEditFolderId(null);
-      setTaskEditProjectId(null);
-      setTaskEditStageId(null);
-    } else if (task.ownership.kind === 'folder') {
-      setTaskEditOwnershipMode('folder');
-      setTaskEditFolderId(task.ownership.folderId);
-      setTaskEditGoalId(null);
-      setTaskEditProjectId(null);
-      setTaskEditStageId(null);
-    } else {
-      setTaskEditOwnershipMode('standalone');
-      setTaskEditFolderId(null);
-      setTaskEditGoalId(null);
-      setTaskEditProjectId(null);
-      setTaskEditStageId(null);
-    }
-    setNewChecklistTitle('');
-    setShowAddSessionForm(false);
-    setRescheduleResId(null);
-    setNewSessionStartDate(actualTodayDate);
-    setNewSessionEndDate(actualTodayDate);
-  };
+  // Project editing modals
+  const [newFolderSheet, setNewFolderSheet] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [deleteProjectAlert, setDeleteProjectAlert] = useState<Project | null>(null);
 
-  const openGoalEditModal = (goal: Goal) => {
-    setModalError(null);
-    setEditingGoal(goal);
-    setGoalEditTitle(goal.title);
-    setGoalEditPurpose(goal.purposeUk ?? '');
-    setGoalEditCriteria(goal.completionCriteriaUk ?? '');
-    setGoalEditIntention(goal.implementationIntentionUk ?? '');
-    setGoalEditTargetDate(goal.timing?.targetDate ?? null);
-    setGoalEditTargetPeriod(goal.timing?.targetPeriodUk ?? '');
-    setGoalEditFolderId(goal.folderId);
-    setGoalEditState(goal.state);
-    setGoalEditNextActionTaskId(goal.nextActionTaskId);
-  };
+  // Detail row editing sheet (for both project and goal)
+  const [activeDetailEditor, setActiveDetailEditor] = useState<{
+    kind: "project" | "goal";
+    entityId: string;
+    field: "purpose" | "criteria" | "nextStep" | "targetDate" | "area" | "measure";
+  } | null>(null);
 
-  const handleSaveGoalEdit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingGoal || !goalEditTitle.trim()) return;
-    setModalError(null);
-    const nowIso = new Date().toISOString();
-    try {
-      await repositories.saveGoal({
-        ...editingGoal,
-        title: goalEditTitle.trim(),
-        purposeUk: goalEditPurpose.trim() ? goalEditPurpose.trim() : null,
-        completionCriteriaUk: goalEditCriteria.trim()
-          ? goalEditCriteria.trim()
-          : null,
-        implementationIntentionUk: goalEditIntention.trim()
-          ? goalEditIntention.trim()
-          : null,
-        timing:
-          goalEditTargetDate || goalEditTargetPeriod.trim()
-            ? {
-                targetDate: goalEditTargetDate || null,
-                targetPeriodUk: goalEditTargetPeriod.trim()
-                  ? goalEditTargetPeriod.trim()
-                  : null,
-              }
-            : null,
-        folderId: goalEditFolderId || null,
-        state: goalEditState,
-        nextActionTaskId: goalEditNextActionTaskId || null,
-        updatedAt: nowIso,
-        completedAt:
-          goalEditState === 'completed'
-            ? editingGoal.completedAt ?? nowIso
-            : null,
-        revision: editingGoal.revision + 1,
-      });
-      setEditingGoal(null);
-      await onDataChanged('Ціль оновлено.');
-    } catch (err) {
-      setModalError(
-        err instanceof Error ? err.message : 'Не вдалося оновити ціль.'
-      );
-    }
-  };
+  const [editorTextValue, setEditorTextValue] = useState("");
+  const [editorDateValue, setEditorDateValue] = useState<string | null>(null);
+  const [editorAreaValue, setEditorAreaValue] = useState<string | null>(null);
+  const [editorIntentionValue, setEditorIntentionValue] = useState("");
+  const [measureUnit, setMeasureUnit] = useState("");
+  const [measureTarget, setMeasureTarget] = useState("");
 
-  const handleToggleGoalArchived = async (goal: Goal) => {
-    setModalError(null);
-    try {
-      await repositories.archiveGoalTransactionally(
-        goal.id,
-        !goal.archived,
-        new Date().toISOString(),
-        goal.revision
-      );
-      await onDataChanged(
-        goal.archived ? 'Ціль розархівовано.' : 'Ціль заархівовано.'
-      );
-    } catch (err) {
-      setModalError(
-        err instanceof Error ? err.message : 'Не вдалося змінити архів цілі.'
-      );
-    }
-  };
+  // Custom log measure prompt modal
+  const [customLogEntity, setCustomLogEntity] = useState<{ kind: "project" | "goal"; id: string } | null>(null);
+  const [customLogDelta, setCustomLogDelta] = useState("");
 
-  const openGoalDeleteModal = (goal: Goal) => {
-    setModalError(null);
-    setDeletingGoal(goal);
-    setGoalDeleteMode('unlink_children');
-  };
+  // Goal stages editing
+  const [stageSheetTarget, setStageSheetTarget] = useState<{
+    goalId?: string;
+    projectId?: string;
+    stage?: ProjectStage;
+  } | null>(null);
+  const [stageShiftAlert, setStageShiftAlert] = useState<{
+    stage: ProjectStage;
+    affectedStages: ProjectStage[];
+  } | null>(null);
 
-  const handleConfirmDeleteGoal = async () => {
-    if (!deletingGoal) return;
-    setModalError(null);
-    try {
-      await repositories.deleteGoalTransactionally(
-        deletingGoal.id,
-        goalDeleteMode,
-        new Date().toISOString()
-      );
-      if (plansContext.activeGoalId === deletingGoal.id) {
-        onUpdatePlansContext({ activeGoalId: null });
-      }
-      setDeletingGoal(null);
-      await onDataChanged('Ціль видалено.');
-    } catch (err) {
-      setModalError(
-        err instanceof Error ? err.message : 'Не вдалося видалити ціль.'
-      );
-    }
-  };
+  // "Моє бажане життя" text state
+  const [myLifeText, setMyLifeText] = useState(settings?.myLife ?? "");
+  const myLifeDebounceRef = useRef<number | null>(null);
 
-  const openFolderEditModal = (folder: Folder) => {
-    setModalError(null);
-    setEditingFolder(folder);
-    setFolderEditName(folder.name);
-    setFolderEditParentId(folder.parentId);
-  };
+  useEffect(() => {
+    setMyLifeText(settings?.myLife ?? "");
+  }, [settings?.myLife]);
 
-  const openFolderDeleteModal = (folder: Folder) => {
-    setModalError(null);
-    setDeletingFolder(folder);
-    setFolderDeleteStrategy('rehome_to_parent');
-    setFolderDeleteConfirmed(false);
-  };
-
-  const openProjectEditModal = (project: Project) => {
-    setModalError(null);
-    setEditingProject(project);
-    setProjEditTitle(project.title);
-    setProjEditOutcome(project.desiredOutcome ?? '');
-    setProjEditCriteria(project.completionCriteria ?? '');
-    setProjEditDescription(project.description ?? '');
-    setProjEditTargetDate(project.targetDate);
-    setProjEditCollaborators(project.collaboratorText ?? '');
-    setProjEditFolderId(project.folderId);
-    setProjEditState(project.state);
-  };
-
-  // Filtered tasks helper
-  const matchesTaskFilter = (task: Task): boolean => {
-    const q = plansContext.searchQuery.trim().toLowerCase();
-    if (q) {
-      const inTitle = task.title.toLowerCase().includes(q);
-      const inDesc = (task.description ?? '').toLowerCase().includes(q);
-      const inChecklist = task.checklist.some((c) =>
-        c.title.toLowerCase().includes(q)
-      );
-      if (!inTitle && !inDesc && !inChecklist) {
-        return false;
-      }
-    }
-
-    if (plansContext.taskStateFilter === 'open' && task.state !== 'open') {
-      return false;
-    }
-    if (
-      plansContext.taskStateFilter === 'completed' &&
-      task.state !== 'completed'
-    ) {
-      return false;
-    }
-    if (
-      plansContext.taskStateFilter === 'canceled' &&
-      task.state !== 'canceled'
-    ) {
-      return false;
-    }
-    if (
-      plansContext.taskStateFilter === 'all' &&
-      !plansContext.showCompletedTasks &&
-      task.state === 'completed'
-    ) {
-      return false;
-    }
-
-    if (
-      plansContext.priorityFilter !== 'all' &&
-      task.priority !== plansContext.priorityFilter
-    ) {
-      return false;
-    }
-
-    return true;
-  };
-
-  const isSearchActive =
-    plansContext.searchQuery.trim().length > 0 ||
-    plansContext.taskStateFilter !== 'all' ||
-    plansContext.priorityFilter !== 'all';
-
-  // Child folders in current container
-  const childFolders = useMemo(() => {
-    const q = plansContext.searchQuery.trim().toLowerCase();
-    return folders
-      .filter((f) => {
-        if (q) {
-          return f.name.toLowerCase().includes(q);
-        }
-        return f.parentId === plansContext.activeFolderId;
-      })
-      .sort((a, b) => a.order - b.order);
-  }, [folders, plansContext.activeFolderId, plansContext.searchQuery]);
-
-  // Projects in current container
-  const [directionStatus,setDirectionStatus]=useState<'active'|'idea'|'paused'|'completed'>('active');
-  const containerProjects = useMemo(() => {
-    const q = plansContext.searchQuery.trim().toLowerCase();
-    return projects.filter((p) => {
-      if (p.state !== directionStatus) return false;
-      if (!plansContext.showArchivedProjects && p.archived) {
-        return false;
-      }
-      if (q) {
-        return (
-          p.title.toLowerCase().includes(q) ||
-          (p.desiredOutcome ?? '').toLowerCase().includes(q) ||
-          (p.description ?? '').toLowerCase().includes(q)
-        );
-      }
-      return p.folderId === plansContext.activeFolderId;
-    });
+  useEffect(() => {
+    const isAnyModal =
+      Boolean(activeGoal) ||
+      Boolean(renameFolder) ||
+      Boolean(moveFolder) ||
+      Boolean(deleteFolderAlert) ||
+      Boolean(deleteProjectAlert) ||
+      Boolean(activeDetailEditor) ||
+      Boolean(customLogEntity) ||
+      Boolean(stageSheetTarget) ||
+      Boolean(stageShiftAlert) ||
+      newFolderSheet;
+    onModalStateChange?.(isAnyModal);
+    return () => onModalStateChange?.(false);
   }, [
-    directionStatus,
-    projects,
-    plansContext.activeFolderId,
-    plansContext.showArchivedProjects,
-    plansContext.searchQuery,
-  ]);
-
-  // Goals in current container
-  const containerGoals = useMemo(() => {
-    const q = plansContext.searchQuery.trim().toLowerCase();
-    return goals.filter((g) => {
-      if (g.state !== directionStatus) return false;
-      if (!plansContext.showArchivedProjects && g.archived) {
-        return false;
-      }
-      if (q) {
-        return (
-          g.title.toLowerCase().includes(q) ||
-          (g.purposeUk ?? '').toLowerCase().includes(q) ||
-          (g.completionCriteriaUk ?? '').toLowerCase().includes(q) ||
-          (g.implementationIntentionUk ?? '').toLowerCase().includes(q)
-        );
-      }
-      return g.folderId === plansContext.activeFolderId;
-    });
-  }, [
-    directionStatus,
-    goals,
-    plansContext.activeFolderId,
-    plansContext.showArchivedProjects,
-    plansContext.searchQuery,
-  ]);
-
-  // Standalone tasks in current container (or all matching tasks when search is active)
-  const containerTasks = useMemo(() => {
-    return tasks.filter((t) => {
-      if (!matchesTaskFilter(t)) return false;
-      if (isSearchActive && !plansContext.activeProjectId && !plansContext.activeGoalId) {
-        return true;
-      }
-      if (plansContext.activeFolderId === null) {
-        return (
-          t.ownership.kind === 'standalone' &&
-          (t.ownership.folderId === null || t.ownership.folderId === undefined)
-        );
-      }
-      return (
-        (t.ownership.kind === 'folder' &&
-          t.ownership.folderId === plansContext.activeFolderId) ||
-        (t.ownership.kind === 'standalone' &&
-          t.ownership.folderId === plansContext.activeFolderId)
-      );
-    });
-  }, [
-    tasks,
-    plansContext.activeFolderId,
-    plansContext.activeProjectId,
-    plansContext.activeGoalId,
-    plansContext.searchQuery,
-    plansContext.taskStateFilter,
-    plansContext.priorityFilter,
-    plansContext.showCompletedTasks,
-    isSearchActive,
-  ]);
-
-  // Projects and direct tasks for the active goal
-  const activeGoalProjects = useMemo(() => {
-    if (!activeGoal) return [];
-    return projects.filter((p) => p.goalId === activeGoal.id);
-  }, [projects, activeGoal]);
-
-  const activeGoalTasks = useMemo(() => {
-    if (!activeGoal) return [];
-    return tasks.filter(
-      (t) =>
-        t.ownership.kind === 'goal' &&
-        t.ownership.goalId === activeGoal.id &&
-        matchesTaskFilter(t)
-    );
-  }, [
-    tasks,
     activeGoal,
-    plansContext.taskStateFilter,
-    plansContext.priorityFilter,
-    plansContext.showCompletedTasks,
+    renameFolder,
+    moveFolder,
+    deleteFolderAlert,
+    deleteProjectAlert,
+    activeDetailEditor,
+    customLogEntity,
+    stageSheetTarget,
+    stageShiftAlert,
+    newFolderSheet,
   ]);
 
-  const activeProjectAllTasks = useMemo(() => {
-    if (!activeProject) return [];
-    return tasks.filter(
-      (t) =>
-        t.ownership.kind === 'project' &&
-        t.ownership.projectId === activeProject.id
-    );
-  }, [tasks, activeProject]);
+  // Model context for resolving area colors
+  const modelContext = useMemo(
+    () => ({ folders, projects, goals, areas: lifeAreaQuestions }),
+    [folders, projects, goals, lifeAreaQuestions],
+  );
 
-  const activeProjectVisibleTasks = useMemo(() => {
-    return activeProjectAllTasks.filter(matchesTaskFilter);
-  }, [
-    activeProjectAllTasks,
-    plansContext.searchQuery,
-    plansContext.taskStateFilter,
-    plansContext.priorityFilter,
-    plansContext.showCompletedTasks,
-  ]);
-
-  const handleReorderFolder = async (
-    folderId: string,
-    direction: 'up' | 'down'
-  ) => {
-    try {
-      const target = folders.find((f) => f.id === folderId);
-      if (!target) return;
-      const siblings = folders
-        .filter((f) => f.parentId === target.parentId)
-        .sort((a, b) => a.order - b.order);
-      const idx = siblings.findIndex((f) => f.id === folderId);
-      if (idx === -1) return;
-      const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
-      if (swapIdx < 0 || swapIdx >= siblings.length) return;
-      const reordered = [...siblings];
-      const temp = reordered[idx];
-      reordered[idx] = reordered[swapIdx];
-      reordered[swapIdx] = temp;
-      await repositories.reorderFoldersTransactionally(
-        target.parentId,
-        reordered.map((f) => f.id),
-        new Date().toISOString()
-      );
-      await onDataChanged();
-    } catch (err) {
-      setModalError(
-        err instanceof Error ? err.message : 'Не вдалося змінити порядок папок.'
-      );
+  // Breadcrumbs chain for active folder
+  const folderChain = useMemo(() => {
+    if (!activeFolderId) return [];
+    const chain: Folder[] = [];
+    let currentId: string | null = activeFolderId;
+    const seen = new Set<string>();
+    while (currentId && !seen.has(currentId)) {
+      seen.add(currentId);
+      const f = folders.find((item) => item.id === currentId);
+      if (!f) break;
+      chain.unshift(f);
+      currentId = f.parentId;
     }
-  };
+    return chain;
+  }, [folders, activeFolderId]);
 
-  const handleSaveFolderEdit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingFolder) return;
-    setModalError(null);
-    const nowIso = new Date().toISOString();
-    try {
-      await repositories.saveFolder({
-        ...editingFolder,
-        name: folderEditName,
-        parentId: folderEditParentId,
-        updatedAt: nowIso,
-        revision: editingFolder.revision + 1,
-      });
-      setEditingFolder(null);
-      await onDataChanged('Папку оновлено.');
-    } catch (err) {
-      setModalError(
-        err instanceof Error ? err.message : 'Не вдалося оновити папку.'
-      );
-    }
-  };
+  const currentFolder = folderChain.at(-1) ?? null;
 
-  const handleConfirmDeleteFolder = async () => {
-    if (!deletingFolder) return;
-    setModalError(null);
-    try {
-      await repositories.deleteFolderTransactionally(
-        deletingFolder.id,
-        folderDeleteStrategy,
-        new Date().toISOString()
-      );
-      if (plansContext.activeFolderId === deletingFolder.id) {
-        onUpdatePlansContext({ activeFolderId: deletingFolder.parentId });
-      }
-      setDeletingFolder(null);
-      await onDataChanged(UK_STRINGS.plansView.folderDeletedFeedback);
-    } catch (err) {
-      setModalError(
-        err instanceof Error ? err.message : 'Не вдалося видалити папку.'
-      );
-    }
-  };
+  const subScreenKey = activeProject
+    ? `project:${activeProject.id}`
+    : activeFolderId
+      ? `folder:${activeFolderId}`
+      : `root:${isGoalsView ? "goals" : "projects"}`;
+  const { containerRef: subScreenRef } = useSubScreenTransition(
+    subScreenKey,
+    (key) => {
+      if (key.startsWith("project:")) return 2;
+      if (key.startsWith("folder:")) return 1;
+      return 0;
+    },
+  );
 
-  const handleSaveProjectEdit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingProject) return;
-    setModalError(null);
-    const nowIso = new Date().toISOString();
-    try {
-      await repositories.saveProject({
-        ...editingProject,
-        title: projEditTitle,
-        desiredOutcome: projEditOutcome.trim() ? projEditOutcome.trim() : null,
-        completionCriteria: projEditCriteria.trim()
-          ? projEditCriteria.trim()
-          : null,
-        description: projEditDescription.trim()
-          ? projEditDescription.trim()
-          : null,
-        targetDate: projEditTargetDate || null,
-        collaboratorText: projEditCollaborators.trim()
-          ? projEditCollaborators.trim()
-          : null,
-        folderId: projEditFolderId || null,
-        state: projEditState,
-        completedAt:
-          projEditState === 'completed'
-            ? editingProject.completedAt ?? nowIso
-            : null,
-        updatedAt: nowIso,
-        revision: editingProject.revision + 1,
-      });
-      setEditingProject(null);
-      await onDataChanged(UK_STRINGS.plansView.projectUpdatedFeedback);
-    } catch (err) {
-      setModalError(
-        err instanceof Error ? err.message : 'Не вдалося оновити проєкт.'
-      );
-    }
-  };
+  const timelineGridRef = useRef<HTMLDivElement>(null);
+  const prevTimelineYearRef = useRef<number>(timelineYear);
 
-  const handleConfirmCompleteProject = async () => {
-    if (!completingProject) return;
-    setModalError(null);
-    try {
-      await repositories.completeProjectExplicitlyTransactionally(
-        completingProject.id,
-        new Date().toISOString()
-      );
-      setCompletingProject(null);
-      await onDataChanged(UK_STRINGS.plansView.projectCompletedFeedback);
-    } catch (err) {
-      setModalError(
-        err instanceof Error ? err.message : 'Не вдалося завершити проєкт.'
-      );
-    }
-  };
-
-  const handleConfirmArchiveProject = async () => {
-    if (!archivingProject) return;
-    setModalError(null);
-    try {
-      await repositories.archiveProjectTransactionally(
-        archivingProject.id,
-        true,
-        archivePlanningChoice,
-        new Date().toISOString(),
-        actualTodayDate
-      );
-      setArchivingProject(null);
-      await onDataChanged(UK_STRINGS.plansView.projectArchivedFeedback);
-    } catch (err) {
-      setModalError(
-        err instanceof Error ? err.message : 'Не вдалося архівувати проєкт.'
-      );
-    }
-  };
-
-  const handleConfirmDeleteProject = async () => {
-    if (!deletingProject) return;
-    setModalError(null);
-    try {
-      await repositories.deleteProjectTransactionally(
-        deletingProject.id,
-        projectDeleteTaskMode,
-        new Date().toISOString()
-      );
-      if (plansContext.activeProjectId === deletingProject.id) {
-        onUpdatePlansContext({ activeProjectId: null });
-      }
-      setDeletingProject(null);
-      await onDataChanged(UK_STRINGS.plansView.projectDeletedFeedback);
-    } catch (err) {
-      setModalError(
-        err instanceof Error ? err.message : 'Не вдалося видалити проєкт.'
-      );
-    }
-  };
-
-  const handleSaveStageEdit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingStage) return;
-    setModalError(null);
-    const nowIso = new Date().toISOString();
-    try {
-      await repositories.saveStage({
-        ...editingStage,
-        title: stageEditTitle,
-        expectedOutcome: stageEditOutcome.trim()
-          ? stageEditOutcome.trim()
-          : null,
-        updatedAt: nowIso,
-        revision: editingStage.revision + 1,
-      });
-      setEditingStage(null);
-      await onDataChanged('Етап оновлено.');
-    } catch (err) {
-      setModalError(
-        err instanceof Error ? err.message : 'Не вдалося оновити етап.'
-      );
-    }
-  };
-
-  const handleUndoTaskLifecycle = async () => {
-    if (!lastUndoToken) return;
-    setModalError(null);
-    try {
-      await repositories.undoTaskLifecycleTransactionally(
-        lastUndoToken,
-        new Date().toISOString(),
-        activeZone
-      );
-      setLastUndoToken(null);
-      await onDataChanged(UK_STRINGS.scheduling.undoSuccessFeedback);
-    } catch (err) {
-      setLastUndoToken(null);
-      setModalError(
-        err instanceof Error
-          ? err.message
-          : 'Не вдалося скасувати дію життєвого циклу справи.'
-      );
-    }
-  };
-
-  const handleAddReservationSession = async () => {
-    if (!editingTask) return;
-    setModalError(null);
-    const nowIso = new Date().toISOString();
-    try {
-      const built = buildZonedIntervalFromLocalInput({
-        startLocalDate: newSessionStartDate,
-        startLocalTime: newSessionStartTime,
-        endLocalDate: newSessionEndDate,
-        endLocalTime: newSessionEndTime,
-        originZone: activeZone,
-      });
-      const conflictReport = detectScheduleConflicts({
-        candidateStartInstant: built.interval.startInstant,
-        candidateEndInstant: built.interval.endInstant,
-        displayZone: activeZone,
-        events,
-        reservations,
-        tasks,
-      });
-      if (conflictReport.hasConflicts && !newSessionOverlapConfirmed) {
-        setModalError(
-          conflictReport.warningMessageUk ??
-            UK_STRINGS.creation.eventForm.overlapConfirmationRequiredError
+  useLayoutEffect(() => {
+    const el = timelineGridRef.current;
+    if (!el) return;
+    ensureMotionRootAttribute(el);
+    if (prevTimelineYearRef.current !== timelineYear) {
+      const dir = timelineYear > prevTimelineYearRef.current ? 1 : -1;
+      prevTimelineYearRef.current = timelineYear;
+      if (isReducedMotion()) {
+        runInterruptibleAnimation(el, [{ opacity: 0 }, { opacity: 1 }], {
+          durationMs: tweens.reduced,
+          easing: easings.out,
+          root: el,
+          willChange: "opacity",
+        });
+      } else {
+        const offsetPx = dir >= 0 ? 24 : -24;
+        runInterruptibleAnimation(
+          el,
+          [
+            { opacity: 0, transform: `translate3d(${offsetPx}px, 0, 0)` },
+            { opacity: 1, transform: "translate3d(0px, 0, 0)" },
+          ],
+          {
+            durationMs: tweens.base,
+            easing: easings.out,
+            root: el,
+            willChange: "transform, opacity",
+          },
         );
-        return;
       }
-
-      const newResId =
-        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-          ? crypto.randomUUID()
-          : `res-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-
-      await repositories.saveReservationTransactionally({
-        id: newResId,
-        taskId: editingTask.id,
-        interval: built.interval,
-        state: 'active',
-        releaseMetadata: null,
-        createdAt: nowIso,
-        updatedAt: nowIso,
-        revision: 1,
-      });
-      setTaskEditPlannedDate(null);
-      setShowAddSessionForm(false);
-      setNewSessionOverlapConfirmed(false);
-      await onDataChanged('Часовий резерв справи додано до розкладу.');
-    } catch (err) {
-      setModalError(
-        err instanceof Error
-          ? err.message
-          : 'Не вдалося додати сесію до розкладу.'
-      );
     }
-  };
+  }, [timelineYear]);
 
-  const handleStartRescheduleReservation = (res: TaskReservation) => {
-    setRescheduleResId(res.id);
-    setRescheduleStartDate(res.interval.originStartLocalDate);
-    setRescheduleStartTime(res.interval.originStartLocalTime);
-    setRescheduleEndDate(res.interval.originEndLocalDate);
-    setRescheduleEndTime(res.interval.originEndLocalTime);
-    setRescheduleOverlapConfirmed(false);
-    setModalError(null);
-  };
-
-  const handleSaveRescheduleReservation = async (res: TaskReservation) => {
-    setModalError(null);
-    const nowIso = new Date().toISOString();
-    try {
-      const built = buildZonedIntervalFromLocalInput({
-        startLocalDate: rescheduleStartDate,
-        startLocalTime: rescheduleStartTime,
-        endLocalDate: rescheduleEndDate,
-        endLocalTime: rescheduleEndTime,
-        originZone: res.interval.originZone,
-      });
-      const conflictReport = detectScheduleConflicts({
-        candidateStartInstant: built.interval.startInstant,
-        candidateEndInstant: built.interval.endInstant,
-        excludeReservationId: res.id,
-        events,
-        reservations,
-        tasks,
-        displayZone: res.interval.originZone,
-      });
-      if (conflictReport.hasConflicts && !rescheduleOverlapConfirmed) {
-        setModalError(
-          conflictReport.warningMessageUk ??
-            UK_STRINGS.creation.eventForm.overlapConfirmationRequiredError
-        );
-        return;
+  // Filter projects by status: ideas NEVER appear among active
+  const filteredProjects = useMemo(() => {
+    return projects.filter((p) => {
+      // Search filter
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchesTitle = p.title.toLowerCase().includes(q);
+        const matchesDesc = (p.description ?? "").toLowerCase().includes(q);
+        if (!matchesTitle && !matchesDesc) return false;
       }
-
-      await repositories.rescheduleReservationTransactionally(
-        res.id,
-        built.interval,
-        nowIso,
-        res.revision
-      );
-      setRescheduleResId(null);
-      setRescheduleOverlapConfirmed(false);
-      await onDataChanged('Час сесії оновлено.');
-    } catch (err) {
-      setModalError(
-        err instanceof Error
-          ? err.message
-          : 'Не вдалося змінити час сесії в розкладі.'
-      );
-    }
-  };
-
-  const handleCancelSingleReservation = async (res: TaskReservation) => {
-    setModalError(null);
-    try {
-      const updated = await repositories.cancelSingleReservationTransactionally(
-        res.id,
-        'cancel',
-        new Date().toISOString(),
-        res.revision
-      );
-      if (updated.task?.planningState === 'unplanned') {
-        setTaskEditPlannedDate(null);
+      // Folder filter: if inside a folder, show project if p.folderId === activeFolderId
+      if (activeFolderId !== null) {
+        if (p.folderId !== activeFolderId) return false;
+      } else {
+        // At root: show projects with no folder (or matching search across folders)
+        if (!searchQuery.trim() && p.folderId !== null) return false;
       }
-      await onDataChanged('Сесію скасовано.');
-    } catch (err) {
-      setModalError(
-        err instanceof Error ? err.message : 'Не вдалося скасувати сесію.'
-      );
-    }
-  };
+      // Status filter
+      return p.state === statusFilter;
+    });
+  }, [projects, activeFolderId, searchQuery, statusFilter]);
 
-  const handleRemoveCurrentPlanningFromSheet = async () => {
-    if (!editingTask) return;
-    setModalError(null);
-    try {
-      await repositories.removeTaskCurrentPlanningTransactionally(
-        editingTask.id,
-        new Date().toISOString(),
-        editingTask.revision
-      );
-      setTaskEditPlannedDate(null);
-      await onDataChanged('Поточне планування справи знято.');
-    } catch (err) {
-      setModalError(
-        err instanceof Error
-          ? err.message
-          : 'Не вдалося зняти поточне планування.'
-      );
-    }
-  };
+  // Child folders in current view
+  const currentChildFolders = useMemo(() => {
+    return folders.filter((f) => {
+      if (searchQuery.trim()) {
+        return f.name.toLowerCase().includes(searchQuery.toLowerCase());
+      }
+      return f.parentId === activeFolderId;
+    });
+  }, [folders, activeFolderId, searchQuery]);
 
-  const handleSaveTaskDetails = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingTask) return;
-    setModalError(null);
-    const nowIso = new Date().toISOString();
+  // Tasks in current folder (if inside folder)
+  const currentFolderTasks = useMemo(() => {
+    if (!activeFolderId) return [];
+    return tasks.filter((t) => t.folderId === activeFolderId && t.ownership.kind !== "project");
+  }, [tasks, activeFolderId]);
 
-    try {
-      let parsedDeadline: TaskDeadline | null = null;
-      if (taskEditDeadlineKind === 'date_only' && taskEditDeadlineDate.trim()) {
-        parsedDeadline = {
-          kind: 'date_only',
-          localDate: taskEditDeadlineDate.trim(),
-        };
-      } else if (
-        taskEditDeadlineKind === 'exact_instant' &&
-        taskEditDeadlineInstant.trim()
-      ) {
-        const dt = new Date(taskEditDeadlineInstant.trim());
-        if (!Number.isNaN(dt.getTime())) {
-          parsedDeadline = {
-            kind: 'exact_instant',
-            instant: dt.toISOString(),
-            zoneId: activeZone,
-          };
+  // Goals with terms for the timeline
+  const timedGoals = useMemo(() => {
+    return goals.filter((g) => {
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        if (!g.title.toLowerCase().includes(q) && !(g.description ?? "").toLowerCase().includes(q)) {
+          return false;
         }
       }
-
-      const parsedEstimate =
-        taskEditEstimate.trim().length > 0
-          ? Number(taskEditEstimate.trim())
-          : null;
-
-      const targetOwnership: TaskOwnership =
-        taskEditOwnershipMode === 'project' && taskEditProjectId
-          ? {
-              kind: 'project',
-              projectId: taskEditProjectId,
-              stageId: taskEditStageId || null,
-            }
-          : taskEditOwnershipMode === 'goal' && taskEditGoalId
-          ? {
-              kind: 'goal',
-              goalId: taskEditGoalId,
-            }
-          : taskEditOwnershipMode === 'folder' && taskEditFolderId
-          ? {
-              kind: 'folder',
-              folderId: taskEditFolderId,
-            }
-          : {
-              kind: 'standalone',
-              folderId: null,
-            };
-
-      let baseTask = editingTask;
-      const ownershipChanged =
-        JSON.stringify(editingTask.ownership) !==
-        JSON.stringify(targetOwnership);
-      if (ownershipChanged) {
-        baseTask = await repositories.moveTaskOwnershipTransactionally(
-          editingTask.id,
-          targetOwnership,
-          nowIso,
-          editingTask.revision
-        );
-      }
-
-      const nextPlanningState =
-        baseTask.planningState === 'timed'
-          ? 'timed'
-          : taskEditPlannedDate
-          ? 'date_only'
-          : 'unplanned';
-
-      await repositories.saveTask({
-        ...baseTask,
-        title: taskEditTitle,
-        description: taskEditDescription.trim()
-          ? taskEditDescription.trim()
-          : null,
-        priority: taskEditPriority,
-        deadline: parsedDeadline,
-        estimatedDurationMinutes: parsedEstimate,
-        planningState: nextPlanningState,
-        plannedDate:
-          nextPlanningState === 'date_only' ? taskEditPlannedDate : null,
-        ownership: baseTask.ownership,
-        updatedAt: nowIso,
-        revision: baseTask.revision + 1,
-      });
-
-      setEditingTaskId(null);
-      await onDataChanged(UK_STRINGS.plansView.taskUpdatedFeedback);
-    } catch (err) {
-      setModalError(
-        err instanceof Error ? err.message : 'Не вдалося оновити справу.'
-      );
-    }
-  };
-
-  const handleTaskLifecycleFromSheet = async (
-    targetState: 'open' | 'completed' | 'canceled'
-  ) => {
-    if (!editingTask) return;
-    setModalError(null);
-    const nowIso = new Date().toISOString();
-    try {
-      if (targetState === 'completed') {
-        const res = await repositories.completeTaskTransactionally(
-          editingTask.id,
-          nowIso,
-          editingTask.revision
-        );
-        setLastUndoToken(res.undoToken);
-      } else if (targetState === 'canceled') {
-        const res = await repositories.cancelTaskTransactionally(
-          editingTask.id,
-          nowIso,
-          editingTask.revision
-        );
-        setLastUndoToken(res.undoToken);
-      } else {
-        setLastUndoToken(null);
-        await repositories.reopenTaskTransactionally(
-          editingTask.id,
-          nowIso,
-          editingTask.revision
-        );
-      }
-      await onDataChanged(UK_STRINGS.plansView.taskUpdatedFeedback);
-    } catch (err) {
-      setModalError(
-        err instanceof Error ? err.message : 'Не вдалося змінити стан справи.'
-      );
-    }
-  };
-
-  const handleDeleteTaskFromSheet = async () => {
-    if (!editingTask) return;
-    setModalError(null);
-    try {
-      await repositories.deleteTaskTransactionally(editingTask.id);
-      setEditingTaskId(null);
-      await onDataChanged(UK_STRINGS.plansView.taskDeletedFeedback);
-    } catch (err) {
-      setModalError(
-        err instanceof Error ? err.message : 'Не вдалося видалити справу.'
-      );
-    }
-  };
-
-  // Checklist operations on the currently open editingTask
-  const updateChecklist = async (nextItems: ChecklistItem[]) => {
-    if (!editingTask) return;
-    const normalized = nextItems.map((item, idx) => ({
-      ...item,
-      order: idx + 1,
-    }));
-    const nowIso = new Date().toISOString();
-    await repositories.saveTask({
-      ...editingTask,
-      checklist: normalized,
-      updatedAt: nowIso,
-      revision: editingTask.revision + 1,
+      return Boolean(g.termStart || g.termEnd || g.timing?.targetDate);
     });
-    await onDataChanged();
+  }, [goals, searchQuery]);
+
+  // Goals without a term
+  const undatedGoals = useMemo(() => {
+    return goals.filter((g) => {
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        if (!g.title.toLowerCase().includes(q) && !(g.description ?? "").toLowerCase().includes(q)) {
+          return false;
+        }
+      }
+      return !g.termStart && !g.termEnd && !g.timing?.targetDate;
+    });
+  }, [goals, searchQuery]);
+
+  // Autosave for "Моє бажане життя"
+  const handleMyLifeChange = (text: string) => {
+    setMyLifeText(text);
+    if (myLifeDebounceRef.current) clearTimeout(myLifeDebounceRef.current);
+    myLifeDebounceRef.current = window.setTimeout(async () => {
+      if (!settings) return;
+      try {
+        await repositories.saveSettings(
+          {
+            ...settings,
+            myLife: text,
+            updatedAt: new Date().toISOString(),
+          },
+          settings.revision,
+        );
+        await onDataChanged();
+      } catch (e) {
+        console.error("Failed to save myLife", e);
+      }
+    }, 600);
   };
 
-  const handleAddChecklistItem = async () => {
-    if (!editingTask || !newChecklistTitle.trim()) return;
-    const id =
-      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-        ? crypto.randomUUID()
-        : `chk-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const next: ChecklistItem[] = [
-      ...editingTask.checklist,
-      {
-        id,
-        title: newChecklistTitle.trim(),
-        completed: false,
-        order: editingTask.checklist.length + 1,
-      },
-    ];
-    setNewChecklistTitle('');
-    await updateChecklist(next);
-  };
-
-  const handleToggleChecklistItem = async (itemId: string) => {
-    if (!editingTask) return;
-    const next = editingTask.checklist.map((c) =>
-      c.id === itemId ? { ...c, completed: !c.completed } : c
-    );
-    await updateChecklist(next);
-  };
-
-  const handleReorderChecklistItem = async (
-    itemId: string,
-    direction: 'up' | 'down'
-  ) => {
-    if (!editingTask) return;
-    const sorted = [...editingTask.checklist].sort((a, b) => a.order - b.order);
-    const idx = sorted.findIndex((c) => c.id === itemId);
-    if (idx === -1) return;
-    const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
-    if (swapIdx < 0 || swapIdx >= sorted.length) return;
-    const temp = sorted[idx];
-    sorted[idx] = sorted[swapIdx];
-    sorted[swapIdx] = temp;
-    await updateChecklist(sorted);
-  };
-
-  const handleDeleteChecklistItem = async (itemId: string) => {
-    if (!editingTask) return;
-    const next = editingTask.checklist.filter((c) => c.id !== itemId);
-    await updateChecklist(next);
-  };
-
-  const handlePromoteChecklistItem = async (itemId: string) => {
-    if (!editingTask) return;
-    const newTaskId =
-      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-        ? crypto.randomUUID()
-        : `promoted-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  // Quick measure logging (+1, +5, custom)
+  const handleQuickLog = async (entity: Project | Goal, delta: number) => {
+    const isGoal = "termStart" in entity || "completionCriteriaUk" in entity;
+    const updated = logMeasure(entity, delta);
     try {
-      await repositories.promoteChecklistItemToTaskTransactionally(
-        editingTask.id,
-        itemId,
-        newTaskId,
-        new Date().toISOString()
-      );
-      await onDataChanged(UK_STRINGS.plansView.checklistPromotedFeedback);
-    } catch (err) {
-      setModalError(
-        err instanceof Error
-          ? err.message
-          : 'Не вдалося перетворити крок на справу.'
-      );
+      if (isGoal) {
+        await repositories.saveGoal(updated as Goal, entity.revision);
+      } else {
+        await repositories.saveProject(updated as Project, entity.revision);
+      }
+      await onDataChanged(`Вимір оновлено: +${delta} ${entity.measure?.unit ?? ""}`);
+    } catch (e) {
+      console.error("Failed to log measure", e);
     }
   };
 
-  const folderDeleteImpact = useMemo(() => {
-    if (!deletingFolder) return null;
-    return computeFolderDeleteImpact(
-      folders,
-      projects,
-      tasks,
-      deletingFolder.id
+  // Open detail field editor
+  const openFieldEditor = (
+    entity: Project | Goal,
+    field: "purpose" | "criteria" | "nextStep" | "targetDate" | "area" | "measure",
+  ) => {
+    const isGoal = "termStart" in entity || "completionCriteriaUk" in entity;
+    const kind = isGoal ? "goal" : "project";
+
+    if (field === "purpose") {
+      setEditorTextValue(entity.purposeUk ?? "");
+    } else if (field === "criteria") {
+      setEditorTextValue(
+        isGoal
+          ? (entity as Goal).completionCriteriaUk ?? ""
+          : (entity as Project).completionCriteria ?? "",
+      );
+    } else if (field === "nextStep") {
+      const intention = isGoal
+        ? (entity as Goal).implementationIntentionUk ?? ""
+        : (entity as Project).purposeUk ?? "";
+      setEditorTextValue(entity.nextActionTaskId ?? "");
+      setEditorIntentionValue(intention);
+    } else if (field === "targetDate") {
+      setEditorDateValue(
+        isGoal
+          ? (entity as Goal).termEnd ?? (entity as Goal).timing?.targetDate ?? null
+          : (entity as Project).targetDate ?? null,
+      );
+    } else if (field === "area") {
+      setEditorAreaValue(entity.areaId ?? entity.lifeAreaId ?? null);
+    } else if (field === "measure") {
+      setMeasureUnit(entity.measure?.unit ?? "");
+      setMeasureTarget(entity.measure?.target ? String(entity.measure.target) : "");
+    }
+
+    setActiveDetailEditor({ kind, entityId: entity.id, field });
+  };
+
+  // Save detail field editor
+  const handleSaveFieldEditor = async () => {
+    if (!activeDetailEditor) return;
+    const { kind, entityId, field } = activeDetailEditor;
+    const isGoal = kind === "goal";
+    const entity = isGoal
+      ? goals.find((g) => g.id === entityId)
+      : projects.find((p) => p.id === entityId);
+    if (!entity) return;
+
+    let patch: Partial<Project & Goal> = {};
+
+    if (field === "purpose") {
+      patch = { purposeUk: editorTextValue.trim() || null };
+    } else if (field === "criteria") {
+      patch = isGoal
+        ? { completionCriteriaUk: editorTextValue.trim() || null }
+        : { completionCriteria: editorTextValue.trim() || null };
+    } else if (field === "nextStep") {
+      patch = isGoal
+        ? {
+            nextActionTaskId: editorTextValue.trim() || null,
+            implementationIntentionUk: editorIntentionValue.trim() || null,
+          }
+        : {
+            nextActionTaskId: editorTextValue.trim() || null,
+          };
+    } else if (field === "targetDate") {
+      patch = isGoal
+        ? {
+            termEnd: editorDateValue,
+            timing: editorDateValue ? { targetDate: editorDateValue, targetPeriodUk: null } : null,
+          }
+        : { targetDate: editorDateValue };
+    } else if (field === "area") {
+      patch = { areaId: editorAreaValue, lifeAreaId: editorAreaValue };
+    } else if (field === "measure") {
+      if (!measureUnit.trim()) {
+        patch = { measure: null };
+      } else {
+        const currentM = entity.measure ?? { unit: measureUnit.trim(), current: 0, log: [] };
+        patch = {
+          measure: {
+            ...currentM,
+            unit: measureUnit.trim(),
+            target: measureTarget.trim() ? Number(measureTarget) : null,
+          },
+        };
+      }
+    }
+
+    try {
+      if (isGoal) {
+        await repositories.saveGoal({ ...entity, ...patch } as Goal, entity.revision);
+      } else {
+        await repositories.saveProject({ ...entity, ...patch } as Project, entity.revision);
+      }
+      await onDataChanged("Зміни збережено");
+      setActiveDetailEditor(null);
+    } catch (e) {
+      console.error("Failed to save field editor", e);
+    }
+  };
+
+  // PROJECT DETAIL SUB-SCREEN
+  if (activeProject) {
+    const projectArea = resolveArea(activeProject, modelContext);
+    const areaColorCode = projectArea ? itemColor(activeProject, modelContext) : "var(--color-neutral-slate)";
+    const projectTasks = tasks.filter(
+      (t) => t.ownership.kind === "project" && t.ownership.projectId === activeProject.id,
     );
-  }, [deletingFolder, folders, projects, tasks]);
+    const projectReservations = reservations.filter((r) =>
+      projectTasks.some((t) => t.id === r.taskId),
+    );
 
-  const allowedMoveFoldersForEditingFolder = useMemo(() => {
-    if (!editingFolder) return [];
-    return getAllowedMoveTargetFolders(folders, editingFolder.id);
-  }, [folders, editingFolder]);
+    const stateLabels: Record<Project["state"], string> = {
+      active: "Активний",
+      idea: "Ідея",
+      paused: "На паузі",
+      completed: "Завершений",
+    };
 
-  return (
-    <div className="space-y-4 directions-stage4" data-testid="destination-view-plans">
-      {activeGoal || activeProject ? (
-        <SubHeader
-          title={(activeProject ?? activeGoal)!.title}
-          onBack={() => {
-            setShowRoadmap(false);
-            onUpdatePlansContext(
-              activeProject
-                ? { activeProjectId: null }
-                : { activeGoalId: null },
-            );
-          }}
-          actions={
+    return (
+      <div
+        ref={subScreenRef}
+        className="project-detail-subscreen"
+        data-testid="project-detail"
+      >
+        {/* Header: round back, title, status pill menu, ⋯ */}
+        <div className="subscreen-header">
+          <RoundButton
+            aria-label="Назад до проєктів"
+            onClick={() => onUpdatePlansContext({ activeProjectId: null })}
+          >
+            <Icon name="chevron-left" size={20} />
+          </RoundButton>
+          <div className="subscreen-title-area">
+            <h1 className="subscreen-title">{activeProject.title}</h1>
+          </div>
+          <div className="subscreen-actions">
+            {/* Status pill menu */}
             <ActionMenu
-              label="Дії плану"
+              label={`Статус: ${stateLabels[activeProject.state]}`}
+              items={(["active", "idea", "paused", "completed"] as const).map(
+                (st) => ({
+                  label: stateLabels[st],
+                  onSelect: () => {
+                    void repositories
+                      .saveProject(
+                        {
+                          ...activeProject,
+                          state: st,
+                          completedAt:
+                            st === "completed" ? new Date().toISOString() : null,
+                        },
+                        activeProject.revision,
+                      )
+                      .then(() => onDataChanged());
+                  },
+                }),
+              )}
+            >
+              <span className="status-pill-select ui-pressable">
+                {stateLabels[activeProject.state]}
+              </span>
+            </ActionMenu>
+            <ActionMenu
+              label="Дії з проєктом"
               items={[
                 {
-                  label: "Редагувати",
-                  onSelect: () =>
-                    activeProject
-                      ? openProjectEditModal(activeProject)
-                      : openGoalEditModal(activeGoal!),
+                  label: "Змінити назву",
+                  onSelect: () => {
+                    const newTitle = window.prompt("Назва проєкту:", activeProject.title);
+                    if (newTitle && newTitle.trim()) {
+                      void repositories
+                        .saveProject({ ...activeProject, title: newTitle.trim() }, activeProject.revision)
+                        .then(() => onDataChanged());
+                    }
+                  },
                 },
                 {
-                  label: "Архівувати",
-                  onSelect: () =>
-                    activeProject
-                      ? setArchivingProject(activeProject)
-                      : void handleToggleGoalArchived(activeGoal!),
-                },
-                {
-                  label: "Видалити",
-                  onSelect: () =>
-                    activeProject
-                      ? setDeletingProject(activeProject)
-                      : openGoalDeleteModal(activeGoal!),
+                  label: "Видалити проєкт",
+                  onSelect: () => setDeleteProjectAlert(activeProject),
                 },
               ]}
             />
-          }
-        />
-      ) : (
-        <PageHeader
-          title="Напрями"
-          actions={
-            <>
-              <RoundButton
-                aria-label="Пошук"
-                onClick={() => setSearchOpen(!searchOpen)}
-              >
-                <Search size={20} />
-              </RoundButton>
-              <RoundButton
-                aria-label="Додати"
-                onClick={() => onOpenGlobalCreation("folder")}
-              >
-                <Plus size={20} />
-              </RoundButton>
-            </>
-          }
-        >
-          {searchOpen && (
-            <InputField
-              label="Пошук напрямів"
-              value={plansContext.searchQuery}
-              onChange={(e) =>
-                onUpdatePlansContext({ searchQuery: e.target.value })
-              }
-            />
-          )}
-          <Segmented
-            label="Простір напрямів"
-            value={showRoadmap ? "roadmap" : "directions"}
-            onChange={(v) => setShowRoadmap(v === "roadmap")}
-            options={[
-              { value: "directions", label: "Напрями" },
-              { value: "roadmap", label: "Глобальна дорожня карта" },
-            ]}
-          />
-          <div className="ui-pill-row" data-ui="pill-row">
-            <PillRow
-              label="Статус планів"
-              value={directionStatus}
-              onChange={setDirectionStatus}
-              options={[
-                { value: "active", label: "Активні" },
-                { value: "idea", label: "Ідеї" },
-                { value: "paused", label: "На паузі" },
-                { value: "completed", label: "Завершені" },
-              ]}
-            />
-            <button className="ui-pill" onClick={() => setFiltersOpen(true)}>
-              Фільтри
-              {(plansContext.priorityFilter !== "all" ||
-                plansContext.showCompletedTasks ||
-                plansContext.showArchivedProjects) && (
-                <span className="stage4-badge">
-                  {Number(plansContext.priorityFilter !== "all") +
-                    Number(plansContext.showCompletedTasks) +
-                    Number(plansContext.showArchivedProjects)}
-                </span>
-              )}
-            </button>
           </div>
-        </PageHeader>
-      )}
-      <div data-ui="content-start" />
-      {modalError && (
-        <FeedbackBanner
-          tone="error"
-          message={modalError}
-          onDismiss={() => setModalError(null)}
-        />
-      )}
-      {activeFolder && !activeGoal && !activeProject && (
-        <nav className="stage4-path" aria-label="Шлях напряму">
-          <RoundButton
-            aria-label="До батьківського напряму"
-            onClick={() =>
-              onUpdatePlansContext({ activeFolderId: activeFolder.parentId })
+        </div>
+
+        {/* ONE white card of Rows with value previews */}
+        <Card className="project-detail-card">
+          <Row
+            title="Для чого це мені"
+            value={activeProject.purposeUk || undefined}
+            chevron
+            onClick={() => openFieldEditor(activeProject, "purpose")}
+          />
+          <Row
+            title="Який результат означатиме завершення"
+            value={activeProject.completionCriteria || undefined}
+            chevron
+            onClick={() => openFieldEditor(activeProject, "criteria")}
+          />
+          <Row
+            title="Наступний крок"
+            value={
+              activeProject.nextActionTaskId
+                ? tasks.find((t) => t.id === activeProject.nextActionTaskId)?.title ?? activeProject.nextActionTaskId
+                : undefined
             }
-          >
-            <Icon name="chevron-left"/>
-          </RoundButton>
-          <button
-            onClick={() => onUpdatePlansContext({ activeFolderId: null })}
-          >
-            Усі напрями
-          </button>
-          {breadcrumbData.fullChain.map((f) => (
-            <React.Fragment key={f.id}>
-              <span><Icon name="chevron-right"/></span>
-              <button
-                onClick={() => onUpdatePlansContext({ activeFolderId: f.id })}
-              >
-                {f.name}
-              </button>
-            </React.Fragment>
+            secondary={
+              activeProject.purposeUk ? `Якщо — то: ${activeProject.purposeUk}` : undefined
+            }
+            chevron
+            onClick={() => openFieldEditor(activeProject, "nextStep")}
+          />
+          <Row
+            title="Орієнтовний термін"
+            value={activeProject.targetDate ? formatDate(activeProject.targetDate) : undefined}
+            chevron
+            onClick={() => openFieldEditor(activeProject, "targetDate")}
+          />
+          <Row
+            title="Сфера"
+            leading={<Orb color={areaColorCode} size={18} />}
+            value={projectArea?.name || undefined}
+            chevron
+            onClick={() => openFieldEditor(activeProject, "area")}
+          />
+          <Row
+            title="Вимір"
+            value={
+              activeProject.measure
+                ? `${activeProject.measure.current} / ${activeProject.measure.target ?? "—"} ${activeProject.measure.unit}`
+                : undefined
+            }
+            trailing={
+              activeProject.measure ? (
+                <div className="measure-quick-logs" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    type="button"
+                    className="measure-log-pill"
+                    onClick={() => handleQuickLog(activeProject, 1)}
+                  >
+                    +1
+                  </button>
+                  <button
+                    type="button"
+                    className="measure-log-pill"
+                    onClick={() => handleQuickLog(activeProject, 5)}
+                  >
+                    +5
+                  </button>
+                  <button
+                    type="button"
+                    className="measure-log-pill"
+                    onClick={() => setCustomLogEntity({ kind: "project", id: activeProject.id })}
+                  >
+                    Своє
+                  </button>
+                </div>
+              ) : undefined
+            }
+            chevron={!activeProject.measure}
+            onClick={() => openFieldEditor(activeProject, "measure")}
+          />
+        </Card>
+
+        {/* Deadline row if targetDate exists */}
+        {activeProject.targetDate && (
+          <Section title="Термін">
+            <Row
+              leading={<Icon name="calendar" size={18} />}
+              title="Кінцевий термін виконання"
+              trailing={formatDate(activeProject.targetDate)}
+            />
+          </Section>
+        )}
+
+        {/* Section "Завдання": rows + a "+" row */}
+        <Section title="Завдання">
+          {projectTasks.map((t) => (
+            <Row
+              key={t.id}
+              leading={
+                <button
+                  type="button"
+                  className="planui-task-check-circle"
+                  aria-label={t.state === "completed" ? "Позначити відкритим" : "Позначити виконаним"}
+                  onClick={() => onToggleTaskState?.(t.id)}
+                >
+                  <span className={`planui-check-dot ${t.state === "completed" ? "done" : ""}`}>
+                    {t.state === "completed" && <Icon name="check" size={13} />}
+                  </span>
+                </button>
+              }
+              title={t.title}
+              secondary={t.deadline ? `Термін: ${formatTaskDeadline(t.deadline)}` : undefined}
+            />
           ))}
-        </nav>
-      )}
-      {(activeGoal || activeProject) && (
-        <Segmented
-          label="План"
-          value={showRoadmap ? "roadmap" : "detail"}
-          onChange={(v) => setShowRoadmap(v === "roadmap")}
-          options={[
-            { value: "detail", label: "Деталі" },
-            { value: "roadmap", label: "Дорожня карта" },
-          ]}
-        />
-      )}
-      {showRoadmap ? (
-        <RoadmapView
-          source={{ folders, goals, projects, stages, tasks }}
-          selectedState={directionStatus}
-          repositories={repositories}
-          onChanged={onDataChanged}
-          initialOwner={
-            activeProject
-              ? { kind: "project", id: activeProject.id }
-              : activeGoal
-                ? { kind: "goal", id: activeGoal.id }
-                : null
-          }
-          onInspect={(owner) => {
-            setShowRoadmap(false);
-            onUpdatePlansContext(
-              owner.kind === "goal"
-                ? { activeGoalId: owner.id, activeProjectId: null }
-                : { activeProjectId: owner.id },
+          <Row
+            leading={<Icon name="plus" size={18} />}
+            title="+ Додати завдання"
+            className="row-action-add"
+            onClick={() => onOpenGlobalCreation("task")}
+          />
+        </Section>
+
+        {/* Scheduled work sessions shown separately */}
+        <Section title="Заплановані сесії">
+          {projectReservations.length > 0 ? (
+            projectReservations.map((r) => (
+              <Row
+                key={r.id}
+                leading={<Icon name="clock" size={18} />}
+                title={formatShortDate(r.interval.originStartLocalDate)}
+                trailing={formatTimeRange(r.interval.originStartLocalTime, r.interval.originEndLocalTime)}
+              />
+            ))
+          ) : (
+            <Row title="Немає запланованих сесій" secondary="Заплануйте час у календарі" />
+          )}
+        </Section>
+
+        {/* Delete Project Alert */}
+        <AlertSheet
+          isOpen={Boolean(deleteProjectAlert)}
+          title={`Видалити проєкт «${deleteProjectAlert?.title}»?`}
+          description="Усі незавершені справи можна перенести до папки або видалити."
+          confirmLabel="Видалити"
+          destructive
+          onClose={() => setDeleteProjectAlert(null)}
+          onConfirm={async () => {
+            if (!deleteProjectAlert) return;
+            await repositories.deleteProjectTransactionally(
+              deleteProjectAlert.id,
+              "rehome_to_folder",
+              new Date().toISOString(),
             );
+            setDeleteProjectAlert(null);
+            onUpdatePlansContext({ activeProjectId: null });
+            await onDataChanged("Проєкт видалено");
           }}
         />
-      ) : activeGoal || activeProject ? (
-        <>
-          <PlanDetail
-            record={(activeProject ?? activeGoal)!}
-            kind={activeProject ? "project" : "goal"}
-            tasks={activeProject ? activeProjectVisibleTasks : activeGoalTasks}
-            reservations={reservations}
-            repositories={repositories}
-            zone={activeZone}
-            onChanged={onDataChanged}
-            onTask={openTaskEditor}
-            onAdd={() => onOpenGlobalCreation("task")}
-          />
-          {!activeProject && activeGoalProjects.length > 0 && (
-            <Section title="Проєкти">
-              {activeGoalProjects.map((p) => (
-                <Disclosure
-                  key={p.id}
-                  title={p.title}
-                  onClick={() =>
-                    onUpdatePlansContext({ activeProjectId: p.id })
-                  }
-                />
-              ))}
-            </Section>
+
+        {/* Field Editor Sheet */}
+        {renderFieldEditorSheet()}
+      </div>
+    );
+  }
+
+  // RENDER FIELD EDITOR SHEET
+  function renderFieldEditorSheet() {
+    if (!activeDetailEditor) return null;
+    const { field, kind } = activeDetailEditor;
+    const title =
+      field === "purpose"
+        ? "Для чого це мені"
+        : field === "criteria"
+          ? "Який результат означатиме завершення"
+          : field === "nextStep"
+            ? "Наступний крок"
+            : field === "targetDate"
+              ? "Орієнтовний термін"
+              : field === "area"
+                ? "Сфера життя"
+                : "Вимір";
+
+    return (
+      <Sheet
+        title={title}
+        isOpen={Boolean(activeDetailEditor)}
+        onClose={() => setActiveDetailEditor(null)}
+      >
+        <div className="space-y-4 p-2">
+          {field === "purpose" && (
+            <div className="space-y-2">
+              <label className="text-sm font-semibold">Сенс і мета:</label>
+              <textarea
+                className="ui-textarea-field"
+                rows={4}
+                value={editorTextValue}
+                onChange={(e) => setEditorTextValue(e.target.value)}
+                placeholder="Опишіть, чому це важливо..."
+                autoFocus
+              />
+            </div>
           )}
-        </>
-      ) : (
-        <>
-          {childFolders.length > 0 && (
-            <Section title="Напрями">
-              {childFolders.map((f, i) => {
-                const gs = goals.filter(
-                  (g) =>
-                    g.folderId === f.id &&
-                    g.state === directionStatus &&
-                    !g.archived,
-                );
-                const ps = projects.filter(
-                  (p) =>
-                    p.folderId === f.id &&
-                    p.state === directionStatus &&
-                    !p.archived,
-                );
-                const ts = tasks.filter(
-                  (t) =>
-                    t.ownership.kind === "folder" &&
-                    t.ownership.folderId === f.id &&
-                    matchesTaskFilter(t),
-                );
-                return (
+
+          {field === "criteria" && (
+            <div className="space-y-2">
+              <label className="text-sm font-semibold">Критерії досягнення:</label>
+              <textarea
+                className="ui-textarea-field"
+                rows={4}
+                value={editorTextValue}
+                onChange={(e) => setEditorTextValue(e.target.value)}
+                placeholder="Як саме ви зрозумієте, що результат досягнуто..."
+                autoFocus
+              />
+            </div>
+          )}
+
+          {field === "nextStep" && (
+            <div className="space-y-3">
+              <label className="text-sm font-semibold">Наступна конкретна дія:</label>
+              <input
+                type="text"
+                className="ui-input-field"
+                value={editorTextValue}
+                onChange={(e) => setEditorTextValue(e.target.value)}
+                placeholder="Що зробити найперше..."
+                autoFocus
+              />
+              <label className="text-sm font-semibold">Якщо — то (імплементація):</label>
+              <input
+                type="text"
+                className="ui-input-field"
+                value={editorIntentionValue}
+                onChange={(e) => setEditorIntentionValue(e.target.value)}
+                placeholder="Якщо станеться X, я зроблю Y..."
+              />
+            </div>
+          )}
+
+          {field === "targetDate" && (
+            <div className="space-y-2">
+              <DateField
+                label="Орієнтовна дата"
+                value={editorDateValue ?? ""}
+                onChange={(e) => setEditorDateValue(e.target.value || null)}
+              />
+              {editorDateValue && (
+                <button
+                  type="button"
+                  className="text-xs text-rose-500 font-medium mt-2"
+                  onClick={() => setEditorDateValue(null)}
+                >
+                  Очистити дату
+                </button>
+              )}
+            </div>
+          )}
+
+          {field === "area" && (
+            <div className="space-y-2">
+              <label className="text-sm font-semibold">Оберіть сферу життя:</label>
+              <div className="space-y-1">
+                <Row
+                  leading={<Orb color="var(--color-neutral-slate)" size={18} />}
+                  title="Без сфери"
+                  trailing={editorAreaValue === null ? <Icon name="check" size={18} /> : undefined}
+                  onClick={() => setEditorAreaValue(null)}
+                />
+                {lifeAreaQuestions.map((area) => (
                   <Row
-                    key={f.id}
-                    leading={
-                      <FolderIcon
-                        size={22}
-                        style={{ color: `hsl(${190 + i * 27} 55% 55%)` }}
+                    key={area.id}
+                    leading={<Orb color={areaColor(area.rating)} size={18} />}
+                    title={area.questionTextUk}
+                    trailing={editorAreaValue === area.id ? <Icon name="check" size={18} /> : undefined}
+                    onClick={() => setEditorAreaValue(area.id)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {field === "measure" && (
+            <div className="space-y-3">
+              <div>
+                <label className="text-sm font-semibold">Одиниця виміру (стор., км, год):</label>
+                <input
+                  type="text"
+                  className="ui-input-field"
+                  value={measureUnit}
+                  onChange={(e) => setMeasureUnit(e.target.value)}
+                  placeholder="наприклад, стор."
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="text-sm font-semibold">Цільове значення (опціонально):</label>
+                <input
+                  type="number"
+                  className="ui-input-field"
+                  value={measureTarget}
+                  onChange={(e) => setMeasureTarget(e.target.value)}
+                  placeholder="наприклад, 300"
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="pt-4">
+            <button
+              type="button"
+              className="ui-btn ui-btn-primary w-full"
+              onClick={handleSaveFieldEditor}
+            >
+              Зберегти
+            </button>
+          </div>
+        </div>
+      </Sheet>
+    );
+  }
+
+  // GOALS TIMELINE COMPUTATIONS
+  const timelineMonths = Array.from({ length: 12 }, (_, i) => ({
+    index: i,
+    label: MONTH_NAMES_UK[i],
+  }));
+
+  const actualTodayYear = Number(actualTodayDate.slice(0, 4));
+  const actualTodayMonth = Number(actualTodayDate.slice(5, 7)) - 1;
+  const actualTodayDay = Number(actualTodayDate.slice(8, 10));
+  const isCurrentYearTimeline = timelineYear === actualTodayYear;
+  const todayLinePercent = isCurrentYearTimeline
+    ? ((actualTodayMonth + (actualTodayDay - 1) / 30) / 12) * 100
+    : null;
+
+  return (
+    <div
+      ref={subScreenRef}
+      className="plans-workspace-p7"
+      data-testid="destination-view-directions"
+    >
+      {/* Header: large title "Проєкти" / "Цілі" + round frosted search button (expands into field); NO "+" in header */}
+      <PageHeader title={isGoalsView ? "Цілі" : "Проєкти"}>
+        <div className="header-actions">
+          <RoundButton
+            aria-label="Пошук"
+            onClick={() => setSearchOpen(!searchOpen)}
+          >
+            <Icon name="search" size={18} />
+          </RoundButton>
+        </div>
+      </PageHeader>
+
+      {/* Expandable search bar */}
+      {searchOpen && (
+        <div className="plan-search-expand-bar">
+          <Icon name="search" size={16} />
+          <input
+            type="text"
+            className="plan-search-input"
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              onUpdatePlansContext({ searchQuery: e.target.value });
+            }}
+            placeholder={isGoalsView ? "Пошук цілей..." : "Пошук проєктів, папок..."}
+            autoFocus
+          />
+          <button
+            type="button"
+            className="plan-search-clear"
+            onClick={() => {
+              setSearchQuery("");
+              onUpdatePlansContext({ searchQuery: "" });
+              setSearchOpen(false);
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* VIEW 1: ПРОЄКТИ */}
+      {!isGoalsView && (
+        <div className="projects-container space-y-4">
+          {/* Status pill row: Активні (ink), Ідеї, На паузі, Завершені */}
+          <PillRow
+            label="Статус проєктів"
+            value={statusFilter}
+            options={[
+              { value: "active", label: "Активні" },
+              { value: "idea", label: "Ідеї" },
+              { value: "paused", label: "На паузі" },
+              { value: "completed", label: "Завершені" },
+            ]}
+            onChange={(v) => setStatusFilter(v as any)}
+          />
+
+          {/* Breadcrumb path with round back button inside folders */}
+          {activeFolderId && currentFolder && (
+            <div className="folder-breadcrumbs">
+              <RoundButton
+                aria-label="Вгору"
+                onClick={() =>
+                  onUpdatePlansContext({ activeFolderId: currentFolder.parentId })
+                }
+              >
+                <Icon name="chevron-left" size={18} />
+              </RoundButton>
+              <div className="breadcrumb-path">
+                <span
+                  className="breadcrumb-root"
+                  onClick={() => onUpdatePlansContext({ activeFolderId: null })}
+                >
+                  Проєкти
+                </span>
+                {folderChain.map((f, i) => (
+                  <React.Fragment key={f.id}>
+                    <span className="breadcrumb-sep">/</span>
+                    <span
+                      className={`breadcrumb-item ${i === folderChain.length - 1 ? "active" : ""}`}
+                      onClick={() => onUpdatePlansContext({ activeFolderId: f.id })}
+                    >
+                      {f.name}
+                    </span>
+                  </React.Fragment>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Folder rows */}
+          {currentChildFolders.length > 0 && (
+            <div className="folder-list space-y-2">
+              {currentChildFolders.map((folder) => {
+                const folderArea = resolveArea(folder, modelContext);
+                const orbColor = folderArea ? itemColor(folder, modelContext) : "var(--color-neutral-slate)";
+                const pCount = projects.filter((p) => p.folderId === folder.id).length;
+                const tCount = tasks.filter((t) => t.folderId === folder.id).length;
+                const countParts: string[] = [];
+                if (pCount > 0) countParts.push(`${pCount} ${pCount === 1 ? "проєкт" : pCount < 5 ? "проєкти" : "проєктів"}`);
+                if (tCount > 0) countParts.push(`${tCount} ${tCount === 1 ? "завдання" : tCount < 5 ? "завдання" : "завдань"}`);
+                const countString = countParts.join(" · ");
+
+                return (
+                  <div
+                    key={folder.id}
+                    className="folder-row ui-pressable"
+                    onClick={() => onUpdatePlansContext({ activeFolderId: folder.id })}
+                  >
+                    <Orb color={orbColor} size={22} />
+                    <div className="folder-info">
+                      <span className="folder-name">{folder.name}</span>
+                      {countString ? <small className="folder-count">{countString}</small> : null}
+                    </div>
+                    <Icon name="chevron-right" size={18} />
+                    <div onClick={(e) => e.stopPropagation()}>
+                      <ActionMenu
+                        label={`Дії з ${folder.name}`}
+                        items={[
+                          {
+                            label: "Перейменувати",
+                            onSelect: () => {
+                              setRenameFolder(folder);
+                              setRenameFolderName(folder.name);
+                            },
+                          },
+                          {
+                            label: "Перемістити",
+                            onSelect: () => {
+                              setMoveFolder(folder);
+                              setMoveFolderTargetParentId(folder.parentId);
+                            },
+                          },
+                          {
+                            label: "Видалити",
+                            onSelect: () => setDeleteFolderAlert(folder),
+                          },
+                        ]}
                       />
-                    }
-                    title={
-                      <button
-                        className="stage4-open"
-                        onClick={() =>
-                          onUpdatePlansContext({ activeFolderId: f.id })
-                        }
-                      >
-                        {f.name}
-                      </button>
-                    }
-                    secondary={[
-                      gs.length && `${gs.length} цілі`,
-                      ps.length && `${ps.length} проєкти`,
-                      ts.length && `${ts.length} справи`,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
-                    trailing={
-                      <>
-                        <span className="stage4-dot" role="img" aria-label="Активний" />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Project rows: tinted card in area color */}
+          {filteredProjects.length > 0 && (
+            <div className="project-list space-y-3">
+              {filteredProjects.map((p) => {
+                const pColor = itemColor(p, modelContext);
+                const hasMeasure = Boolean(p.measure && p.measure.unit);
+                const measurePct = p.measure?.target
+                  ? Math.min(100, Math.round(((p.measure.current ?? 0) / p.measure.target) * 100))
+                  : 0;
+                const nextStepTask = p.nextActionTaskId
+                  ? tasks.find((t) => t.id === p.nextActionTaskId)
+                  : tasks.find((t) => t.ownership.kind === "project" && t.ownership.projectId === p.id && t.state === "open");
+
+                return (
+                  <TintedCard
+                    key={p.id}
+                    color={pColor}
+                    className="project-row-card"
+                    onClick={() => onUpdatePlansContext({ activeProjectId: p.id })}
+                  >
+                    <div className="project-card-header">
+                      <Orb color={pColor} size={20} />
+                      <h3 className="project-card-title">{p.title}</h3>
+                      <div onClick={(e) => e.stopPropagation()}>
                         <ActionMenu
-                          label={`Дії: ${f.name}`}
+                          label={`Дії: ${p.title}`}
                           items={[
                             {
                               label: "Відкрити",
-                              onSelect: () =>
-                                onUpdatePlansContext({ activeFolderId: f.id }),
+                              onSelect: () => onUpdatePlansContext({ activeProjectId: p.id }),
                             },
                             {
-                              label: "Редагувати",
-                              onSelect: () => openFolderEditModal(f),
-                            },
-                            {
-                              label: "Перемістити",
-                              onSelect: () => openFolderEditModal(f),
-                            },
-                            {
-                              label: "Змінити порядок",
-                              onSelect: () => setReorderOpen(true),
-                            },
-                            {
-                              label: "Видалити",
-                              onSelect: () => openFolderDeleteModal(f),
+                              label: "Видалити проєкт",
+                              onSelect: () => setDeleteProjectAlert(p),
                             },
                           ]}
                         />
-                      </>
-                    }
-                  />
+                      </div>
+                    </div>
+
+                    {/* Slim progress bar with measure or next step */}
+                    {hasMeasure && p.measure ? (
+                      <div className="project-measure-block">
+                        <div className="project-measure-track">
+                          <div
+                            className="project-measure-fill"
+                            style={{ width: `${measurePct}%`, background: pColor }}
+                          />
+                        </div>
+                        <span className="project-measure-text">
+                          {p.measure.current} / {p.measure.target ?? "—"} {p.measure.unit}
+                        </span>
+                      </div>
+                    ) : nextStepTask ? (
+                      <p className="project-next-step">
+                        Наступний крок: {nextStepTask.title}
+                      </p>
+                    ) : (
+                      <button
+                        type="button"
+                        className="project-add-step-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openFieldEditor(p, "nextStep");
+                        }}
+                      >
+                        Додати наступний крок
+                      </button>
+                    )}
+                  </TintedCard>
                 );
               })}
-            </Section>
+            </div>
           )}
-          {containerGoals.length + containerProjects.length > 0 && (
-            <Section title={activeFolder?.name ?? "Цілі й проєкти"}>
-              {[
-                ...containerGoals,
-                ...containerProjects.filter((p) => !p.goalId),
-              ].map((p) => {
-                const own = tasks.filter((t) =>
-                  t.ownership.kind === "goal"
-                    ? t.ownership.goalId === p.id
-                    : t.ownership.kind === "project" &&
-                      t.ownership.projectId === p.id,
-                );
-                return (
-                  <Disclosure
-                    key={p.id}
-                    title={
-                      (
-                        <>
-                          {p.title}
-                          <span className="stage4-progress">
-                            <span
-                              style={{
-                                width: `${own.length ? (own.filter((t) => t.state === "completed").length / own.length) * 100 : 0}%`,
-                              }}
-                            />
-                          </span>
-                        </>
-                      ) as unknown as string
-                    }
-                    secondary={
-                      tasks.find((t) => t.id === p.nextActionTaskId)?.title ??
-                      "Наступний крок не визначено"
-                    }
-                    onClick={() =>
-                      onUpdatePlansContext(
-                        "purposeUk" in p && "timing" in p
-                          ? { activeGoalId: p.id, activeProjectId: null }
-                          : { activeProjectId: p.id },
-                      )
-                    }
-                  />
-                );
-              })}
-            </Section>
-          )}
-          {activeFolder && containerTasks.length > 0 && (
-            <Section title="Справи">
-              {containerTasks.map((t) => (
-                <Disclosure
+
+          {/* Tasks in folder (if in folder) */}
+          {activeFolderId && currentFolderTasks.length > 0 && (
+            <Section title="Завдання папки">
+              {currentFolderTasks.map((t) => (
+                <Row
                   key={t.id}
+                  leading={
+                    <button
+                      type="button"
+                      className="planui-task-check-circle"
+                      onClick={() => onToggleTaskState?.(t.id)}
+                    >
+                      <span className={`planui-check-dot ${t.state === "completed" ? "done" : ""}`}>
+                        {t.state === "completed" && <Icon name="check" size={13} />}
+                      </span>
+                    </button>
+                  }
                   title={t.title}
-                  onClick={() => openTaskEditor(t)}
+                  secondary={t.deadline ? `Термін: ${formatTaskDeadline(t.deadline)}` : undefined}
                 />
               ))}
             </Section>
           )}
-          {childFolders.length +
-            containerGoals.length +
-            containerProjects.length ===
-            0 && (
-            <EmptyState
-              text="Ще немає напрямів"
-              action="Додати"
-              onAction={() => onOpenGlobalCreation("folder")}
-            />
+
+          {/* Empty state: orb + "Тут з'являться ваші проєкти" + buttons */}
+          {currentChildFolders.length === 0 && filteredProjects.length === 0 && (
+            <div className="projects-empty-block" data-testid="projects-empty">
+              <Orb color="var(--color-neutral-slate)" size={56} />
+              <p className="empty-title">Тут з&apos;являться ваші проєкти</p>
+              <div className="empty-actions">
+                <button
+                  type="button"
+                  className="ui-btn ui-btn-secondary"
+                  onClick={() => {
+                    setNewFolderName("");
+                    setNewFolderSheet(true);
+                  }}
+                >
+                  Створити папку
+                </button>
+                <button
+                  type="button"
+                  className="ui-btn ui-btn-primary"
+                  onClick={() => onOpenGlobalCreation("project")}
+                >
+                  Створити проєкт
+                </button>
+              </div>
+            </div>
           )}
-        </>
+        </div>
       )}
-      <Sheet
-        title="Фільтри"
-        isOpen={filtersOpen}
-        onClose={() => setFiltersOpen(false)}
-      >
-        <SelectField
-          label="Пріоритет"
-          value={plansContext.priorityFilter}
-          onChange={(e) =>
-            onUpdatePlansContext({
-              priorityFilter: e.target.value as PlansPriorityFilter,
-            })
-          }
-          options={[
-            { value: "all", label: "Усі" },
-            { value: "high", label: "Високий" },
-            { value: "normal", label: "Звичайний" },
-            { value: "low", label: "Низький" },
-          ]}
-        />
-        <Row
-          title="Показувати завершені"
-          trailing={
-            <Toggle
-              label="Показувати завершені"
-              checked={plansContext.showCompletedTasks}
-              onChange={(v) => onUpdatePlansContext({ showCompletedTasks: v })}
+
+      {/* VIEW 2: ЦІЛІ */}
+      {isGoalsView && (
+        <div className="goals-container space-y-6">
+          {/* Timeline ~1 year ahead: header row with year and ‹ › */}
+          <div className="goals-timeline-box">
+            <div className="timeline-header">
+              <span className="timeline-year-label">{timelineYear}</span>
+              <div className="timeline-nav">
+                <RoundButton
+                  aria-label="Попередній рік"
+                  onClick={() => setTimelineYear((y) => y - 1)}
+                >
+                  <Icon name="chevron-left" size={18} />
+                </RoundButton>
+                <RoundButton
+                  aria-label="Наступний рік"
+                  onClick={() => setTimelineYear((y) => y + 1)}
+                >
+                  <Icon name="chevron-right" size={18} />
+                </RoundButton>
+              </div>
+            </div>
+
+            {/* 12-Month Scale */}
+            <div ref={timelineGridRef} className="timeline-grid-wrapper">
+              <div className="timeline-month-scale">
+                {timelineMonths.map((m) => (
+                  <span key={m.index} className="timeline-month-label">
+                    {m.label}
+                  </span>
+                ))}
+              </div>
+
+              {/* Blue today line */}
+              {todayLinePercent !== null && (
+                <div
+                  className="timeline-today-line"
+                  style={{ left: `${todayLinePercent}%` }}
+                  title="Сьогодні"
+                />
+              )}
+
+              {/* Goal bars spanning termStart to termEnd */}
+              <div className="timeline-bars-container space-y-2 pt-2">
+                {timedGoals.map((g, barIdx) => {
+                  const gColor = itemColor(g, modelContext);
+                  const startStr = g.termStart || g.timing?.targetDate || g.termEnd || `${timelineYear}-01-01`;
+                  const endStr = g.termEnd || g.timing?.targetDate || g.termStart || `${timelineYear}-12-31`;
+
+                  const yStartMs = Date.UTC(timelineYear, 0, 1);
+                  const yEndMs = Date.UTC(timelineYear, 11, 31, 23, 59, 59);
+                  const totalYMs = yEndMs - yStartMs;
+
+                  const sMs = new Date(`${startStr}T00:00:00Z`).getTime();
+                  const eMs = new Date(`${endStr}T23:59:59Z`).getTime();
+
+                  // Skip if completely outside this year
+                  if (eMs < yStartMs || sMs > yEndMs) return null;
+
+                  const leftPct = Math.max(0, ((Math.max(sMs, yStartMs) - yStartMs) / totalYMs) * 100);
+                  const rightPct = Math.min(100, ((Math.min(eMs, yEndMs) - yStartMs) / totalYMs) * 100);
+                  const widthPct = Math.max(6, rightPct - leftPct);
+
+                  // Stages diamonds
+                  const goalStages = stages.filter((s) => s.goalId === g.id && s.targetDate);
+
+                  return (
+                    <div key={g.id} className="timeline-goal-row">
+                      <div
+                        className="timeline-goal-bar ui-pressable"
+                        style={
+                          {
+                            left: `${leftPct}%`,
+                            width: `${widthPct}%`,
+                            background: `linear-gradient(180deg, ${gColor} 0%, ${gColor} 100%)`,
+                            "--bar-idx": Math.min(barIdx, 7),
+                          } as React.CSSProperties
+                        }
+                        onClick={() => setActiveGoal(g)}
+                        title={g.title}
+                      >
+                        <span className="timeline-goal-title">{g.title}</span>
+
+                        {/* Diamonds for stages */}
+                        {goalStages.map((st) => {
+                          const stMs = new Date(`${st.targetDate}T12:00:00Z`).getTime();
+                          if (stMs < sMs || stMs > eMs) return null;
+                          const stRelPct = Math.min(95, Math.max(5, ((stMs - sMs) / (eMs - sMs || 1)) * 100));
+
+                          return (
+                            <span
+                              key={st.id}
+                              className="stage-diamond-marker"
+                              style={{ left: `${stRelPct}%` }}
+                              title={`Етап: ${st.title} (${st.targetDate})`}
+                            >
+                              ◆
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Section: Goals without a term (Без строку) */}
+          {undatedGoals.length > 0 && (
+            <Section title="Без строку">
+              {undatedGoals.map((g) => {
+                const gColor = itemColor(g, modelContext);
+                return (
+                  <Row
+                    key={g.id}
+                    leading={<Orb color={gColor} size={18} />}
+                    title={g.title}
+                    secondary={g.purposeUk || undefined}
+                    chevron
+                    onClick={() => setActiveGoal(g)}
+                  />
+                );
+              })}
+            </Section>
+          )}
+
+          {/* Empty state for goals */}
+          {goals.length === 0 && (
+            <div className="projects-empty-block" data-testid="goals-empty">
+              <Orb color="var(--color-neutral-slate)" size={56} />
+              <p className="empty-title">У вас поки немає цілей</p>
+              <button
+                type="button"
+                className="ui-btn ui-btn-primary"
+                onClick={() => onOpenGlobalCreation("goal")}
+              >
+                Створити ціль
+              </button>
+            </div>
+          )}
+
+          {/* 4. At the very BOTTOM of the Цілі page: "Моє бажане життя" */}
+          <TintedCard color="var(--accent-primary)" className="my-life-box">
+            <span className="my-life-tag">Моє бажане життя</span>
+            <textarea
+              className="my-life-textarea"
+              rows={3}
+              value={myLifeText}
+              onChange={(e) => handleMyLifeChange(e.target.value)}
+              placeholder="Опишіть, як ви бачите своє ідеальне життя"
             />
-          }
-        />
-        <Row
-          title="Показувати архівні"
-          trailing={
-            <Toggle
-              label="Показувати архівні"
-              checked={plansContext.showArchivedProjects}
-              onChange={(v) =>
-                onUpdatePlansContext({ showArchivedProjects: v })
-              }
-            />
-          }
-        />
-        <Button variant="primary" onClick={() => setFiltersOpen(false)}>
-          Готово
-        </Button>
-      </Sheet>
-      <Sheet
-        title="Змінити порядок"
-        isOpen={reorderOpen}
-        onClose={() => setReorderOpen(false)}
-      >
-        {childFolders.map((f) => (
-          <Row
-            key={f.id}
-            title={f.name}
-            trailing={
-              <ActionMenu
-                label={`Порядок: ${f.name}`}
-                items={[
-                  {
-                    label: "Вище",
-                    onSelect: () => void handleReorderFolder(f.id, "up"),
-                  },
-                  {
-                    label: "Нижче",
-                    onSelect: () => void handleReorderFolder(f.id, "down"),
-                  },
-                ]}
+          </TintedCard>
+        </div>
+      )}
+
+      {/* GOAL DETAIL SHEET */}
+      {activeGoal && (
+        <Sheet
+          title={activeGoal.title}
+          isOpen={Boolean(activeGoal)}
+          onClose={() => setActiveGoal(null)}
+        >
+          <div className="space-y-4 p-1">
+            <Card className="goal-detail-card">
+              <Row
+                title="Для чого це мені"
+                value={activeGoal.purposeUk || undefined}
+                chevron
+                onClick={() => openFieldEditor(activeGoal, "purpose")}
               />
-            }
-          />
-        ))}
-      </Sheet>
-      <div>
-        {/* MODAL 1: Full Ancestor Path Modal (when folder depth > 3) */}
-      <ModalSheet
-        isOpen={showFullAncestorModal}
-        title={UK_STRINGS.plansView.fullAncestorPathTitle}
-        onClose={() => setShowFullAncestorModal(false)}
+              <Row
+                title="Який результат означатиме завершення"
+                value={activeGoal.completionCriteriaUk || undefined}
+                chevron
+                onClick={() => openFieldEditor(activeGoal, "criteria")}
+              />
+              <Row
+                title="Наступний крок"
+                value={
+                  activeGoal.nextActionTaskId
+                    ? tasks.find((t) => t.id === activeGoal.nextActionTaskId)?.title ?? activeGoal.nextActionTaskId
+                    : undefined
+                }
+                secondary={
+                  activeGoal.implementationIntentionUk
+                    ? `Якщо — то: ${activeGoal.implementationIntentionUk}`
+                    : undefined
+                }
+                chevron
+                onClick={() => openFieldEditor(activeGoal, "nextStep")}
+              />
+              <Row
+                title="Орієнтовний термін"
+                value={
+                  activeGoal.termStart && activeGoal.termEnd
+                    ? `${formatShortDate(activeGoal.termStart)} – ${formatShortDate(activeGoal.termEnd)}`
+                    : activeGoal.termEnd
+                      ? formatDate(activeGoal.termEnd)
+                      : undefined
+                }
+                chevron
+                onClick={() => openFieldEditor(activeGoal, "targetDate")}
+              />
+              <Row
+                title="Сфера"
+                leading={
+                  <Orb
+                    color={itemColor(activeGoal, modelContext)}
+                    size={18}
+                  />
+                }
+                value={resolveArea(activeGoal, modelContext)?.name || undefined}
+                chevron
+                onClick={() => openFieldEditor(activeGoal, "area")}
+              />
+              <Row
+                title="Вимір"
+                value={
+                  activeGoal.measure
+                    ? `${activeGoal.measure.current} / ${activeGoal.measure.target ?? "—"} ${activeGoal.measure.unit}`
+                    : undefined
+                }
+                trailing={
+                  activeGoal.measure ? (
+                    <div className="measure-quick-logs" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        className="measure-log-pill"
+                        onClick={() => handleQuickLog(activeGoal, 1)}
+                      >
+                        +1
+                      </button>
+                      <button
+                        type="button"
+                        className="measure-log-pill"
+                        onClick={() => handleQuickLog(activeGoal, 5)}
+                      >
+                        +5
+                      </button>
+                      <button
+                        type="button"
+                        className="measure-log-pill"
+                        onClick={() => setCustomLogEntity({ kind: "goal", id: activeGoal.id })}
+                      >
+                        Своє
+                      </button>
+                    </div>
+                  ) : undefined
+                }
+                chevron={!activeGoal.measure}
+                onClick={() => openFieldEditor(activeGoal, "measure")}
+              />
+            </Card>
+
+            {/* Section "Етапи": stage rows + "+ Додати етап" */}
+            <Section title="Етапи">
+              {stages
+                .filter((s) => s.goalId === activeGoal.id)
+                .map((st) => (
+                  <Row
+                    key={st.id}
+                    leading={<span className="text-sm font-bold text-amber-500">◆</span>}
+                    title={st.title}
+                    secondary={
+                      st.dependsOnStageIds?.length
+                        ? `Після: ${st.dependsOnStageIds.map((id) => stages.find((s) => s.id === id)?.title).filter(Boolean).join(", ")}`
+                        : undefined
+                    }
+                    trailing={st.targetDate ? formatShortDate(st.targetDate) : undefined}
+                    chevron
+                    onClick={() =>
+                      setStageSheetTarget({
+                        goalId: activeGoal.id,
+                        stage: st,
+                      })
+                    }
+                  />
+                ))}
+              <Row
+                leading={<Icon name="plus" size={18} />}
+                title="+ Додати етап"
+                className="row-action-add"
+                onClick={() =>
+                  setStageSheetTarget({
+                    goalId: activeGoal.id,
+                  })
+                }
+              />
+            </Section>
+
+            {/* Section "Завдання": linked tasks */}
+            <Section title="Завдання цілі">
+              {tasks
+                .filter((t) => t.ownership.kind === "goal" && t.ownership.goalId === activeGoal.id)
+                .map((t) => (
+                  <Row
+                    key={t.id}
+                    leading={
+                      <button
+                        type="button"
+                        className="planui-task-check-circle"
+                        onClick={() => onToggleTaskState?.(t.id)}
+                      >
+                        <span className={`planui-check-dot ${t.state === "completed" ? "done" : ""}`}>
+                          {t.state === "completed" && <Icon name="check" size={13} />}
+                        </span>
+                      </button>
+                    }
+                    title={t.title}
+                    secondary={t.deadline ? `Термін: ${formatTaskDeadline(t.deadline)}` : undefined}
+                  />
+                ))}
+              <Row
+                leading={<Icon name="plus" size={18} />}
+                title="+ Додати завдання"
+                className="row-action-add"
+                onClick={() => onOpenGlobalCreation("task")}
+              />
+            </Section>
+
+            {/* Section "Проєкти цілі" */}
+            {projects.filter((p) => p.goalId === activeGoal.id).length > 0 && (
+              <Section title="Проєкти цілі">
+                {projects
+                  .filter((p) => p.goalId === activeGoal.id)
+                  .map((p) => (
+                    <Row
+                      key={p.id}
+                      leading={<Orb color={itemColor(p, modelContext)} size={18} />}
+                      title={p.title}
+                      chevron
+                      onClick={() => {
+                        setActiveGoal(null);
+                        onUpdatePlansContext({ subMode: "projects", activeProjectId: p.id });
+                      }}
+                    />
+                  ))}
+              </Section>
+            )}
+          </div>
+        </Sheet>
+      )}
+
+      {/* STAGE SHEET MODAL */}
+      {stageSheetTarget && (
+        <StageSheet
+          isOpen={Boolean(stageSheetTarget)}
+          goalId={stageSheetTarget.goalId}
+          projectId={stageSheetTarget.projectId}
+          stage={stageSheetTarget.stage}
+          stages={stages.filter((s) =>
+            stageSheetTarget.goalId ? s.goalId === stageSheetTarget.goalId : s.projectId === stageSheetTarget.projectId,
+          )}
+          todayDate={actualTodayDate}
+          repositories={repositories}
+          onClose={() => setStageSheetTarget(null)}
+          onSaved={async () => {
+            setStageSheetTarget(null);
+            await onDataChanged("Етап збережено");
+          }}
+        />
+      )}
+
+      {/* NEW FOLDER SHEET */}
+      <Sheet
+        title="Нова папка"
+        isOpen={newFolderSheet}
+        onClose={() => setNewFolderSheet(false)}
       >
-        <div className="space-y-2">
+        <div className="space-y-4 p-2">
+          <label className="text-sm font-semibold">Назва папки:</label>
+          <input
+            type="text"
+            className="ui-input-field"
+            value={newFolderName}
+            onChange={(e) => setNewFolderName(e.target.value)}
+            placeholder="Введіть назву..."
+            autoFocus
+          />
           <button
             type="button"
-            onClick={() => {
-              onUpdatePlansContext({
-                activeFolderId: null,
-                activeProjectId: null,
+            className="ui-btn ui-btn-primary w-full"
+            disabled={!newFolderName.trim()}
+            onClick={async () => {
+              if (!newFolderName.trim()) return;
+              await repositories.saveFolder({
+                id: `folder-${Date.now()}`,
+                name: newFolderName.trim(),
+                parentId: activeFolderId,
+                order: currentChildFolders.length,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                revision: 1,
               });
-              setShowFullAncestorModal(false);
+              setNewFolderSheet(false);
+              setNewFolderName("");
+              await onDataChanged("Папку створено");
             }}
-            className="w-full min-h-[44px] px-3 py-2 rounded-xl flex items-center gap-2 text-left cursor-pointer"
-            style={{ backgroundColor: 'var(--bg-elevated)' }}
           >
-            <FolderIcon
-              className="w-4 h-4"
-              style={{ color: 'var(--color-work)' }}
-              aria-hidden="true"
-            />
-            <span className="font-medium">
-              {UK_STRINGS.destinations.plans.rootBreadcrumb}
-            </span>
+            Створити папку
           </button>
-          {breadcrumbData.fullChain.map((folder, index) => (
-            <button
-              key={folder.id}
-              type="button"
-              data-testid={`full-path-item-${folder.name}`}
-              onClick={() => {
-                onUpdatePlansContext({
-                  activeFolderId: folder.id,
-                  activeProjectId: null,
-                });
-                setShowFullAncestorModal(false);
-              }}
-              className="w-full min-h-[44px] px-3 py-2 rounded-xl flex items-center gap-2 text-left cursor-pointer"
-              style={{
-                backgroundColor:
-                  folder.id === plansContext.activeFolderId
-                    ? 'var(--bg-pressed)'
-                    : 'var(--bg-elevated)',
-                paddingLeft: `${12 + Math.min(index, 8) * 12}px`,
-              }}
-            >
-              <FolderIcon
-                className="w-4 h-4 shrink-0"
-                style={{ color: 'var(--color-work)' }}
-                aria-hidden="true"
-              />
-              <span className="font-medium">{folder.name}</span>
-            </button>
-          ))}
         </div>
-      </ModalSheet>
+      </Sheet>
 
-      {/* MODAL 2: Edit / Move Folder Modal (prevents cycles & moves into descendants) */}
-      <ModalSheet
-        isOpen={Boolean(editingFolder)}
-        title={UK_STRINGS.plansView.editFolderTitle}
-        onClose={() => setEditingFolder(null)}
-      >
-        {editingFolder && (
-          <form onSubmit={handleSaveFolderEdit} className="space-y-4">
-            <InputField
-              label={UK_STRINGS.creation.folderForm.nameLabel}
-              value={folderEditName}
-              onChange={(e) => setFolderEditName(e.target.value)}
-              data-testid="edit-folder-name-input"
-              required
+      {/* RENAME FOLDER SHEET */}
+      {renameFolder && (
+        <Sheet
+          title="Перейменувати папку"
+          isOpen={Boolean(renameFolder)}
+          onClose={() => setRenameFolder(null)}
+        >
+          <div className="space-y-4 p-2">
+            <input
+              type="text"
+              className="ui-input-field"
+              value={renameFolderName}
+              onChange={(e) => setRenameFolderName(e.target.value)}
+              autoFocus
             />
-            <SelectField
-              label={UK_STRINGS.plansView.moveFolderParentLabel}
-              value={folderEditParentId ?? ''}
-              onChange={(e) =>
-                setFolderEditParentId(e.target.value ? e.target.value : null)
-              }
-              options={[
-                { value: '', label: UK_STRINGS.creation.rootFolderOption },
-                ...allowedMoveFoldersForEditingFolder.map((f) => ({
-                  value: f.id,
-                  label: f.name,
-                })),
-              ]}
-              data-testid="edit-folder-parent-select"
-            />
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="secondary"
-                onClick={() => setEditingFolder(null)}
-              >
-                {UK_STRINGS.app.cancelButton}
-              </Button>
-              <Button
-                type="submit"
-                variant="primary"
-                data-testid="save-folder-edit-button"
-              >
-                {UK_STRINGS.app.saveButton}
-              </Button>
-            </div>
-          </form>
-        )}
-      </ModalSheet>
-
-      {/* MODAL 3: Delete Folder Modal (Default rehome; separate confirmation & counts for recursive delete) */}
-      <ModalSheet
-        isOpen={Boolean(deletingFolder)}
-        title={UK_STRINGS.plansView.deleteFolderTitle}
-        onClose={() => setDeletingFolder(null)}
-      >
-        {deletingFolder && folderDeleteImpact && (
-          <div className="space-y-4" data-testid="delete-folder-modal">
-            <p className="text-[0.875rem] m-0">
-              Папка: <strong>{deletingFolder.name}</strong>
-            </p>
-            <div
-              className="p-3 rounded-xl text-[0.8125rem] font-medium"
-              style={{ backgroundColor: 'var(--bg-elevated)' }}
-              data-testid="delete-folder-impact-summary"
+            <button
+              type="button"
+              className="ui-btn ui-btn-primary w-full"
+              disabled={!renameFolderName.trim()}
+              onClick={async () => {
+                if (!renameFolderName.trim()) return;
+                await repositories.saveFolder(
+                  { ...renameFolder, name: renameFolderName.trim() },
+                  renameFolder.revision,
+                );
+                setRenameFolder(null);
+                await onDataChanged("Папку перейменовано");
+              }}
             >
-              {UK_STRINGS.plansView.deleteFolderImpactSummary(
-                folderDeleteImpact.descendantFolderCount,
-                folderDeleteImpact.projectCount,
-                folderDeleteImpact.totalTaskCount
-              )}
-            </div>
+              Зберегти
+            </button>
+          </div>
+        </Sheet>
+      )}
 
-            <div className="space-y-2">
-              <label
-                className="flex items-start gap-2.5 p-3 rounded-xl cursor-pointer"
-                style={{ backgroundColor: 'var(--bg-elevated)' }}
-              >
-                <input
-                  type="radio"
-                  name="folderDeleteStrategy"
-                  checked={folderDeleteStrategy === 'rehome_to_parent'}
-                  onChange={() => {
-                    setFolderDeleteStrategy('rehome_to_parent');
-                    setFolderDeleteConfirmed(false);
-                  }}
-                  data-testid="folder-delete-strategy-rehome"
-                  className="mt-1"
-                />
-                <span className="text-[0.875rem]">
-                  {UK_STRINGS.plansView.deleteFolderRehomeOption}
-                </span>
-              </label>
-
-              <label
-                className="flex items-start gap-2.5 p-3 rounded-xl cursor-pointer"
-                style={{ backgroundColor: 'var(--bg-elevated)' }}
-              >
-                <input
-                  type="radio"
-                  name="folderDeleteStrategy"
-                  checked={folderDeleteStrategy === 'recursive_delete'}
-                  onChange={() => setFolderDeleteStrategy('recursive_delete')}
-                  data-testid="folder-delete-strategy-recursive"
-                  className="mt-1"
-                />
-                <span className="text-[0.875rem]">
-                  {UK_STRINGS.plansView.deleteFolderRecursiveOption}
-                </span>
-              </label>
-            </div>
-
-            {folderDeleteStrategy === 'recursive_delete' && (
+      {/* MOVE FOLDER SHEET */}
+      {moveFolder && (
+        <Sheet
+          title="Перемістити папку"
+          isOpen={Boolean(moveFolder)}
+          onClose={() => setMoveFolder(null)}
+        >
+          <div className="space-y-3 p-2">
+            <p className="text-sm text-gray-500">Оберіть нове розташування:</p>
+            <div className="space-y-1">
               <Row
-                title={UK_STRINGS.plansView.deleteFolderRecursiveConfirmCheckbox}
-                trailing={
-                  <Toggle
-                    label={UK_STRINGS.plansView.deleteFolderRecursiveConfirmCheckbox}
-                    checked={folderDeleteConfirmed}
-                    onChange={setFolderDeleteConfirmed}
-                    data-testid="folder-delete-recursive-confirm-checkbox"
-                  />
-                }
+                title="Корінь проєктів"
+                trailing={moveFolderTargetParentId === null ? <Icon name="check" size={18} /> : undefined}
+                onClick={() => setMoveFolderTargetParentId(null)}
               />
-            )}
-
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="secondary"
-                onClick={() => setDeletingFolder(null)}
-              >
-                {UK_STRINGS.app.cancelButton}
-              </Button>
-              <Button
-                variant="danger"
-                disabled={
-                  folderDeleteStrategy === 'recursive_delete' &&
-                  !folderDeleteConfirmed
-                }
-                onClick={() => void handleConfirmDeleteFolder()}
-                data-testid="confirm-delete-folder-button"
-              >
-                {UK_STRINGS.app.deleteButton}
-              </Button>
+              {getAllowedMoveTargetFolders(folders, moveFolder.id).map((f) => (
+                <Row
+                  key={f.id}
+                  title={f.name}
+                  trailing={moveFolderTargetParentId === f.id ? <Icon name="check" size={18} /> : undefined}
+                  onClick={() => setMoveFolderTargetParentId(f.id)}
+                />
+              ))}
             </div>
-          </div>
-        )}
-      </ModalSheet>
-
-      {/* MODAL 4: Edit Project Modal */}
-      <ModalSheet
-        isOpen={Boolean(editingProject)}
-        title={UK_STRINGS.plansView.editProjectButton}
-        onClose={() => setEditingProject(null)}
-      >
-        {editingProject && (
-          <form onSubmit={handleSaveProjectEdit} className="space-y-3.5">
-            <InputField
-              label={UK_STRINGS.creation.projectForm.titleLabel}
-              value={projEditTitle}
-              onChange={(e) => setProjEditTitle(e.target.value)}
-              data-testid="edit-project-title-input"
-              required
-            />
-            <SelectField
-              label={UK_STRINGS.creation.projectForm.folderLabel}
-              value={projEditFolderId ?? ''}
-              onChange={(e) =>
-                setProjEditFolderId(e.target.value ? e.target.value : null)
-              }
-              options={[
-                { value: '', label: UK_STRINGS.creation.rootFolderOption },
-                ...folders.map((f) => ({ value: f.id, label: f.name })),
-              ]}
-              data-testid="edit-project-folder-select"
-            />
-            <SelectField
-              label="Стан проєкту"
-              value={projEditState}
-              onChange={(e) =>
-                setProjEditState(e.target.value as ProjectResultState)
-              }
-              options={[
-                {
-                  value: 'active',
-                  label: UK_STRINGS.plansView.projectStateActive,
-                },
-                {
-                  value: 'paused',
-                  label: UK_STRINGS.plansView.projectStatePaused,
-                },
-                {
-                  value: 'completed',
-                  label: UK_STRINGS.plansView.projectStateCompleted,
-                },
-              ]}
-              data-testid="edit-project-state-select"
-            />
-            <TextAreaField
-              label={UK_STRINGS.creation.projectForm.desiredOutcomeLabel}
-              value={projEditOutcome}
-              onChange={(e) => setProjEditOutcome(e.target.value)}
-            />
-            <TextAreaField
-              label={UK_STRINGS.creation.projectForm.criteriaLabel}
-              value={projEditCriteria}
-              onChange={(e) => setProjEditCriteria(e.target.value)}
-            />
-            <TextAreaField
-              label={UK_STRINGS.creation.projectForm.descriptionLabel}
-              value={projEditDescription}
-              onChange={(e) => setProjEditDescription(e.target.value)}
-            />
-            <InputField
-              label={UK_STRINGS.creation.projectForm.collaboratorsLabel}
-              value={projEditCollaborators}
-              onChange={(e) => setProjEditCollaborators(e.target.value)}
-            />
-            <div className="flex justify-end gap-2 pt-2">
-              <Button
-                variant="secondary"
-                onClick={() => setEditingProject(null)}
-              >
-                {UK_STRINGS.app.cancelButton}
-              </Button>
-              <Button
-                type="submit"
-                variant="primary"
-                data-testid="save-project-edit-button"
-              >
-                {UK_STRINGS.app.saveButton}
-              </Button>
-            </div>
-          </form>
-        )}
-      </ModalSheet>
-
-      {/* MODAL 5: Explicit Project Completion Modal (Shows unresolved tasks without completing them silently) */}
-      <ModalSheet
-        isOpen={Boolean(completingProject)}
-        title={UK_STRINGS.plansView.completeProjectModalTitle}
-        onClose={() => setCompletingProject(null)}
-      >
-        {completingProject && (
-          <div className="space-y-4" data-testid="complete-project-modal">
-            {(() => {
-              const unresolved = getUnresolvedProjectTasks(
-                tasks,
-                completingProject.id
-              );
-              if (unresolved.length === 0) {
-                return (
-                  <p className="text-[0.875rem] m-0">
-                    {UK_STRINGS.plansView.completeProjectAllResolvedNote}
-                  </p>
+            <button
+              type="button"
+              className="ui-btn ui-btn-primary w-full mt-4"
+              onClick={async () => {
+                await repositories.saveFolder(
+                  { ...moveFolder, parentId: moveFolderTargetParentId },
+                  moveFolder.revision,
                 );
-              }
-              return (
-                <div className="space-y-2.5">
-                  <p className="text-[0.875rem] m-0">
-                    {UK_STRINGS.plansView.completeProjectUnresolvedWarning(
-                      unresolved.length
-                    )}
-                  </p>
-                  <ul
-                    className="p-3 rounded-xl space-y-1.5 m-0 list-disc pl-6 text-[0.875rem]"
-                    style={{ backgroundColor: 'var(--bg-elevated)' }}
-                    data-testid="complete-project-unresolved-list"
-                  >
-                    {unresolved.map((u) => (
-                      <li key={u.id}>{u.title}</li>
-                    ))}
-                  </ul>
-                </div>
-              );
-            })()}
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="secondary"
-                onClick={() => setCompletingProject(null)}
-              >
-                {UK_STRINGS.app.cancelButton}
-              </Button>
-              <Button
-                variant="primary"
-                onClick={() => void handleConfirmCompleteProject()}
-                data-testid="confirm-complete-project-button"
-              >
-                {UK_STRINGS.plansView.completeProjectConfirmButton}
-              </Button>
-            </div>
-          </div>
-        )}
-      </ModalSheet>
-
-      {/* MODAL 6: Archive Project Modal (Explicit retain-planning vs remove-planning choice) */}
-      <ModalSheet
-        isOpen={Boolean(archivingProject)}
-        title={UK_STRINGS.plansView.archiveProjectModalTitle}
-        onClose={() => setArchivingProject(null)}
-      >
-        {archivingProject && (
-          <div className="space-y-4" data-testid="archive-project-modal">
-            <p
-              className="text-[0.875rem] m-0"
-              style={{ color: 'var(--text-secondary)' }}
-            >
-              {UK_STRINGS.plansView.archiveProjectSubtitle}
-            </p>
-            <div className="space-y-2">
-              <label
-                className="flex items-start gap-2.5 p-3 rounded-xl cursor-pointer"
-                style={{ backgroundColor: 'var(--bg-elevated)' }}
-              >
-                <input
-                  type="radio"
-                  name="archivePlanningChoice"
-                  checked={archivePlanningChoice === 'retain_planning'}
-                  onChange={() => setArchivePlanningChoice('retain_planning')}
-                  data-testid="archive-project-retain-radio"
-                  className="mt-1"
-                />
-                <span className="text-[0.875rem]">
-                  {UK_STRINGS.plansView.archiveRetainPlanningOption}
-                </span>
-              </label>
-              <label
-                className="flex items-start gap-2.5 p-3 rounded-xl cursor-pointer"
-                style={{ backgroundColor: 'var(--bg-elevated)' }}
-              >
-                <input
-                  type="radio"
-                  name="archivePlanningChoice"
-                  checked={archivePlanningChoice === 'remove_planning'}
-                  onChange={() => setArchivePlanningChoice('remove_planning')}
-                  data-testid="archive-project-remove-radio"
-                  className="mt-1"
-                />
-                <span className="text-[0.875rem]">
-                  {UK_STRINGS.plansView.archiveRemovePlanningOption}
-                </span>
-              </label>
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="secondary"
-                onClick={() => setArchivingProject(null)}
-              >
-                {UK_STRINGS.app.cancelButton}
-              </Button>
-              <Button
-                variant="primary"
-                onClick={() => void handleConfirmArchiveProject()}
-                data-testid="confirm-archive-project-button"
-              >
-                {UK_STRINGS.plansView.archiveProjectConfirmButton}
-              </Button>
-            </div>
-          </div>
-        )}
-      </ModalSheet>
-
-      {/* MODAL 7: Delete Project Modal */}
-      <ModalSheet
-        isOpen={Boolean(deletingProject)}
-        title={UK_STRINGS.plansView.deleteProjectModalTitle}
-        onClose={() => setDeletingProject(null)}
-      >
-        {deletingProject && (
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <label
-                className="flex items-start gap-2.5 p-3 rounded-xl cursor-pointer"
-                style={{ backgroundColor: 'var(--bg-elevated)' }}
-              >
-                <input
-                  type="radio"
-                  name="projectDeleteTaskMode"
-                  checked={projectDeleteTaskMode === 'rehome_to_folder'}
-                  onChange={() => setProjectDeleteTaskMode('rehome_to_folder')}
-                  className="mt-1"
-                />
-                <span className="text-[0.875rem]">
-                  {UK_STRINGS.plansView.deleteProjectRehomeOption}
-                </span>
-              </label>
-              <label
-                className="flex items-start gap-2.5 p-3 rounded-xl cursor-pointer"
-                style={{ backgroundColor: 'var(--bg-elevated)' }}
-              >
-                <input
-                  type="radio"
-                  name="projectDeleteTaskMode"
-                  checked={projectDeleteTaskMode === 'delete_tasks'}
-                  onChange={() => setProjectDeleteTaskMode('delete_tasks')}
-                  className="mt-1"
-                />
-                <span className="text-[0.875rem]">
-                  {UK_STRINGS.plansView.deleteProjectDeleteTasksOption}
-                </span>
-              </label>
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="secondary"
-                onClick={() => setDeletingProject(null)}
-              >
-                {UK_STRINGS.app.cancelButton}
-              </Button>
-              <Button
-                variant="danger"
-                onClick={() => void handleConfirmDeleteProject()}
-                data-testid="confirm-delete-project-button"
-              >
-                {UK_STRINGS.app.deleteButton}
-              </Button>
-            </div>
-          </div>
-        )}
-      </ModalSheet>
-
-      {/* MODAL 8: Edit Stage Modal */}
-      <ModalSheet
-        isOpen={Boolean(editingStage)}
-        title={UK_STRINGS.plansView.editStageButton}
-        onClose={() => setEditingStage(null)}
-      >
-        {editingStage && (
-          <form onSubmit={handleSaveStageEdit} className="space-y-3.5">
-            <InputField
-              label={UK_STRINGS.creation.stageForm.titleLabel}
-              value={stageEditTitle}
-              onChange={(e) => setStageEditTitle(e.target.value)}
-              required
-            />
-            <TextAreaField
-              label={UK_STRINGS.creation.stageForm.expectedOutcomeLabel}
-              value={stageEditOutcome}
-              onChange={(e) => setStageEditOutcome(e.target.value)}
-            />
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="secondary"
-                onClick={() => setEditingStage(null)}
-              >
-                {UK_STRINGS.app.cancelButton}
-              </Button>
-              <Button type="submit" variant="primary">
-                {UK_STRINGS.app.saveButton}
-              </Button>
-            </div>
-          </form>
-        )}
-      </ModalSheet>
-
-      {/* MODAL 9: Task Detail & Editor Sheet (with Ownership Move & Checklist Promotion) */}
-      <ModalSheet
-        isOpen={Boolean(editingTask)}
-        title={UK_STRINGS.plansView.editTaskTitle}
-        onClose={() => setEditingTaskId(null)}
-      >
-        {editingTask && (
-          <div className="space-y-5" data-testid="task-detail-sheet">
-            {/* Lifecycle State Controls */}
-            <div
-              className="p-3 rounded-xl flex flex-wrap items-center justify-between gap-2"
-              style={{ backgroundColor: 'var(--bg-elevated)' }}
-            >
-              <div className="text-[0.8125rem] font-medium">
-                Стан:{' '}
-                <strong>
-                  {editingTask.state === 'open'
-                    ? UK_STRINGS.plansView.taskStateOpen
-                    : editingTask.state === 'completed'
-                    ? UK_STRINGS.plansView.taskStateCompleted
-                    : UK_STRINGS.plansView.taskStateCanceled}
-                </strong>
-              </div>
-              <div className="flex flex-wrap items-center gap-1.5">
-                {editingTask.state !== 'completed' && (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => void handleTaskLifecycleFromSheet('completed')}
-                    data-testid="sheet-complete-task-button"
-                  >
-                    {UK_STRINGS.plansView.completeTaskButton}
-                  </Button>
-                )}
-                {editingTask.state !== 'canceled' && (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => void handleTaskLifecycleFromSheet('canceled')}
-                    data-testid="sheet-cancel-task-button"
-                  >
-                    {UK_STRINGS.plansView.cancelTaskButton}
-                  </Button>
-                )}
-                {editingTask.state !== 'open' && (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => void handleTaskLifecycleFromSheet('open')}
-                    data-testid="sheet-reopen-task-button"
-                  >
-                    {UK_STRINGS.plansView.reopenTaskButton}
-                  </Button>
-                )}
-                {lastUndoToken &&
-                  lastUndoToken.taskId === editingTask.id && (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => void handleUndoTaskLifecycle()}
-                      data-testid="sheet-undo-task-lifecycle-button"
-                    >
-                      {UK_STRINGS.scheduling.undoActionButton}
-                    </Button>
-                  )}
-              </div>
-            </div>
-
-            {/* Stage 5: Task Reservations & Sessions in Schedule (5.4 / C07) */}
-            <div
-              className="p-3.5 rounded-2xl space-y-3"
-              style={{
-                backgroundColor: 'var(--bg-elevated)',
-                border: '1px solid var(--border-subtle)',
+                setMoveFolder(null);
+                await onDataChanged("Папку переміщено");
               }}
-              data-testid="task-reservations-section"
             >
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="text-[0.875rem] font-semibold">
-                  {UK_STRINGS.scheduling.reservationsHeading}
-                </div>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {editingTask.planningState !== 'unplanned' && (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => void handleRemoveCurrentPlanningFromSheet()}
-                      data-testid="sheet-remove-current-planning-button"
-                    >
-                      {UK_STRINGS.scheduling.removeCurrentPlanningButton}
-                    </Button>
-                  )}
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => {
-                      setShowAddSessionForm((v) => !v);
-                      setRescheduleResId(null);
-                      setNewSessionOverlapConfirmed(false);
-                    }}
-                    data-testid="sheet-toggle-add-session-button"
-                  >
-                    <Plus className="w-3.5 h-3.5" aria-hidden="true" />
-                    <span>{UK_STRINGS.scheduling.addSessionButton}</span>
-                  </Button>
-                </div>
-              </div>
+              Перемістити
+            </button>
+          </div>
+        </Sheet>
+      )}
 
-              {(() => {
-                const taskReservations = reservations.filter(
-                  (r) => r.taskId === editingTask.id
-                );
-                if (taskReservations.length === 0) {
-                  return (
-                    <p
-                      className="text-[0.8125rem] m-0"
-                      style={{ color: 'var(--text-secondary)' }}
-                    >
-                      {UK_STRINGS.scheduling.noReservationsNote}
-                    </p>
-                  );
-                }
-                return (
-                  <ul className="space-y-2 m-0 p-0 list-none">
-                    {taskReservations.map((res) => {
-                      const durationMin = computeElapsedDurationMinutes(
-                        res.interval.startInstant,
-                        res.interval.endInstant
-                      );
-                      const isReschedulingThis = rescheduleResId === res.id;
-                      return (
-                        <li
-                          key={res.id}
-                          data-testid={`task-reservation-row-${res.id}`}
-                          className="p-2.5 rounded-xl space-y-2"
-                          style={{ backgroundColor: 'var(--bg-surface)' }}
-                        >
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div className="space-y-0.5">
-                              <div className="text-[0.8125rem] font-semibold">
-                                {formatDate(res.interval.originStartLocalDate)}{' '}
-                                {res.interval.originStartLocalTime} –{' '}
-                                {formatDate(res.interval.originEndLocalDate)}{' '}
-                                {res.interval.originEndLocalTime} ({formatDuration(durationMin)})
-                              </div>
-                              <div
-                                className="text-[0.6875rem] font-medium"
-                                style={{ color: 'var(--text-secondary)' }}
-                              >
-                                {res.state === 'active'
-                                  ? UK_STRINGS.scheduling.sessionActiveBadge
-                                  : res.state === 'released'
-                                  ? UK_STRINGS.scheduling.sessionReleasedBadge
-                                  : UK_STRINGS.scheduling.sessionCanceledBadge}
-                              </div>
-                            </div>
+      {/* DELETE FOLDER ALERT */}
+      {deleteFolderAlert && (
+        <AlertSheet
+          isOpen={Boolean(deleteFolderAlert)}
+          title={`Видалити папку «${deleteFolderAlert.name}»?`}
+          description="Усі вкладені проєкти та завдання буде переміщено вище."
+          confirmLabel="Видалити"
+          destructive
+          onClose={() => setDeleteFolderAlert(null)}
+          onConfirm={async () => {
+            await repositories.deleteFolderTransactionally(
+              deleteFolderAlert.id,
+              "rehome_to_parent",
+              new Date().toISOString(),
+            );
+            setDeleteFolderAlert(null);
+            if (activeFolderId === deleteFolderAlert.id) {
+              onUpdatePlansContext({ activeFolderId: deleteFolderAlert.parentId });
+            }
+            await onDataChanged("Папку видалено");
+          }}
+        />
+      )}
 
-                            {res.state === 'active' && (
-                              <div className="flex items-center gap-1.5">
-                                <Button
-                                  variant="secondary"
-                                  size="sm"
-                                  onClick={() =>
-                                    handleStartRescheduleReservation(res)
-                                  }
-                                  data-testid={`reschedule-reservation-button-${res.id}`}
-                                >
-                                  {UK_STRINGS.scheduling.rescheduleSessionButton}
-                                </Button>
-                                <Button
-                                  variant="subtle"
-                                  size="sm"
-                                  onClick={() =>
-                                    void handleCancelSingleReservation(res)
-                                  }
-                                  data-testid={`cancel-reservation-button-${res.id}`}
-                                >
-                                  {UK_STRINGS.scheduling.cancelSessionButton}
-                                </Button>
-                              </div>
-                            )}
-                          </div>
-
-                          {res.releaseMetadata && (
-                            <div
-                              className="p-2 rounded-lg text-[0.6875rem] space-y-0.5"
-                              style={{
-                                backgroundColor: 'var(--bg-elevated)',
-                                color: 'var(--text-secondary)',
-                              }}
-                              data-testid={`reservation-release-history-${res.id}`}
-                            >
-                              <div>
-                                Початковий план до вивільнення:{' '}
-                                {res.releaseMetadata.originalStartInstant
-                                  .slice(0, 16)
-                                  .replace('T', ' ')}{' '}
-                                –{' '}
-                                {res.releaseMetadata.originalEndInstant
-                                  .slice(0, 16)
-                                  .replace('T', ' ')}
-                              </div>
-                              <div>
-                                {UK_STRINGS.scheduling.historyDisclaimer}
-                              </div>
-                            </div>
-                          )}
-
-                          {isReschedulingThis && (
-                            <div
-                              className="p-2.5 rounded-xl space-y-2.5"
-                              style={{ backgroundColor: 'var(--bg-elevated)' }}
-                              data-testid={`reschedule-reservation-form-${res.id}`}
-                            >
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                <DateField
-                                  label={
-                                    UK_STRINGS.creation.eventForm.startDateLabel
-                                  }
-                                  value={rescheduleStartDate}
-                                  onChange={(e) => {
-                                    setRescheduleStartDate(e.target.value);
-                                    setRescheduleOverlapConfirmed(false);
-                                  }}
-                                  data-testid="reschedule-start-date-input"
-                                />
-                                <TimeField
-                                  label={
-                                    UK_STRINGS.creation.eventForm.startTimeLabel
-                                  }
-                                  value={rescheduleStartTime}
-                                  onChange={(e) => {
-                                    setRescheduleStartTime(e.target.value);
-                                    setRescheduleOverlapConfirmed(false);
-                                  }}
-                                  data-testid="reschedule-start-time-input"
-                                />
-                              </div>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                <DateField
-                                  label={
-                                    UK_STRINGS.creation.eventForm.endDateLabel
-                                  }
-                                  value={rescheduleEndDate}
-                                  onChange={(e) => {
-                                    setRescheduleEndDate(e.target.value);
-                                    setRescheduleOverlapConfirmed(false);
-                                  }}
-                                  data-testid="reschedule-end-date-input"
-                                />
-                                <TimeField
-                                  label={
-                                    UK_STRINGS.creation.eventForm.endTimeLabel
-                                  }
-                                  value={rescheduleEndTime}
-                                  onChange={(e) => {
-                                    setRescheduleEndTime(e.target.value);
-                                    setRescheduleOverlapConfirmed(false);
-                                  }}
-                                  data-testid="reschedule-end-time-input"
-                                />
-                              </div>
-                              <Row
-                                title={
-                                  UK_STRINGS.creation.eventForm
-                                    .confirmConsciousOverlapLabel
-                                }
-                                trailing={
-                                  <Toggle
-                                    label={
-                                      UK_STRINGS.creation.eventForm
-                                        .confirmConsciousOverlapLabel
-                                    }
-                                    checked={rescheduleOverlapConfirmed}
-                                    onChange={setRescheduleOverlapConfirmed}
-                                    data-testid="reschedule-overlap-confirm-checkbox"
-                                  />
-                                }
-                              />
-                              <div className="flex justify-end gap-2">
-                                <Button
-                                  variant="secondary"
-                                  size="sm"
-                                  onClick={() => setRescheduleResId(null)}
-                                >
-                                  {UK_STRINGS.app.cancelButton}
-                                </Button>
-                                <Button
-                                  variant="primary"
-                                  size="sm"
-                                  onClick={() =>
-                                    void handleSaveRescheduleReservation(res)
-                                  }
-                                  data-testid="save-reschedule-reservation-button"
-                                >
-                                  {UK_STRINGS.app.saveButton}
-                                </Button>
-                              </div>
-                            </div>
-                          )}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                );
-              })()}
-
-              {showAddSessionForm && (
-                <div
-                  className="p-3 rounded-xl space-y-2.5"
-                  style={{ backgroundColor: 'var(--bg-surface)' }}
-                  data-testid="add-reservation-session-form"
-                >
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <DateField
-                      label={UK_STRINGS.creation.eventForm.startDateLabel}
-                      value={newSessionStartDate}
-                      onChange={(e) => {
-                        setNewSessionStartDate(e.target.value);
-                        setNewSessionEndDate(e.target.value);
-                        setNewSessionOverlapConfirmed(false);
-                      }}
-                      data-testid="new-session-start-date-input"
-                    />
-                    <TimeField
-                      label={UK_STRINGS.creation.eventForm.startTimeLabel}
-                      value={newSessionStartTime}
-                      onChange={(e) => {
-                        setNewSessionStartTime(e.target.value);
-                        setNewSessionOverlapConfirmed(false);
-                      }}
-                      data-testid="new-session-start-time-input"
-                    />
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <DateField
-                      label={UK_STRINGS.creation.eventForm.endDateLabel}
-                      value={newSessionEndDate}
-                      onChange={(e) => {
-                        setNewSessionEndDate(e.target.value);
-                        setNewSessionOverlapConfirmed(false);
-                      }}
-                      data-testid="new-session-end-date-input"
-                    />
-                    <TimeField
-                      label={UK_STRINGS.creation.eventForm.endTimeLabel}
-                      value={newSessionEndTime}
-                      onChange={(e) => {
-                        setNewSessionEndTime(e.target.value);
-                        setNewSessionOverlapConfirmed(false);
-                      }}
-                      data-testid="new-session-end-time-input"
-                    />
-                  </div>
-                  {(() => {
-                    const sug = suggestEndDateForClockRange(
-                      newSessionStartDate,
-                      newSessionStartTime,
-                      newSessionEndTime
-                    );
-                    if (
-                      sug.isOvernightSuggestion &&
-                      newSessionEndDate === newSessionStartDate
-                    ) {
-                      return (
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() =>
-                            setNewSessionEndDate(sug.suggestedEndLocalDate)
-                          }
-                        >
-                          {UK_STRINGS.creation.eventForm.applyNextDaySuggestionButton} (
-                          {formatDate(sug.suggestedEndLocalDate)})
-                        </Button>
-                      );
-                    }
-                    return null;
-                  })()}
-                  <Row
-                    title={
-                      UK_STRINGS.creation.eventForm
-                        .confirmConsciousOverlapLabel
-                    }
-                    trailing={
-                      <Toggle
-                        label={
-                          UK_STRINGS.creation.eventForm
-                            .confirmConsciousOverlapLabel
-                        }
-                        checked={newSessionOverlapConfirmed}
-                        onChange={setNewSessionOverlapConfirmed}
-                        data-testid="new-session-overlap-confirm-checkbox"
-                      />
-                    }
-                  />
-                  <div className="flex justify-end gap-2">
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => setShowAddSessionForm(false)}
-                    >
-                      {UK_STRINGS.app.cancelButton}
-                    </Button>
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      onClick={() => void handleAddReservationSession()}
-                      data-testid="confirm-add-session-button"
-                    >
-                      {UK_STRINGS.scheduling.addSessionButton}
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* One-level Checklist with explicit promotion to ordinary task (4.3) */}
-            <div
-              className="p-3.5 rounded-2xl space-y-3"
-              style={{
-                backgroundColor: 'var(--bg-elevated)',
-                border: '1px solid var(--border-subtle)',
-              }}
-              data-testid="task-checklist-section"
-            >
-              <div className="text-[0.875rem] font-semibold">
-                {UK_STRINGS.plansView.checklistHeading}
-              </div>
-
-              {editingTask.checklist.length === 0 ? (
-                <p
-                  className="text-[0.8125rem] m-0"
-                  style={{ color: 'var(--text-secondary)' }}
-                >
-                  {UK_STRINGS.plansView.checklistEmpty}
-                </p>
-              ) : (
-                <ul className="space-y-2 m-0 p-0 list-none">
-                  {[...editingTask.checklist]
-                    .sort((a, b) => a.order - b.order)
-                    .map((item, idx, arr) => (
-                      <li
-                        key={item.id}
-                        data-testid={`checklist-item-${item.title}`}
-                        className="p-2.5 rounded-xl flex items-center justify-between gap-2"
-                        style={{ backgroundColor: 'var(--bg-surface)' }}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => void handleToggleChecklistItem(item.id)}
-                          className="flex items-center gap-2.5 text-left flex-1 cursor-pointer"
-                        >
-                          {item.completed ? (
-                            <CheckCircle2
-                              className="w-4 h-4 shrink-0"
-                              style={{ color: 'var(--color-dayoff)' }}
-                              aria-hidden="true"
-                            />
-                          ) : (
-                            <Circle
-                              className="w-4 h-4 shrink-0"
-                              style={{ color: 'var(--text-secondary)' }}
-                              aria-hidden="true"
-                            />
-                          )}
-                          <span
-                            className={`text-[0.875rem] ${
-                              item.completed ? 'line-through opacity-70' : ''
-                            }`}
-                          >
-                            {item.title}
-                          </span>
-                        </button>
-
-                        <div className="flex items-center gap-1 shrink-0">
-                          <Button
-                            variant="subtle"
-                            size="icon"
-                            disabled={idx === 0}
-                            aria-label={`${UK_STRINGS.plansView.moveUpAria}: ${item.title}`}
-                            onClick={() =>
-                              void handleReorderChecklistItem(item.id, 'up')
-                            }
-                          >
-                            <ArrowUp className="w-3.5 h-3.5" aria-hidden="true" />
-                          </Button>
-                          <Button
-                            variant="subtle"
-                            size="icon"
-                            disabled={idx === arr.length - 1}
-                            aria-label={`${UK_STRINGS.plansView.moveDownAria}: ${item.title}`}
-                            onClick={() =>
-                              void handleReorderChecklistItem(item.id, 'down')
-                            }
-                          >
-                            <ArrowDown
-                              className="w-3.5 h-3.5"
-                              aria-hidden="true"
-                            />
-                          </Button>
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            aria-label={`${UK_STRINGS.plansView.promoteChecklistToTaskAria}: ${item.title}`}
-                            data-testid={`promote-checklist-item-${item.title}`}
-                            onClick={() =>
-                              void handlePromoteChecklistItem(item.id)
-                            }
-                          >
-                            <ArrowUpRight
-                              className="w-3.5 h-3.5"
-                              aria-hidden="true"
-                            />
-                            <span>
-                              {UK_STRINGS.plansView.promoteChecklistButton}
-                            </span>
-                          </Button>
-                          <Button
-                            variant="subtle"
-                            size="icon"
-                            aria-label={`${UK_STRINGS.app.deleteButton}: ${item.title}`}
-                            onClick={() =>
-                              void handleDeleteChecklistItem(item.id)
-                            }
-                          >
-                            <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
-                          </Button>
-                        </div>
-                      </li>
-                    ))}
-                </ul>
-              )}
-
-              <div className="flex items-center gap-2 pt-1">
-                <input
-                  type="text"
-                  value={newChecklistTitle}
-                  onChange={(e) => setNewChecklistTitle(e.target.value)}
-                  placeholder={UK_STRINGS.plansView.addChecklistPlaceholder}
-                  data-testid="new-checklist-item-input"
-                  className="flex-1 min-h-[42px] px-3 py-1.5 rounded-xl text-[1rem]"
-                  style={{
-                    backgroundColor: 'var(--bg-surface)',
-                    color: 'var(--text-primary)',
-                    border: '1px solid var(--border-subtle)',
-                  }}
-                />
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => void handleAddChecklistItem()}
-                  data-testid="add-checklist-item-button"
-                >
-                  {UK_STRINGS.plansView.addChecklistButton}
-                </Button>
-              </div>
-            </div>
-
-            {/* Main Task Form */}
-            <form onSubmit={handleSaveTaskDetails} className="space-y-3.5">
-              <InputField
-                label={UK_STRINGS.creation.taskForm.titleLabel}
-                value={taskEditTitle}
-                onChange={(e) => setTaskEditTitle(e.target.value)}
-                data-testid="edit-task-title-input"
-                required
-              />
-              <TextAreaField
-                label={UK_STRINGS.creation.taskForm.descriptionLabel}
-                value={taskEditDescription}
-                onChange={(e) => setTaskEditDescription(e.target.value)}
-              />
-
-              <div className="space-y-1.5">
-                <span className="text-[0.9375rem] font-medium block">
-                  {UK_STRINGS.creation.taskForm.priorityLabel}
-                </span>
-                <SegmentedControl<TaskPriority>
-                  ariaLabel={UK_STRINGS.creation.taskForm.priorityLabel}
-                  value={taskEditPriority}
-                  onChange={setTaskEditPriority}
-                  options={[
-                    {
-                      value: 'low',
-                      label: UK_STRINGS.creation.taskForm.priorityLow,
-                    },
-                    {
-                      value: 'normal',
-                      label: UK_STRINGS.creation.taskForm.priorityNormal,
-                    },
-                    {
-                      value: 'high',
-                      label: UK_STRINGS.creation.taskForm.priorityHigh,
-                    },
-                  ]}
-                />
-              </div>
-
-              {/* Ownership relinking (Standalone Folder OR Project + Stage) */}
-              <div
-                className="p-3.5 rounded-2xl space-y-3"
-                style={{
-                  backgroundColor: 'var(--bg-elevated)',
-                  border: '1px solid var(--border-subtle)',
-                }}
-              >
-                <SelectField
-                  label={UK_STRINGS.plansView.ownershipModeLabel}
-                  value={taskEditOwnershipMode}
-                  onChange={(e) => {
-                    const mode = e.target.value as
-                      | 'standalone'
-                      | 'folder'
-                      | 'goal'
-                      | 'project';
-                    setTaskEditOwnershipMode(mode);
-                    if (
-                      mode === 'project' &&
-                      !taskEditProjectId &&
-                      projects.length > 0
-                    ) {
-                      setTaskEditProjectId(projects[0].id);
-                      setTaskEditStageId(null);
-                    }
-                    if (
-                      mode === 'goal' &&
-                      !taskEditGoalId &&
-                      goals.length > 0
-                    ) {
-                      setTaskEditGoalId(goals[0].id);
-                    }
-                    if (
-                      mode === 'folder' &&
-                      !taskEditFolderId &&
-                      folders.length > 0
-                    ) {
-                      setTaskEditFolderId(folders[0].id);
-                    }
-                  }}
-                  options={[
-                    {
-                      value: 'standalone',
-                      label: UK_STRINGS.plansView.ownershipStandalone,
-                    },
-                    {
-                      value: 'folder',
-                      label: UK_STRINGS.plansView.ownershipFolder,
-                    },
-                    {
-                      value: 'goal',
-                      label: UK_STRINGS.plansView.ownershipGoal,
-                    },
-                    {
-                      value: 'project',
-                      label: UK_STRINGS.plansView.ownershipProject,
-                    },
-                  ]}
-                  data-testid="edit-task-ownership-mode-select"
-                />
-
-                {taskEditOwnershipMode === 'folder' && (
-                  <SelectField
-                    label={UK_STRINGS.creation.fieldFolderContext}
-                    value={taskEditFolderId ?? ''}
-                    onChange={(e) =>
-                      setTaskEditFolderId(
-                        e.target.value ? e.target.value : null
-                      )
-                    }
-                    options={folders.map((f) => ({
-                      value: f.id,
-                      label: f.name,
-                    }))}
-                    data-testid="edit-task-folder-select"
-                  />
-                )}
-
-                {taskEditOwnershipMode === 'goal' && (
-                  <SelectField
-                    label="Ціль"
-                    value={taskEditGoalId ?? ''}
-                    onChange={(e) =>
-                      setTaskEditGoalId(
-                        e.target.value ? e.target.value : null
-                      )
-                    }
-                    options={goals.map((g) => ({
-                      value: g.id,
-                      label: g.title,
-                    }))}
-                    data-testid="edit-task-goal-select"
-                  />
-                )}
-
-                {taskEditOwnershipMode === 'project' && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <SelectField
-                      label={UK_STRINGS.creation.fieldProjectContext}
-                      value={taskEditProjectId ?? ''}
-                      onChange={(e) => {
-                        setTaskEditProjectId(
-                          e.target.value ? e.target.value : null
-                        );
-                        // Moving between projects clears old stage (C06)
-                        setTaskEditStageId(null);
-                      }}
-                      options={projects.map((p) => ({
-                        value: p.id,
-                        label: p.title,
-                      }))}
-                      data-testid="edit-task-project-select"
-                    />
-                    <SelectField
-                      label={UK_STRINGS.creation.fieldStageContext}
-                      value={taskEditStageId ?? ''}
-                      onChange={(e) =>
-                        setTaskEditStageId(
-                          e.target.value ? e.target.value : null
-                        )
-                      }
-                      options={[
-                        {
-                          value: '',
-                          label: UK_STRINGS.creation.noStageOption,
-                        },
-                        ...stages
-                          .filter((s) => s.projectId === taskEditProjectId)
-                          .sort((a, b) => a.order - b.order)
-                          .map((s) => ({ value: s.id, label: s.title })),
-                      ]}
-                      data-testid="edit-task-stage-select"
-                    />
-                  </div>
-                )}
-              </div>
-
-              {/* Date-only intention & Estimate */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <span className="text-[0.9375rem] font-medium block">
-                    {UK_STRINGS.creation.fieldTargetDate}
-                  </span>
-                  {taskEditPlannedDate === null ? (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      fullWidth
-                      onClick={() => setTaskEditPlannedDate(actualTodayDate)}
-                      data-testid="edit-task-set-planned-date-button"
-                    >
-                      Без дати — обрати дату
-                    </Button>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <DateField
-                        label={UK_STRINGS.creation.fieldTargetDate}
-                        value={taskEditPlannedDate}
-                        onChange={(e) =>
-                          setTaskEditPlannedDate(e.target.value ? e.target.value : null)
-                        }
-                        data-testid="edit-task-planned-date-input"
-                      />
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => setTaskEditPlannedDate(null)}
-                        data-testid="edit-task-clear-planned-date-button"
-                      >
-                        {UK_STRINGS.creation.clearDateIntention}
-                      </Button>
-                    </div>
-                  )}
-                </div>
-
-                <InputField
-                  label={UK_STRINGS.creation.taskForm.estimateLabel}
-                  placeholder={UK_STRINGS.creation.taskForm.estimatePlaceholder}
-                  type="number"
-                  min={1}
-                  value={taskEditEstimate}
-                  onChange={(e) => setTaskEditEstimate(e.target.value)}
-                  data-testid="edit-task-estimate-input"
-                />
-              </div>
-
-              {/* Deadline */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <SelectField
-                  label={UK_STRINGS.creation.taskForm.deadlineTypeLabel}
-                  value={taskEditDeadlineKind}
-                  onChange={(e) =>
-                    setTaskEditDeadlineKind(
-                      e.target.value as 'none' | 'date_only' | 'exact_instant'
-                    )
+      {/* CUSTOM LOG MEASURE MODAL */}
+      {customLogEntity && (
+        <Sheet
+          title="Записати вимір"
+          isOpen={Boolean(customLogEntity)}
+          onClose={() => setCustomLogEntity(null)}
+        >
+          <div className="space-y-4 p-2">
+            <label className="text-sm font-semibold">Введіть додане значення:</label>
+            <input
+              type="number"
+              className="ui-input-field"
+              value={customLogDelta}
+              onChange={(e) => setCustomLogDelta(e.target.value)}
+              placeholder="наприклад, 10"
+              autoFocus
+            />
+            <button
+              type="button"
+              className="ui-btn ui-btn-primary w-full"
+              disabled={!customLogDelta.trim()}
+              onClick={async () => {
+                const delta = Number(customLogDelta);
+                if (Number.isFinite(delta)) {
+                  const entity = customLogEntity.kind === "goal"
+                    ? goals.find((g) => g.id === customLogEntity.id)
+                    : projects.find((p) => p.id === customLogEntity.id);
+                  if (entity) {
+                    await handleQuickLog(entity, delta);
                   }
-                  options={[
-                    {
-                      value: 'none',
-                      label: UK_STRINGS.creation.taskForm.deadlineNone,
-                    },
-                    {
-                      value: 'date_only',
-                      label: UK_STRINGS.creation.taskForm.deadlineDateOnly,
-                    },
-                    {
-                      value: 'exact_instant',
-                      label: UK_STRINGS.creation.taskForm.deadlineExactInstant,
-                    },
-                  ]}
-                  data-testid="edit-task-deadline-kind-select"
-                />
-
-                {taskEditDeadlineKind === 'date_only' && (
-                  <DateField
-                    label={UK_STRINGS.creation.taskForm.deadlineDateLabel}
-                    value={taskEditDeadlineDate}
-                    onChange={(e) => setTaskEditDeadlineDate(e.target.value)}
-                    data-testid="edit-task-deadline-date-input"
-                  />
-                )}
-
-                {taskEditDeadlineKind === 'exact_instant' && (
-                  <InputField
-                    label={UK_STRINGS.creation.taskForm.deadlineInstantLabel}
-                    type="datetime-local"
-                    lang="uk"
-                    value={taskEditDeadlineInstant}
-                    onChange={(e) => setTaskEditDeadlineInstant(e.target.value)}
-                    data-testid="edit-task-deadline-instant-input"
-                  />
-                )}
-              </div>
-
-              <div className="flex flex-wrap items-center justify-between gap-2 pt-3">
-                <Button
-                  variant="danger"
-                  size="sm"
-                  onClick={() => void handleDeleteTaskFromSheet()}
-                  data-testid="sheet-delete-task-button"
-                >
-                  <Trash2 className="w-4 h-4" aria-hidden="true" />
-                  <span>{UK_STRINGS.plansView.deleteTaskButton}</span>
-                </Button>
-
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="secondary"
-                    onClick={() => setEditingTaskId(null)}
-                  >
-                    {UK_STRINGS.app.cancelButton}
-                  </Button>
-                  <Button
-                    type="submit"
-                    variant="primary"
-                    data-testid="sheet-save-task-button"
-                  >
-                    {UK_STRINGS.app.saveButton}
-                  </Button>
-                </div>
-              </div>
-            </form>
-          </div>
-        )}
-      </ModalSheet>
-
-      {/* MODAL 10: Goal Edit Modal (Stage M1 / M3) */}
-      <ModalSheet
-        isOpen={Boolean(editingGoal)}
-        title={UK_STRINGS.plansView.editGoalModalTitle}
-        onClose={() => setEditingGoal(null)}
-      >
-        {editingGoal && (
-          <form
-            onSubmit={handleSaveGoalEdit}
-            className="space-y-4"
-            data-testid="edit-goal-form"
-          >
-            {modalError && (
-              <div
-                className="p-3 rounded-xl text-[0.875rem]"
-                style={{
-                  backgroundColor: 'var(--color-brand-tint)',
-                  color: 'var(--color-brand-text)',
-                }}
-              >
-                {modalError}
-              </div>
-            )}
-
-            <InputField
-              label={UK_STRINGS.creation.goalForm.titleLabel}
-              placeholder={UK_STRINGS.creation.goalForm.titlePlaceholder}
-              value={goalEditTitle}
-              onChange={(e) => setGoalEditTitle(e.target.value)}
-              required
-              data-testid="edit-goal-title-input"
-            />
-
-            <SelectField
-              label={UK_STRINGS.creation.goalForm.stateLabel}
-              value={goalEditState}
-              onChange={(e) => setGoalEditState(e.target.value as GoalState)}
-              options={[
-                {
-                  value: 'idea',
-                  label: UK_STRINGS.creation.goalForm.stateIdea,
-                },
-                {
-                  value: 'active',
-                  label: UK_STRINGS.creation.goalForm.stateActive,
-                },
-                {
-                  value: 'paused',
-                  label: UK_STRINGS.creation.goalForm.statePaused,
-                },
-                {
-                  value: 'completed',
-                  label: UK_STRINGS.creation.goalForm.stateCompleted,
-                },
-              ]}
-              data-testid="edit-goal-state-select"
-            />
-
-            <SelectField
-              label={UK_STRINGS.creation.goalForm.folderLabel}
-              value={goalEditFolderId ?? ''}
-              onChange={(e) =>
-                setGoalEditFolderId(e.target.value ? e.target.value : null)
-              }
-              options={[
-                { value: '', label: UK_STRINGS.creation.rootFolderOption },
-                ...folders.map((f) => ({ value: f.id, label: f.name })),
-              ]}
-              data-testid="edit-goal-folder-select"
-            />
-
-            <InputField
-              label={UK_STRINGS.creation.goalForm.purposeLabel}
-              placeholder={UK_STRINGS.creation.goalForm.purposePlaceholder}
-              value={goalEditPurpose}
-              onChange={(e) => setGoalEditPurpose(e.target.value)}
-              data-testid="edit-goal-purpose-input"
-            />
-
-            <InputField
-              label={UK_STRINGS.creation.goalForm.criteriaLabel}
-              placeholder={UK_STRINGS.creation.goalForm.criteriaPlaceholder}
-              value={goalEditCriteria}
-              onChange={(e) => setGoalEditCriteria(e.target.value)}
-              data-testid="edit-goal-criteria-input"
-            />
-
-            <InputField
-              label={UK_STRINGS.creation.goalForm.implementationIntentionLabel}
-              placeholder={
-                UK_STRINGS.creation.goalForm.implementationIntentionPlaceholder
-              }
-              value={goalEditIntention}
-              onChange={(e) => setGoalEditIntention(e.target.value)}
-              data-testid="edit-goal-intention-input"
-            />
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <DateField
-                label={UK_STRINGS.creation.goalForm.targetDateLabel}
-                value={goalEditTargetDate ?? ''}
-                onChange={(e) => setGoalEditTargetDate(e.target.value ? e.target.value : null)}
-                data-testid="edit-goal-target-date-input"
-              />
-              <InputField
-                label={UK_STRINGS.creation.goalForm.targetPeriodLabel}
-                placeholder={UK_STRINGS.creation.goalForm.targetPeriodLabel}
-                value={goalEditTargetPeriod}
-                onChange={(e) => setGoalEditTargetPeriod(e.target.value)}
-                data-testid="edit-goal-target-period-input"
-              />
-            </div>
-
-            <SelectField
-              label={UK_STRINGS.creation.goalForm.nextActionLabel}
-              value={goalEditNextActionTaskId ?? ''}
-              onChange={(e) =>
-                setGoalEditNextActionTaskId(
-                  e.target.value ? e.target.value : null
-                )
-              }
-              options={[
-                {
-                  value: '',
-                  label: UK_STRINGS.creation.goalForm.noNextActionOption,
-                },
-                ...tasks
-                  .filter((t) => t.state === 'open')
-                  .map((t) => ({ value: t.id, label: t.title })),
-              ]}
-              data-testid="edit-goal-next-action-select"
-            />
-
-            <div className="flex items-center justify-end gap-2 pt-3">
-              <Button
-                variant="secondary"
-                onClick={() => setEditingGoal(null)}
-              >
-                {UK_STRINGS.app.cancelButton}
-              </Button>
-              <Button
-                type="submit"
-                variant="primary"
-                data-testid="edit-goal-submit-button"
-              >
-                {UK_STRINGS.app.saveButton}
-              </Button>
-            </div>
-          </form>
-        )}
-      </ModalSheet>
-
-      {/* MODAL 11: Goal Delete Modal (Stage M1 / M3) */}
-      <ModalSheet
-        isOpen={Boolean(deletingGoal)}
-        title={UK_STRINGS.plansView.deleteGoalModalTitle}
-        onClose={() => setDeletingGoal(null)}
-      >
-        {deletingGoal && (
-          <div className="space-y-4" data-testid="delete-goal-modal">
-            {modalError && (
-              <div
-                className="p-3 rounded-xl text-[0.875rem]"
-                style={{
-                  backgroundColor: 'var(--color-brand-tint)',
-                  color: 'var(--color-brand-text)',
-                }}
-              >
-                {modalError}
-              </div>
-            )}
-
-            <p
-              className="text-[0.875rem] m-0"
-              style={{ color: 'var(--text-secondary)' }}
+                }
+                setCustomLogEntity(null);
+                setCustomLogDelta("");
+              }}
             >
-              Ви збираєтеся видалити ціль{' '}
-              <strong style={{ color: 'var(--text-primary)' }}>
-                {deletingGoal.title}
-              </strong>
-              . Оберіть дію для пов&apos;язаних справ та проєктів:
-            </p>
-
-            <div className="space-y-2">
-              <label
-                className="p-3 rounded-xl flex items-start gap-3 cursor-pointer"
-                style={{
-                  backgroundColor:
-                    goalDeleteMode === 'unlink_children'
-                      ? 'var(--bg-elevated)'
-                      : 'var(--bg-surface)',
-                  border:
-                    goalDeleteMode === 'unlink_children'
-                      ? '1.5px solid var(--color-brand)'
-                      : '1px solid var(--border-subtle)',
-                }}
-              >
-                <input
-                  type="radio"
-                  name="goalDeleteMode"
-                  value="unlink_children"
-                  checked={goalDeleteMode === 'unlink_children'}
-                  onChange={() => setGoalDeleteMode('unlink_children')}
-                  className="mt-0.5"
-                  data-testid="goal-delete-unlink-radio"
-                />
-                <div>
-                  <div className="text-[0.875rem] font-medium">
-                    {UK_STRINGS.plansView.goalDeleteUnlinkChildren}
-                  </div>
-                </div>
-              </label>
-
-              <label
-                className="p-3 rounded-xl flex items-start gap-3 cursor-pointer"
-                style={{
-                  backgroundColor:
-                    goalDeleteMode === 'delete_direct_tasks'
-                      ? 'var(--bg-elevated)'
-                      : 'var(--bg-surface)',
-                  border:
-                    goalDeleteMode === 'delete_direct_tasks'
-                      ? '1.5px solid var(--color-brand)'
-                      : '1px solid var(--border-subtle)',
-                }}
-              >
-                <input
-                  type="radio"
-                  name="goalDeleteMode"
-                  value="delete_direct_tasks"
-                  checked={goalDeleteMode === 'delete_direct_tasks'}
-                  onChange={() => setGoalDeleteMode('delete_direct_tasks')}
-                  className="mt-0.5"
-                  data-testid="goal-delete-tasks-radio"
-                />
-                <div>
-                  <div className="text-[0.875rem] font-medium">
-                    {UK_STRINGS.plansView.goalDeleteDirectTasks}
-                  </div>
-                </div>
-              </label>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-3">
-              <Button
-                variant="secondary"
-                onClick={() => setDeletingGoal(null)}
-              >
-                {UK_STRINGS.app.cancelButton}
-              </Button>
-              <Button
-                variant="danger"
-                onClick={() => void handleConfirmDeleteGoal()}
-                data-testid="confirm-delete-goal-button"
-              >
-                <Trash2 className="w-4 h-4" aria-hidden="true" />
-                <span>{UK_STRINGS.app.deleteButton}</span>
-              </Button>
-            </div>
+              Записати
+            </button>
           </div>
-        )}
-      </ModalSheet>
-      </div>
+        </Sheet>
+      )}
     </div>
   );
 };

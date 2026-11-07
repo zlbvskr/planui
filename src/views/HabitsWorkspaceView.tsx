@@ -1,4 +1,4 @@
-import {Icon} from '../ui/icons';
+import { Icon, ChevronDown, ChevronRight, Check, Folder as FolderIcon, Repeat } from '../ui/icons';
 import { HabitPresentationContext } from "../components/habits/presentation";
 import { SleepReminderNote } from "../components/habits/SleepReminderNote";
 import {
@@ -10,10 +10,15 @@ import {
   SubHeader,
   DateField,
   SelectField,
+  Button,
+  FeedbackBanner,
+  InputField,
+  TextAreaField,
+  Orb,
+  EmptyState,
 } from "../ui";
 import { formatDate, formatDuration } from "../lib/format";
 import React, { useMemo, useState, useEffect, useContext } from "react";
-import { Repeat } from "../ui/icons";
 import {
   CalendarEvent,
   EntityId,
@@ -43,12 +48,8 @@ import {
 } from "../state/shellStore";
 import { PlanuiRepositories } from "../storage/repositories";
 import { UK_STRINGS } from "../i18n/uk";
-import {
-  Button,
-  FeedbackBanner,
-  InputField,
-  TextAreaField,
-} from "../components/ui/primitives";
+import { itemColor, resolveArea, areaColor } from "../domain/modelHelpers";
+
 
 export interface HabitsWorkspaceViewProps {
   nightShiftAlternative?: boolean;
@@ -104,6 +105,8 @@ export function HabitsWorkspaceView({
   }, [history, onHistoryChange]);
   const [pausedOpen, setPausedOpen] = useState(false);
   const [dateOpen, setDateOpen] = useState(false);
+  const [movingHabit, setMovingHabit] = useState<Habit | null>(null);
+  const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<string>>(() => new Set());
   const [numericDraftByHabit, setNumericDraftByHabit] = useState<
     Record<string, string>
   >({});
@@ -392,6 +395,8 @@ export function HabitsWorkspaceView({
       </Sheet>
       {(() => {
         const visible = habits.filter((h) => history || h.state === "active");
+        const habitFolders = folders.filter((f) => f.kind === "habits");
+
         const context = (h: Habit) => {
           if (history)
             return h.state === "archived"
@@ -411,6 +416,7 @@ export function HabitsWorkspaceView({
                 ? `${rule.timesPerWeek} рази на тиждень`
                 : "Щодня";
         };
+
         const renderHabit = (habit: Habit) => {
           const entries = entriesByHabitId.get(habit.id) ?? [];
           const state = evaluateHabitOnDate({
@@ -419,8 +425,15 @@ export function HabitsWorkspaceView({
             localDate: selectedDate,
             daysOff: dayOffDates,
           });
-          const done = state.cellStatus === "completed",
-            minimum = Boolean(state.entry?.minimumCompletedUk);
+          const done = state.cellStatus === "completed";
+          const minimum = Boolean(state.entry?.minimumCompletedUk);
+          const areaInfo = resolveArea(habit, {
+            folders,
+            projects,
+            lifeAreas: lifeAreaQuestions,
+          });
+          const color = areaColor(areaInfo?.rating);
+
           const record = async (
             kind: "complete" | "minimum" | "clear" | "skip",
           ) => {
@@ -435,129 +448,147 @@ export function HabitsWorkspaceView({
               await onDataChanged("Не вдалося записати виконання.");
             }
           };
+
+          const durationText = presentation[habit.id]?.durationMinutes
+            ? formatDuration(presentation[habit.id].durationMinutes!)
+            : null;
+          const minText = habit.minimumVersionUk
+            ? `мінімум: ${habit.minimumVersionUk}`
+            : null;
+          const metaText = [durationText, minText, habit.contextCueUk]
+            .filter(Boolean)
+            .join(" · ");
+
           return (
             <div
               key={habit.id}
-              style={
-                {
-                  "--habit-hue":
-                    presentation[habit.id]?.hue ??
-                    [
-                      "var(--hue-english)",
-                      "var(--hue-university)",
-                      "var(--hue-relationships)",
-                      "var(--hue-work)",
-                    ][habits.findIndex((h) => h.id === habit.id) % 4],
-                } as React.CSSProperties
-              }
+              style={{ "--habit-hue": color } as React.CSSProperties}
               className="habit-row"
               data-testid={`habit-row-${habit.id}`}
             >
-              <Row
-                leading={<Repeat size={20} />}
-                title={habit.name}
-                secondary={
-                  [
-                    presentation[habit.id]?.durationMinutes
-                      ? formatDuration(presentation[habit.id].durationMinutes!)
-                      : null,
-                    habit.minimumVersionUk
-                      ? `мінімум: ${habit.minimumVersionUk}`
-                      : habit.contextCueUk,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ") || undefined
-                }
-                trailing={
-                  <>
+              <div className="flex items-center gap-3 w-full py-1">
+                {/* Gel Orb in area color */}
+                <Orb size={28} color={color} className="flex-shrink-0" />
+
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-[15px] text-ink leading-snug truncate">
+                    {habit.name}
+                  </div>
+                  {metaText && (
+                    <div className="text-[12px] text-secondary truncate mt-0.5">
+                      {metaText}
+                    </div>
+                  )}
+                  {habit.measure && (
+                    <div className="text-[11px] text-secondary tabular-nums mt-0.5">
+                      {habit.measure.current} / {habit.measure.target} {habit.measure.unit}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {/* Round check (Standard) */}
+                  <button
+                    className="task-check ui-pressable"
+                    type="button"
+                    aria-label={`Стандарт: ${habit.name}`}
+                    aria-pressed={done}
+                    onClick={() => void record(done ? "clear" : "complete")}
+                    style={{
+                      backgroundColor: done ? color : "transparent",
+                      borderColor: color,
+                    }}
+                  >
+                    <span>{done && <Check size={14} className="text-white" />}</span>
+                  </button>
+
+                  {/* Small "Мінімум" pill */}
+                  {habit.minimumVersionUk && (
                     <button
-                      className="habit-check"
                       type="button"
-                      aria-label={`Стандарт: ${habit.name}`}
-                      aria-pressed={done}
-                      data-minimum={minimum && !done}
-                      onClick={() => void record("complete")}
+                      className="ui-pill text-[12px] px-2.5 py-0.5 rounded-full border border-black/10 hover:bg-black/5 font-medium"
+                      onClick={() => void record("minimum")}
                     >
-                      <Icon name={done||minimum?"check":"circle"}/>
-                      {minimum && !done && <small>мінімум</small>}
+                      Мінімум
                     </button>
-                    {habit.minimumVersionUk && (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => void record("minimum")}
-                      >
-                        Мінімум
-                      </Button>
-                    )}
-                    <ActionMenu
-                      label={`Дії: ${habit.name}`}
-                      items={[
-                        {
-                          label:
-                            habit.state === "active" ? "Пауза" : "Відновити",
-                          onSelect: () =>
-                            void handleChangeState(
-                              habit,
-                              habit.state === "active" ? "paused" : "active",
-                            ),
-                        },
-                        {
-                          label: "Редагувати",
-                          onSelect: () => openEditModal(habit),
-                        },
-                        {
-                          label: "Прибрати відмітку",
-                          onSelect: () => void record("clear"),
-                        },
-                        {
-                          label: "Пропустити",
-                          onSelect: () => void record("skip"),
-                        },
-                        {
-                          label: "Архів",
-                          onSelect: () =>
-                            void handleChangeState(habit, "archived"),
-                        },
-                        ...(history
-                          ? [
-                              {
-                                label: "Видалити",
-                                onSelect: () => {
-                                  setDeletingHabit(habit);
-                                  onModalStateChange?.(true);
-                                },
+                  )}
+
+                  {/* "⋯" action menu */}
+                  <ActionMenu
+                    label={`Дії: ${habit.name}`}
+                    items={[
+                      {
+                        label: habit.state === "active" ? "Пауза" : "Відновити",
+                        onSelect: () =>
+                          void handleChangeState(
+                            habit,
+                            habit.state === "active" ? "paused" : "active",
+                          ),
+                      },
+                      {
+                        label: "Редагувати",
+                        onSelect: () => openEditModal(habit),
+                      },
+                      {
+                        label: "Перемістити в папку",
+                        onSelect: () => setMovingHabit(habit),
+                      },
+                      {
+                        label: "Прибрати відмітку",
+                        onSelect: () => void record("clear"),
+                      },
+                      {
+                        label: "Пропустити",
+                        onSelect: () => void record("skip"),
+                      },
+                      {
+                        label: "Архів",
+                        onSelect: () =>
+                          void handleChangeState(habit, "archived"),
+                      },
+                      ...(history
+                        ? [
+                            {
+                              label: "Видалити",
+                              onSelect: () => {
+                                setDeletingHabit(habit);
+                                onModalStateChange?.(true);
                               },
-                              {
-                                label: "Запланувати в календарі",
-                                onSelect: () =>
-                                  onPlanHabit?.(habit.id, selectedDate),
-                              },
-                            ]
-                          : []),
-                      ]}
-                    />
-                  </>
-                }
-              />
+                            },
+                            {
+                              label: "Запланувати в календарі",
+                              onSelect: () =>
+                                onPlanHabit?.(habit.id, selectedDate),
+                            },
+                          ]
+                        : []),
+                    ]}
+                  />
+                </div>
+              </div>
+
+              {/* 7-day dot row (completed days only) */}
               <div className="habit-dots" aria-label="Останні сім днів">
                 {Array.from({ length: 7 }, (_, i) => {
                   const date = addDaysToLocalDate(selectedDate, i - 6);
                   const entry = entries.find((e) => e.localDate === date);
+                  const isDoneDay = Boolean(
+                    entry && (entry.status === "completed" || entry.minimumCompletedUk),
+                  );
                   return (
                     <span
                       role="img"
                       key={date}
                       aria-label={formatDate(date)}
-                      data-done={Boolean(
-                        entry &&
-                        (entry.status === "completed" ||
-                          entry.minimumCompletedUk),
-                      )}
+                      data-done={isDoneDay}
+                      style={{
+                        backgroundColor: isDoneDay ? color : undefined,
+                      }}
                     />
                   );
                 })}
               </div>
+
               {history && state.effectiveRevision.target.kind === "numeric" && (
                 <div className="flex gap-2 p-3">
                   <InputField
@@ -602,42 +633,99 @@ export function HabitsWorkspaceView({
                   </Button>
                 </div>
               )}
-              {history && (
-                <details>
-                  <summary>Історія</summary>
-                  {entries.map((entry) => (
-                    <Row
-                      key={entry.id}
-                      title={formatDate(entry.localDate)}
-                      secondary={
-                        entry.minimumCompletedUk
-                          ? "Мінімум"
-                          : entry.status === "completed"
-                            ? "Виконано"
-                            : "Без виконання"
-                      }
-                    />
-                  ))}
-                </details>
-              )}
             </div>
           );
         };
+
+        const rootHabits = visible.filter(
+          (h) => !h.folderId || !habitFolders.some((f) => f.id === h.folderId),
+        );
+
         return (
           <>
-            {[...new Set(visible.map(context))].map((label) => (
-              <Section key={label} title={label}>
-                {visible.filter((h) => context(h) === label).map(renderHabit)}
-              </Section>
-            ))}
+            {/* Folder tree for habits: folders first */}
+            {!history &&
+              habitFolders.map((folder) => {
+                const folderHabits = visible.filter(
+                  (h) => h.folderId === folder.id,
+                );
+                const isCollapsed = collapsedFolderIds.has(folder.id);
+                return (
+                  <div
+                    key={folder.id}
+                    className="rounded-[28px] bg-white p-4 shadow-sm space-y-2 mb-3"
+                  >
+                    <button
+                      type="button"
+                      className="w-full flex items-center justify-between text-left py-1 cursor-pointer"
+                      onClick={() => {
+                        setCollapsedFolderIds((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(folder.id)) next.delete(folder.id);
+                          else next.add(folder.id);
+                          return next;
+                        });
+                      }}
+                    >
+                      <div className="flex items-center gap-2">
+                        <FolderIcon size={18} className="text-secondary" />
+                        <span className="font-semibold text-[15px] text-ink">
+                          {folder.name}
+                        </span>
+                        <span className="text-[12px] bg-black/5 text-secondary px-2 py-0.5 rounded-full font-medium">
+                          {folderHabits.length}
+                        </span>
+                      </div>
+                      {isCollapsed ? (
+                        <ChevronRight size={18} className="text-secondary" />
+                      ) : (
+                        <ChevronDown size={18} className="text-secondary" />
+                      )}
+                    </button>
+                    {!isCollapsed && (
+                      <div className="space-y-1 pt-1">
+                        {folderHabits.length > 0 ? (
+                          folderHabits.map(renderHabit)
+                        ) : (
+                          <p className="text-[13px] text-secondary py-2 px-1">
+                            Папка порожня
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+            {/* Frequency sections for root habits */}
+            {[
+              "Після пробудження",
+              "У вихідні від роботи",
+              "3 рази на тиждень",
+              "Щодня",
+              ...new Set(rootHabits.map(context)),
+            ]
+              .filter((label, idx, arr) => arr.indexOf(label) === idx)
+              .map((label) => {
+                const sectionHabits = rootHabits.filter(
+                  (h) => context(h) === label,
+                );
+                if (sectionHabits.length === 0) return null;
+                return (
+                  <Section key={label} title={label}>
+                    {sectionHabits.map(renderHabit)}
+                  </Section>
+                );
+              })}
+
             {!visible.length && (
-              <div className="ui-surface p-3 flex items-center justify-between">
-                <span>Звичок поки немає</span>
-                <Button onClick={() => onOpenGlobalCreation("habit")}>
-                  Додати звичку
-                </Button>
-              </div>
+              <EmptyState
+                text="Звичок поки немає."
+                action="Додати звичку"
+                onAction={() => onOpenGlobalCreation("habit")}
+              />
             )}
+
             {!history && habits.some((h) => h.state === "paused") && (
               <Section title="На паузі">
                 <Row
@@ -648,13 +736,76 @@ export function HabitsWorkspaceView({
                       aria-expanded={pausedOpen}
                       onClick={() => setPausedOpen(!pausedOpen)}
                     >
-                      <Icon name="chevron-down"/>
+                      <Icon name="chevron-down" />
                     </Button>
                   }
                 />
                 {pausedOpen &&
                   habits.filter((h) => h.state === "paused").map(renderHabit)}
               </Section>
+            )}
+
+            {/* Move habit to folder sheet */}
+            {movingHabit && (
+              <Sheet
+                isOpen={Boolean(movingHabit)}
+                onClose={() => setMovingHabit(null)}
+                title="Перемістити в папку"
+              >
+                <div className="space-y-2 py-2">
+                  <button
+                    type="button"
+                    className="w-full text-left p-3 rounded-2xl bg-black/5 hover:bg-black/10 font-medium text-[14px]"
+                    onClick={async () => {
+                      try {
+                        await repositories.saveHabit(
+                          {
+                            ...movingHabit,
+                            folderId: undefined,
+                            updatedAt: new Date().toISOString(),
+                          },
+                          movingHabit.revision,
+                        );
+                        await onDataChanged();
+                        setMovingHabit(null);
+                      } catch {
+                        await onDataChanged("Не вдалося перемістити звичку.");
+                      }
+                    }}
+                  >
+                    Коренева папка (без папки)
+                  </button>
+                  {habitFolders.map((f) => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      className="w-full text-left p-3 rounded-2xl bg-black/5 hover:bg-black/10 font-medium text-[14px] flex items-center justify-between"
+                      onClick={async () => {
+                        try {
+                          await repositories.saveHabit(
+                            {
+                              ...movingHabit,
+                              folderId: f.id,
+                              updatedAt: new Date().toISOString(),
+                            },
+                            movingHabit.revision,
+                          );
+
+                          await onDataChanged();
+                          setMovingHabit(null);
+                        } catch {
+                          await onDataChanged("Не вдалося перемістити звичку.");
+                        }
+                      }}
+                    >
+                      <span>{f.name}</span>
+                      {movingHabit.folderId === f.id && (
+                        <Check size={16} className="text-ink" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </Sheet>
             )}
           </>
         );
@@ -874,15 +1025,13 @@ export function HabitsWorkspaceView({
               />
             )}
 
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <Button
-                type="submit"
-                variant="primary"
-                data-testid="edit-habit-save-button"
-              >
-                {UK_STRINGS.app.saveButton}
-              </Button>
-            </div>
+            <Button
+              type="submit"
+              variant="primary"
+              data-testid="edit-habit-save-button"
+            >
+              {UK_STRINGS.app.saveButton}
+            </Button>
           </form>
         )}
       </Sheet>

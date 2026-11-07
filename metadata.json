@@ -1,0 +1,6 @@
+{
+  "name": "PLANUI — Особистий локальний планувальник",
+  "description": "Приватний локальний планувальник розкладу, справ, змін, звичок та особистого простору.",
+  "permissions": [],
+  "capabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

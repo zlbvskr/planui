@@ -288,7 +288,8 @@ export const BasicSettingsView: React.FC<BasicSettingsViewProps> = ({
       applyThemeAndAccessibilityToDocument(
         updated.theme,
         updated.reducedMotionOverride,
-        updated.reducedTransparencyOverride
+        updated.reducedTransparencyOverride,
+        updated.textScale
       );
       onSettingsUpdated(patch);
     } catch (err) {
@@ -300,6 +301,14 @@ export const BasicSettingsView: React.FC<BasicSettingsViewProps> = ({
 
   const handleThemeChange = async (theme: ThemePreference) => {
     await persistPatch({ theme });
+  };
+
+  const handleTextScaleChange = async (scale: 'standard' | 'larger' | 'largest') => {
+    const scaleNumber = scale === 'largest' ? 1.25 : scale === 'larger' ? 1.12 : 1;
+    if (typeof document !== 'undefined') {
+      document.documentElement.style.setProperty('--text-scale', String(scaleNumber));
+    }
+    await persistPatch({ textScale: scale });
   };
 
   const handleAccessibilityChange = async (
@@ -615,32 +624,6 @@ export const BasicSettingsView: React.FC<BasicSettingsViewProps> = ({
             }
           />
           <Row
-            title="Стан"
-            secondary="Самопочуття, енергія, напруга та сон"
-            trailing={
-              <Toggle
-                label="Стан"
-                checked={settings.modules?.stateCheckInsEnabled ?? false}
-                onChange={(v) => void handleModuleToggle('stateCheckInsEnabled', v)}
-                disabled={isSavingSettings}
-                testId="toggle-module-state-check-ins"
-              />
-            }
-          />
-          <Row
-            title="Моє бажане життя"
-            secondary="Описи, фото, цитати й орієнтири"
-            trailing={
-              <Toggle
-                label="Моє бажане життя"
-                checked={settings.modules?.desiredLifeEnabled ?? false}
-                onChange={(v) => void handleModuleToggle('desiredLifeEnabled', v)}
-                disabled={isSavingSettings}
-                testId="toggle-module-desired-life"
-              />
-            }
-          />
-          <Row
             title="Список бажань"
             secondary="Бажані речі та ідеї без бюджетів"
             trailing={
@@ -670,6 +653,24 @@ export const BasicSettingsView: React.FC<BasicSettingsViewProps> = ({
               { value: 'system', label: 'Системна' },
               { value: 'light', label: 'Світла' },
               { value: 'dark', label: 'Темна' },
+            ]}
+          />
+        </div>
+        <div className="p-3 border-t border-[var(--border-subtle)]">
+          <Segmented<'standard' | 'larger' | 'largest'>
+            label="Розмір тексту"
+            value={
+              settings.textScale === 'largest'
+                ? 'largest'
+                : settings.textScale === 'larger'
+                ? 'larger'
+                : 'standard'
+            }
+            onChange={(scale) => void handleTextScaleChange(scale)}
+            options={[
+              { value: 'standard', label: 'Стандартний' },
+              { value: 'larger', label: 'Більший' },
+              { value: 'largest', label: 'Найбільший' },
             ]}
           />
         </div>
@@ -898,7 +899,7 @@ export const BasicSettingsView: React.FC<BasicSettingsViewProps> = ({
                     onClick={() => void handleExportFullBackup()}
                     disabled={isBusyBackup}
                     data-testid={backupSheetOpen ? 'export-backup-zip-button' : undefined}
-                    className="ui-primary text-xs px-4 py-2"
+                    className="ui-pill text-xs px-4 py-2"
                   >
                     Експорт ZIP
                   </button>
@@ -962,13 +963,13 @@ export const BasicSettingsView: React.FC<BasicSettingsViewProps> = ({
                   ))}
                 </div>
               )}
-              <div className="flex flex-wrap gap-2 pt-1">
+              <div className="space-y-2 pt-1">
                 <button
                   type="button"
                   onClick={() => void handleConfirmImportReplacement()}
                   disabled={isBusyBackup}
                   data-testid="confirm-import-replacement-button"
-                  className="ui-primary text-xs px-4 py-2"
+                  className="ui-primary w-full"
                 >
                   Замінити локальні дані
                 </button>
@@ -978,7 +979,7 @@ export const BasicSettingsView: React.FC<BasicSettingsViewProps> = ({
                   disabled={isBusyBackup}
                   data-testid="cancel-import-preview-button"
                   className="min-h-[44px] px-4 rounded-full bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-xs font-medium"
-                 aria-label="Скасувати">
+                  aria-label="Скасувати">
                   <Icon name="x"/>
                 </button>
               </div>
@@ -1090,7 +1091,7 @@ export const BasicSettingsView: React.FC<BasicSettingsViewProps> = ({
                       <p className="text-xs text-[var(--text-secondary)]">
                         Поточні дані буде збережено у нову точку відновлення.
                       </p>
-                      <div className="flex gap-2">
+                      <div className="space-y-2">
                         <button
                           type="button"
                           onClick={() =>
@@ -1098,7 +1099,7 @@ export const BasicSettingsView: React.FC<BasicSettingsViewProps> = ({
                           }
                           disabled={isBusyBackup}
                           data-testid={`confirm-restore-snapshot-${snap.id}`}
-                          className="ui-primary text-xs px-3 py-2"
+                          className="ui-primary w-full"
                         >
                           Підтвердити відновлення
                         </button>
@@ -1106,7 +1107,7 @@ export const BasicSettingsView: React.FC<BasicSettingsViewProps> = ({
                           type="button"
                           onClick={() => setConfirmRestoreSnapshotId(null)}
                           className="min-h-[44px] px-3 rounded-xl text-xs"
-                         aria-label="Скасувати">
+                          aria-label="Скасувати">
                           <Icon name="x"/>
                         </button>
                       </div>
@@ -1202,7 +1203,7 @@ export const BasicSettingsView: React.FC<BasicSettingsViewProps> = ({
 
           <Section title="Обсяг записів на пристрої">
             <Row
-              title="Напрями, цілі, проєкти"
+              title="Папки, цілі, проєкти"
               trailing={`${snapshot.folders.length} / ${snapshot.goals?.length ?? 0} / ${snapshot.projects.length}`}
             />
             <Row

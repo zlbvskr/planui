@@ -1,10 +1,26 @@
-import React, { useEffect, useId, useRef, useState } from 'react';
+import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, AlertCircle, CheckCircle2, Info } from './icons';
 import { UK_STRINGS } from '../i18n/uk';
 import { DateField, PillRow, Segmented, SelectField, TimeField } from './contract';
+import {
+  animateSpringTransform,
+  easings,
+  ensureMotionRootAttribute,
+  getCapturedOrbRect,
+  isReducedMotion,
+  runInterruptibleAnimation,
+  springs,
+  tweens,
+  usePressFeedback,
+} from './motion';
+
+import { useOverlayRegistration } from './overlayStack';
 
 export { SelectField };
+
+const useIsomorphicLayoutEffect =
+  typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: 'primary' | 'secondary' | 'subtle' | 'danger' | 'tertiary' | 'destructive';
@@ -16,60 +32,94 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 export const Button: React.FC<ButtonProps> = ({
   variant = 'secondary',
   size = 'md',
-  fullWidth = false,
+  fullWidth,
   busy = false,
   className = '',
   children,
+  onPointerDown,
+  onPointerUp,
+  onPointerCancel,
+  onPointerLeave,
   ...props
 }) => {
-  const dismissLabel = typeof children === 'string' && ['Закрити','Скасувати'].includes(children.trim()) ? children.trim() : undefined;
-  const baseClasses =
-    'inline-flex items-center justify-center gap-2 font-medium rounded-xl planui-transition-micro select-none disabled:opacity-50 disabled:pointer-events-none cursor-pointer';
+  const isDisabled = Boolean(busy || props.disabled);
+  const press = usePressFeedback<HTMLButtonElement>(!isDisabled);
+  const isPrimary = variant === 'primary';
+  const isFullWidth = fullWidth ?? isPrimary;
+  const dismissLabel =
+    typeof children === 'string' && ['Закрити', 'Скасувати'].includes(children.trim())
+      ? children.trim()
+      : undefined;
+  const baseClasses = isPrimary
+    ? 'ui-primary inline-flex items-center justify-center gap-2 font-semibold rounded-full planui-transition-micro select-none disabled:opacity-50 disabled:pointer-events-none cursor-pointer'
+    : 'inline-flex items-center justify-center gap-2 font-semibold rounded-full planui-transition-micro select-none disabled:opacity-50 disabled:pointer-events-none cursor-pointer';
 
-  const sizeClasses =
-    size === 'icon'
-      ? 'min-w-[44px] min-h-[44px] p-2.5'
-      : size === 'sm'
-      ? 'min-h-[40px] px-3.5 py-2 text-[0.9375rem]'
-      : 'min-h-[44px] px-4 py-2.5 text-[1rem]';
+  const sizeClasses = isPrimary
+    ? 'min-h-[56px] px-6 py-3.5 text-[1rem]'
+    : size === 'icon'
+    ? 'min-w-[44px] min-h-[44px] p-2.5'
+    : size === 'sm'
+    ? 'min-h-[40px] px-4 py-2 text-[0.9375rem]'
+    : 'min-h-[44px] px-5 py-2.5 text-[1rem]';
 
   const variantStyle: React.CSSProperties =
     variant === 'primary'
       ? {
-          backgroundColor: 'var(--color-brand)',
-          color: 'var(--btn-primary-fg)',
+          backgroundColor: 'var(--ink)',
+          color: 'var(--on-ink)',
           border: '1px solid transparent',
         }
-      : (variant === 'danger' || variant === 'destructive')
+      : variant === 'danger' || variant === 'destructive'
       ? {
-          backgroundColor: 'var(--color-brand-tint)',
-          color: 'var(--color-brand-text)',
-          border: '1px solid var(--border-subtle)',
+          backgroundColor: 'var(--color-danger-tint)',
+          color: 'var(--color-danger)',
+          border: '1px solid transparent',
         }
-      : (variant === 'subtle' || variant === 'tertiary')
+      : variant === 'subtle' || variant === 'tertiary'
       ? {
           backgroundColor: 'transparent',
           color: 'var(--text-primary)',
           border: '1px solid transparent',
         }
       : {
-          backgroundColor: 'var(--bg-elevated)',
+          backgroundColor: 'var(--glass-bg)',
           color: 'var(--text-primary)',
-          border: '1px solid var(--border-subtle)',
+          border: '1px solid var(--glass-border)',
+          boxShadow: 'var(--glass-shadow)',
         };
 
   return (
     <button
+      ref={press.ref}
       type="button"
+      data-motion="idle"
       aria-label={dismissLabel}
       aria-busy={busy || undefined}
       data-variant={variant}
-      className={`ui-button ${baseClasses} ${sizeClasses} ${fullWidth ? 'w-full' : ''} active:scale-[0.98] ${className}`}
+      className={`ui-button ui-pressable ${baseClasses} ${sizeClasses} ${
+        isFullWidth ? 'w-full' : ''
+      } ${className}`.trim()}
       style={variantStyle}
       {...props}
-      disabled={busy || props.disabled}
+      onPointerDown={(e) => {
+        press.onPointerDown(e);
+        onPointerDown?.(e);
+      }}
+      onPointerUp={(e) => {
+        press.onPointerUp(e);
+        onPointerUp?.(e);
+      }}
+      onPointerCancel={(e) => {
+        press.onPointerCancel(e);
+        onPointerCancel?.(e);
+      }}
+      onPointerLeave={(e) => {
+        press.onPointerLeave(e);
+        onPointerLeave?.(e);
+      }}
+      disabled={isDisabled}
     >
-      {busy ? 'Зачекайте…' : dismissLabel ? <X/> : children}
+      {busy ? 'Зачекайте…' : dismissLabel ? <X /> : children}
     </button>
   );
 };
@@ -266,6 +316,23 @@ export const FeedbackBanner: React.FC<FeedbackBannerProps> = ({
   );
 };
 
+let activeOpenSheetCount = 0;
+
+function syncBackgroundScale(opening: boolean): void {
+  if (typeof document === 'undefined') return;
+  const bgRoot =
+    document.querySelector<HTMLElement>('[data-testid="shell-background-root"]') ??
+    document.querySelector<HTMLElement>('.planui-canvas');
+  if (!bgRoot) return;
+  ensureMotionRootAttribute(bgRoot);
+
+  if (opening) {
+    bgRoot.setAttribute('data-sheet-open', 'true');
+  } else {
+    bgRoot.removeAttribute('data-sheet-open');
+  }
+}
+
 export interface ModalSheetProps {
   isOpen: boolean;
   title: string;
@@ -285,23 +352,66 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
   subtitle,
   transitionName,
   quickAdd = false,
-  contract = false,
   isDirty = false,
   footer,
   onClose,
   children,
 }) => {
-  const [viewport, setViewport] = useState({ height: 0, bottom: 0 });
-  const dragStart = useRef<number | null>(null);
+  const [closing, setClosing] = useState(false);
+  const wasOpenRef = useRef(isOpen);
+  const [viewport, setViewport] = useState(() => {
+    const v = typeof window !== 'undefined' ? window.visualViewport : null;
+    return v
+      ? {
+          height: v.height,
+          bottom: Math.max(0, window.innerHeight - v.height - v.offsetTop),
+        }
+      : { height: 0, bottom: 0 };
+  });
+  const scrimRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLElement>(null);
+  const dragStateRef = useRef<{
+    startY: number;
+    lastY: number;
+    lastT: number;
+    velocity: number;
+    active: boolean;
+  } | null>(null);
+  const usedOrbMorphRef = useRef<{
+    orbClip: string;
+    sheetClip: string;
+  } | null>(null);
+
+  const isClosing = !isOpen && (closing || wasOpenRef.current);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    activeOpenSheetCount++;
+    if (activeOpenSheetCount === 1) {
+      syncBackgroundScale(true);
+    }
+    return () => {
+      activeOpenSheetCount = Math.max(0, activeOpenSheetCount - 1);
+      if (activeOpenSheetCount === 0) {
+        syncBackgroundScale(false);
+      }
+    };
+  }, [isOpen]);
+
   useEffect(() => {
     if (!isOpen) return;
     const update = () => {
       const v = window.visualViewport;
       if (v) {
-        setViewport({
-          height: v.height,
-          bottom: Math.max(0, window.innerHeight - v.height - v.offsetTop),
-        });
+        const nextHeight = v.height;
+        const nextBottom = Math.max(0, window.innerHeight - v.height - v.offsetTop);
+        setViewport((prev) =>
+          prev.height === nextHeight && prev.bottom === nextBottom
+            ? prev
+            : { height: nextHeight, bottom: nextBottom }
+        );
       }
     };
     update();
@@ -314,7 +424,6 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
   }, [isOpen, quickAdd]);
 
   const titleId = useId();
-  const dialogRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const [showDirtyConfirm, setShowDirtyConfirm] = useState(false);
 
@@ -359,6 +468,147 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
     }
   }, [isOpen]);
 
+  // Present and dismiss animations
+  useIsomorphicLayoutEffect(() => {
+    const dialog = dialogRef.current;
+    const scrim = scrimRef.current;
+    if (!dialog) {
+      if (!isOpen) {
+        wasOpenRef.current = false;
+        setClosing(false);
+      }
+      return;
+    }
+    ensureMotionRootAttribute(dialog);
+
+    const reduced = isReducedMotion();
+
+    if (isOpen) {
+      wasOpenRef.current = true;
+      if (closing) setClosing(false);
+      dialog.style.transform = '';
+      dialog.style.clipPath = '';
+      dialog.removeAttribute('data-dragging');
+
+      if (scrim) {
+        runInterruptibleAnimation(scrim, [{ opacity: 0 }, { opacity: 1 }], {
+          durationMs: reduced ? tweens.reduced : tweens.base,
+          easing: easings.out,
+          root: dialog,
+          willChange: 'opacity',
+        });
+      }
+
+      const orb = getCapturedOrbRect();
+      const isOrbMorphCandidate =
+        !reduced &&
+        orb !== null &&
+        (transitionName === 'planui-create' || Date.now() - orb.timestamp < 900);
+
+      if (isOrbMorphCandidate && orb) {
+        const sWidth = dialog.offsetWidth;
+        const sHeight = dialog.offsetHeight;
+        const sLeft = dialog.offsetLeft;
+        const sTop = dialog.offsetTop;
+        if (sWidth > 0 && sHeight > 0) {
+          const insetTop = Math.max(0, Math.round(orb.top - sTop));
+          const insetRight = Math.max(0, Math.round(sLeft + sWidth - (orb.left + orb.width)));
+          const insetBottom = Math.max(0, Math.round(sTop + sHeight - (orb.top + orb.height)));
+          const insetLeft = Math.max(0, Math.round(orb.left - sLeft));
+          const orbClip = `inset(${insetTop}px ${insetRight}px ${insetBottom}px ${insetLeft}px round ${Math.round(
+            orb.radius
+          )}px)`;
+          const sheetClip = 'inset(0px 0px 0px 0px round 28px)';
+          usedOrbMorphRef.current = { orbClip, sheetClip };
+          dialog.setAttribute('data-orb-morph', 'true');
+
+          animateSpringTransform(
+            dialog,
+            'translate3d(0px, 12px, 0) scale(0.96, 0.96)',
+            'translate3d(0px, 0px, 0) scale(1, 1)',
+            springs.sheet,
+            {
+              fromClipPath: orbClip,
+              toClipPath: sheetClip,
+              root: dialog,
+            }
+          );
+
+          if (bodyRef.current) {
+            runInterruptibleAnimation(
+              bodyRef.current,
+              [{ opacity: 0 }, { opacity: 1 }],
+              {
+                durationMs: tweens.fast,
+                delayMs: 80,
+                easing: easings.out,
+                root: dialog,
+                willChange: 'opacity',
+              }
+            );
+          }
+          return;
+        }
+      }
+
+      usedOrbMorphRef.current = null;
+      dialog.removeAttribute('data-orb-morph');
+      animateSpringTransform(
+        dialog,
+        'translate3d(0px, 100%, 0)',
+        'translate3d(0px, 0%, 0)',
+        springs.sheet,
+        {
+          fromOpacity: reduced ? 0 : 1,
+          toOpacity: 1,
+          root: dialog,
+        }
+      );
+    } else if (wasOpenRef.current) {
+      wasOpenRef.current = false;
+      setClosing(true);
+      if (scrim) {
+        runInterruptibleAnimation(scrim, [{ opacity: 1 }, { opacity: 0 }], {
+          durationMs: reduced ? tweens.reduced : tweens.base,
+          easing: easings.out,
+          root: dialog,
+          willChange: 'opacity',
+        });
+      }
+
+      if (usedOrbMorphRef.current && !reduced) {
+        const { orbClip, sheetClip } = usedOrbMorphRef.current;
+        animateSpringTransform(
+          dialog,
+          'translate3d(0px, 0px, 0) scale(1, 1)',
+          'translate3d(0px, 12px, 0) scale(0.96, 0.96)',
+          springs.sheet,
+          {
+            fromClipPath: sheetClip,
+            toClipPath: orbClip,
+            fromOpacity: 1,
+            toOpacity: 0,
+            root: dialog,
+            onFinish: () => setClosing(false),
+          }
+        );
+      } else {
+        animateSpringTransform(
+          dialog,
+          'translate3d(0px, 0%, 0)',
+          'translate3d(0px, 100%, 0)',
+          springs.sheet,
+          {
+            fromOpacity: 1,
+            toOpacity: reduced ? 0 : 1,
+            root: dialog,
+            onFinish: () => setClosing(false),
+          }
+        );
+      }
+    }
+  }, [isOpen, transitionName]);
+
   const requestClose = () => {
     if (isDirty) {
       setShowDirtyConfirm(true);
@@ -367,10 +617,18 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
     }
   };
 
+  useOverlayRegistration(isOpen, () => {
+    if (isDirty) {
+      setShowDirtyConfirm(false);
+    }
+    onClose();
+  });
+
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (Array.from(document.querySelectorAll('[role=dialog]')).at(-1) !== dialogRef.current) return;
+      if (Array.from(document.querySelectorAll('[role=dialog]')).at(-1) !== dialogRef.current)
+        return;
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopImmediatePropagation();
@@ -403,29 +661,105 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, isDirty, showDirtyConfirm, onClose]);
 
-  if (!isOpen) return null;
+  if (!isOpen && !isClosing) return null;
 
-  const handleSwipeEnd = (endY: number) => {
-    if (dragStart.current !== null && endY - dragStart.current > 48) {
-      requestClose();
-    }
-    dragStart.current = null;
+  const beginDrag = (clientY: number) => {
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    dragStateRef.current = {
+      startY: clientY,
+      lastY: clientY,
+      lastT: now,
+      velocity: 0,
+      active: true,
+    };
+    dialogRef.current?.setAttribute('data-dragging', 'true');
   };
+
+  const moveDrag = (clientY: number) => {
+    const state = dragStateRef.current;
+    const dialog = dialogRef.current;
+    if (!state || !state.active || !dialog) return;
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const dt = Math.max(1, now - state.lastT);
+    state.velocity = (clientY - state.lastY) / dt;
+    state.lastY = clientY;
+    state.lastT = now;
+
+    const deltaY = clientY - state.startY;
+    const offsetY = deltaY < 0 ? deltaY * 0.25 : deltaY;
+    if (!isReducedMotion()) {
+      dialog.style.willChange = 'transform';
+      dialog.style.transform = `translate3d(0px, ${Math.round(offsetY)}px, 0)`;
+    }
+    if (scrimRef.current && deltaY > 0) {
+      const h = dialog.getBoundingClientRect().height || 400;
+      const ratio = Math.min(1, deltaY / h);
+      scrimRef.current.style.opacity = String(Math.max(0.2, 1 - ratio * 0.7));
+    }
+  };
+
+  const endDrag = (clientY: number) => {
+    const state = dragStateRef.current;
+    dragStateRef.current = null;
+    const dialog = dialogRef.current;
+    if (!state || !state.active) return;
+
+    const deltaY = clientY - state.startY;
+    const velocity = state.velocity;
+    const sheetHeight = dialog?.getBoundingClientRect().height || 400;
+
+    if (dialog) {
+      dialog.removeAttribute('data-dragging');
+      dialog.style.willChange = '';
+    }
+    if (scrimRef.current) {
+      scrimRef.current.style.opacity = '';
+    }
+
+    if (velocity > 0.5 || deltaY > sheetHeight * 0.3) {
+      if (dialog) {
+        dialog.style.transform = '';
+      }
+      requestClose();
+    } else if (dialog) {
+      const fromOffset = Math.round(deltaY < 0 ? deltaY * 0.25 : deltaY);
+      dialog.style.transform = '';
+      if (Math.abs(fromOffset) > 1) {
+        animateSpringTransform(
+          dialog,
+          `translate3d(0px, ${fromOffset}px, 0)`,
+          'translate3d(0px, 0px, 0)',
+          springs.sheet,
+          { root: dialog }
+        );
+      }
+    }
+  };
+
+  const isKeyboardOpen = viewport.bottom > 40;
+  const sheetBottomOffset = isKeyboardOpen
+    ? `${viewport.bottom}px`
+    : 'calc(var(--dock-height, 118px) + env(safe-area-inset-bottom, 0px) + 8px)';
 
   const modalContent = (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+      ref={scrimRef}
+      data-ui="sheet-scrim"
+      data-closing={!isOpen ? 'true' : undefined}
+      className="fixed inset-x-0 top-0 z-50 flex items-end justify-center px-3"
       style={{
-        backgroundColor: 'rgba(0, 0, 0, 0.35)',
-        bottom: viewport.bottom,
+        backgroundColor: 'rgba(16, 16, 20, 0.24)',
+        bottom: isKeyboardOpen ? `${viewport.bottom}px` : 0,
+        paddingBottom: isKeyboardOpen ? 0 : sheetBottomOffset,
+        pointerEvents: isOpen ? undefined : 'none',
       }}
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget) {
+        if (isOpen && e.target === e.currentTarget) {
           requestClose();
         }
       }}
       onClick={(e) => {
-        if (e.target === e.currentTarget) {
+        if (isOpen && e.target === e.currentTarget) {
           requestClose();
         }
       }}
@@ -434,72 +768,131 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
         ref={dialogRef}
         data-quick-add={quickAdd || undefined}
         data-ui="sheet"
-        role="dialog"
-        aria-modal="true"
+        data-motion="idle"
+        data-closing={!isOpen ? 'true' : undefined}
+        role={isOpen ? 'dialog' : undefined}
+        aria-modal={isOpen ? 'true' : undefined}
+        aria-hidden={!isOpen ? 'true' : undefined}
         aria-labelledby={titleId}
         tabIndex={-1}
-        className="planui-floating-capsule w-full sm:max-w-[540px] max-h-[92dvh] flex flex-col rounded-t-3xl sm:rounded-3xl overflow-hidden planui-transition-modal"
+        className="ui-sheet planui-floating-capsule w-full sm:max-w-[540px] max-h-[82dvh] flex flex-col rounded-3xl overflow-hidden planui-transition-modal"
         style={{
           viewTransitionName: transitionName,
-          maxHeight: viewport.height ? viewport.height * 0.92 : undefined,
-          backgroundColor: 'var(--sheet-bg)',
-          border: '1px solid var(--border-strong)',
+          maxHeight: viewport.height
+            ? isKeyboardOpen
+              ? viewport.height - 16
+              : Math.max(260, viewport.height - 142)
+            : undefined,
+          backgroundColor: 'var(--glass-sheet-bg)',
+          border: '1px solid var(--glass-border)',
           boxShadow: 'var(--glass-shadow)',
+          pointerEvents: isOpen ? undefined : 'none',
         }}
       >
         <div
           className="quick-grabber"
-          onTouchStart={(e) => {
-            dragStart.current = e.touches[0].clientY;
-          }}
-          onTouchEnd={(e) => handleSwipeEnd(e.changedTouches[0].clientY)}
+          onTouchStart={(e) => beginDrag(e.touches[0].clientY)}
+          onTouchMove={(e) => moveDrag(e.touches[0].clientY)}
+          onTouchEnd={(e) => endDrag(e.changedTouches[0].clientY)}
           onPointerDown={(e) => {
-            dragStart.current = e.clientY;
-            e.currentTarget.setPointerCapture(e.pointerId);
+            beginDrag(e.clientY);
+            e.currentTarget.setPointerCapture?.(e.pointerId);
           }}
-          onPointerUp={(e) => handleSwipeEnd(e.clientY)}
+          onPointerMove={(e) => moveDrag(e.clientY)}
+          onPointerUp={(e) => endDrag(e.clientY)}
+          onPointerCancel={(e) => endDrag(e.clientY)}
         >
           <i />
         </div>
         <header
-          className="flex items-start justify-between gap-3 px-5 py-4 border-b shrink-0"
+          ref={headerRef}
+          className="ui-sheet-header flex items-center justify-between gap-3 px-5 py-3.5 border-b shrink-0"
           style={{ borderColor: 'var(--border-subtle)' }}
           onTouchStart={(e) => {
-            dragStart.current = e.touches[0].clientY;
+            if ((e.target as HTMLElement).closest('button')) return;
+            beginDrag(e.touches[0].clientY);
           }}
-          onTouchEnd={(e) => handleSwipeEnd(e.changedTouches[0].clientY)}
+          onTouchMove={(e) => moveDrag(e.touches[0].clientY)}
+          onTouchEnd={(e) => endDrag(e.changedTouches[0].clientY)}
+          onPointerDown={(e) => {
+            if ((e.target as HTMLElement).closest('button')) return;
+            beginDrag(e.clientY);
+            e.currentTarget.setPointerCapture?.(e.pointerId);
+          }}
+          onPointerMove={(e) => moveDrag(e.clientY)}
+          onPointerUp={(e) => endDrag(e.clientY)}
+          onPointerCancel={(e) => endDrag(e.clientY)}
         >
-          <div>
+          <div className="min-w-0 flex-1">
             <h2
               id={titleId}
-              className="text-[1.1875rem] font-semibold m-0 leading-snug"
+              className="text-[1.1875rem] font-semibold m-0 leading-snug truncate"
               style={{ color: 'var(--text-primary)' }}
             >
               {title}
             </h2>
             {subtitle && (
               <p
-                className="text-[0.875rem] m-0 mt-0.5"
+                className="text-[0.875rem] m-0 mt-0.5 truncate"
                 style={{ color: 'var(--text-secondary)' }}
               >
                 {subtitle}
               </p>
             )}
           </div>
-          <Button
-            variant="secondary"
-            size="icon"
+          <button
+            type="button"
             onClick={requestClose}
             aria-label={UK_STRINGS.app.closeButton}
             data-testid="modal-close-button"
+            className="ui-round ui-pressable planui-floating-capsule shrink-0"
           >
             <X className="w-4 h-4" aria-hidden="true" />
-            
-          </Button>
+          </button>
         </header>
 
-        <div className="ui-sheet-body p-5 overflow-y-auto space-y-4">{children}</div>
-        {footer&&<footer className="ui-sheet-footer">{footer}</footer>}
+        <div
+          ref={bodyRef}
+          className="ui-sheet-body p-5 overflow-y-auto space-y-4"
+          onTouchStart={(e) => {
+            if ((bodyRef.current?.scrollTop ?? 0) <= 0) {
+              dragStateRef.current = {
+                startY: e.touches[0].clientY,
+                lastY: e.touches[0].clientY,
+                lastT: typeof performance !== 'undefined' ? performance.now() : Date.now(),
+                velocity: 0,
+                active: false,
+              };
+            }
+          }}
+          onTouchMove={(e) => {
+            const state = dragStateRef.current;
+            if (!state) return;
+            const dy = e.touches[0].clientY - state.startY;
+            if (!state.active) {
+              if (dy > 6 && (bodyRef.current?.scrollTop ?? 0) <= 0) {
+                state.active = true;
+                dialogRef.current?.setAttribute('data-dragging', 'true');
+              } else if (dy < -4 || (bodyRef.current?.scrollTop ?? 0) > 0) {
+                dragStateRef.current = null;
+                return;
+              }
+            }
+            if (state.active) {
+              moveDrag(e.touches[0].clientY);
+            }
+          }}
+          onTouchEnd={(e) => {
+            if (dragStateRef.current?.active) {
+              endDrag(e.changedTouches[0].clientY);
+            } else {
+              dragStateRef.current = null;
+            }
+          }}
+        >
+          {children}
+        </div>
+        {footer && <footer className="ui-sheet-footer">{footer}</footer>}
 
         {showDirtyConfirm && (
           <div

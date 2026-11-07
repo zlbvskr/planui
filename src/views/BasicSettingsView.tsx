@@ -19,6 +19,8 @@ import { PwaLifecycleState } from '../pwa/pwaController';
 import { PwaInstallAndOfflineView } from '../components/pwa/PwaStatusAndInstallCard';
 import {
   applyThemeAndAccessibilityToDocument,
+  resolveTextScaleValue,
+  TEXT_SCALE_STEPS,
 } from '../state/shellStore';
 import {
   deleteRecoverySnapshotTransactionally,
@@ -34,6 +36,7 @@ import {
 import { PlanuiRepositories } from '../storage/repositories';
 import {
   Disclosure,
+  PillRow,
   Row,
   Section,
   Segmented,
@@ -303,12 +306,12 @@ export const BasicSettingsView: React.FC<BasicSettingsViewProps> = ({
     await persistPatch({ theme });
   };
 
-  const handleTextScaleChange = async (scale: 'standard' | 'larger' | 'largest') => {
-    const scaleNumber = scale === 'largest' ? 1.25 : scale === 'larger' ? 1.12 : 1;
+  const handleTextScaleChange = async (scaleStr: string) => {
+    const scaleNumber = resolveTextScaleValue(Number(scaleStr));
     if (typeof document !== 'undefined') {
       document.documentElement.style.setProperty('--text-scale', String(scaleNumber));
     }
-    await persistPatch({ textScale: scale });
+    await persistPatch({ textScale: scaleNumber });
   };
 
   const handleAccessibilityChange = async (
@@ -316,26 +319,6 @@ export const BasicSettingsView: React.FC<BasicSettingsViewProps> = ({
     value: boolean
   ) => {
     await persistPatch({ [key]: value });
-  };
-
-  const handleModuleToggle = async (
-    key: 'habitsEnabled' | 'stateCheckInsEnabled' | 'desiredLifeEnabled' | 'wishlistEnabled',
-    enabled: boolean
-  ) => {
-    const currentModules = settings.modules ?? {
-      habitsEnabled: false,
-      stateCheckInsEnabled: false,
-      desiredLifeEnabled: false,
-      wishlistEnabled: false,
-      userConfigured: true,
-    };
-    await persistPatch({
-      modules: {
-        ...currentModules,
-        [key]: enabled,
-        userConfigured: true,
-      },
-    });
   };
 
   const handleTimeZoneModeChange = async (mode: 'device' | 'manual') => {
@@ -607,42 +590,7 @@ export const BasicSettingsView: React.FC<BasicSettingsViewProps> = ({
         data-testid="import-backup-file-input"
       />
 
-      {/* 1. РОЗДІЛИ */}
-      <div className="space-y-2" data-testid="optional-modules-settings">
-        <Section title="Розділи">
-          <Row
-            title="Звички"
-            secondary="Регулярні дії без жорстких слотів"
-            trailing={
-              <Toggle
-                label="Звички"
-                checked={settings.modules?.habitsEnabled ?? false}
-                onChange={(v) => void handleModuleToggle('habitsEnabled', v)}
-                disabled={isSavingSettings}
-                testId="toggle-module-habits"
-              />
-            }
-          />
-          <Row
-            title="Список бажань"
-            secondary="Бажані речі та ідеї без бюджетів"
-            trailing={
-              <Toggle
-                label="Список бажань"
-                checked={settings.modules?.wishlistEnabled ?? false}
-                onChange={(v) => void handleModuleToggle('wishlistEnabled', v)}
-                disabled={isSavingSettings}
-                testId="toggle-module-wishlist"
-              />
-            }
-          />
-        </Section>
-        <p className="text-xs text-[var(--text-secondary)] px-1">
-          Вимкнення лише ховає розділ, дані зберігаються
-        </p>
-      </div>
-
-      {/* 2. ВИГЛЯД */}
+      {/* 1. ВИГЛЯД */}
       <Section title="Вигляд">
         <div className="p-3">
           <Segmented<ThemePreference>
@@ -656,22 +604,19 @@ export const BasicSettingsView: React.FC<BasicSettingsViewProps> = ({
             ]}
           />
         </div>
-        <div className="p-3 border-t border-[var(--border-subtle)]">
-          <Segmented<'standard' | 'larger' | 'largest'>
+        <div className="p-3 border-t border-[var(--border-subtle)] space-y-2">
+          <span className="block text-xs font-semibold text-[var(--text-secondary)] px-1">
+            Розмір тексту
+          </span>
+          <PillRow<string>
             label="Розмір тексту"
-            value={
-              settings.textScale === 'largest'
-                ? 'largest'
-                : settings.textScale === 'larger'
-                ? 'larger'
-                : 'standard'
-            }
+            value={String(resolveTextScaleValue(settings.textScale))}
             onChange={(scale) => void handleTextScaleChange(scale)}
-            options={[
-              { value: 'standard', label: 'Стандартний' },
-              { value: 'larger', label: 'Більший' },
-              { value: 'largest', label: 'Найбільший' },
-            ]}
+            options={TEXT_SCALE_STEPS.map((step) => ({
+              value: String(step),
+              label: `${Math.round(step * 100)}%`,
+              testId: `text-scale-option-${step}`,
+            }))}
           />
         </div>
         <Row
@@ -792,21 +737,19 @@ export const BasicSettingsView: React.FC<BasicSettingsViewProps> = ({
           testId="open-storage-sheet-button"
         />
 
-        {settings.modules?.wishlistEnabled !== false && (
-          <SelectField
-            label="Валюта бажань"
-            value={settings.preferredWishlistCurrency ?? ''}
-            onChange={(e) => void handlePreferredCurrencyChange(e.target.value)}
-            data-testid="settings-preferred-currency-select"
-            options={[
-              { value: '', label: 'Без валюти' },
-              ...Object.values(SUPPORTED_CURRENCIES).map((spec) => ({
-                value: spec.code,
-                label: spec.labelUk,
-              })),
-            ]}
-          />
-        )}
+        <SelectField
+          label="Валюта бажань"
+          value={settings.preferredWishlistCurrency ?? ''}
+          onChange={(e) => void handlePreferredCurrencyChange(e.target.value)}
+          data-testid="settings-preferred-currency-select"
+          options={[
+            { value: '', label: 'Без валюти' },
+            ...Object.values(SUPPORTED_CURRENCIES).map((spec) => ({
+              value: spec.code,
+              label: spec.labelUk,
+            })),
+          ]}
+        />
 
         <Disclosure
           title="Графік роботи та зміни"
@@ -815,23 +758,19 @@ export const BasicSettingsView: React.FC<BasicSettingsViewProps> = ({
           testId="settings-open-roster"
         />
 
-        {settings.modules?.habitsEnabled !== false && (
-          <Disclosure
-            title="Керування звичками"
-            secondary="Правила, пауза та архів"
-            onClick={onOpenHabits}
-            testId="settings-open-habits"
-          />
-        )}
+        <Disclosure
+          title="Керування звичками"
+          secondary="Правила, пауза та архів"
+          onClick={onOpenHabits}
+          testId="settings-open-habits"
+        />
 
-        {settings.modules?.wishlistEnabled !== false && (
-          <Disclosure
-            title="Категорії списку бажань"
-            secondary="Власні категорії бажань"
-            onClick={onOpenWishlistCategories}
-            testId="settings-open-wishlist-categories"
-          />
-        )}
+        <Disclosure
+          title="Категорії списку бажань"
+          secondary="Власні категорії бажань"
+          onClick={onOpenWishlistCategories}
+          testId="settings-open-wishlist-categories"
+        />
 
         <Row
           title="Версія застосунку"

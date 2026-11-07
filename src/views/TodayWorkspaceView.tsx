@@ -138,7 +138,7 @@ export function TodayWorkspaceView({
   onNavigateToHabits,
   onDataChanged,
 }: TodayWorkspaceViewProps) {
-  const effectiveMode = mode === "habits" && !habitsEnabled ? "day" : mode;
+  const effectiveMode = mode;
   const rootRef = useRef<HTMLDivElement>(null);
   const [viewDate, setViewDate] = useState(selectedDate);
   const actionDate=effectiveMode==='day'?viewDate:selectedDate;
@@ -286,7 +286,7 @@ export function TodayWorkspaceView({
       </div>
 
       {/* Habit band: horizontal row of habit chips above everything in Day and Tasks modes */}
-      {effectiveMode !== "habits" && habitsEnabled && (
+      {effectiveMode !== "habits" && (
         <HabitBand
           habits={habits}
           habitEntries={habitEntries}
@@ -296,7 +296,6 @@ export function TodayWorkspaceView({
           projects={projects}
           repositories={repositories}
           onChanged={() => onDataChanged()}
-          habitsEnabled={habitsEnabled}
         />
       )}
 

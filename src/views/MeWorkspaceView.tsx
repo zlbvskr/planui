@@ -81,22 +81,9 @@ import {
   Toggle,
 } from '../ui';
 import { BasicSettingsView } from './BasicSettingsView';
-import { areaColor, itemColor, resolveArea } from '../domain/modelHelpers';
+import { areaColor, getAreaIcon, itemColor, resolveArea } from '../domain/modelHelpers';
 import { buildLifeReview, projectLifeAreaLinks, ReviewAnswerDraft } from '../domain/lifeAreas';
 import { addDaysToLocalDate } from '../domain/temporal';
-
-const AREA_ICONS = [
-  'heart-pulse',
-  'brain',
-  'users',
-  'briefcase',
-  'wallet',
-  'home',
-  'book-open',
-  'sun',
-  'sparkles',
-  'compass',
-] as const;
 
 const KIND_UK: Record<string, string> = {
   inspiration: 'Матеріал',
@@ -240,19 +227,12 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
   const [reviewDrafts, setReviewDrafts] = useState<Record<string, ReviewAnswerDraft>>({});
   const [activeWishFolderId, setActiveWishFolderId] = useState<string | null>(null);
 
-  // Guard disabled module subviews so turning a module off hides its screen too
   const effectiveSubView: MeSubViewMode = useMemo(() => {
     if (subView === 'inspiration' || subView === 'life_areas') {
       return 'overview';
     }
-    if (
-      subView === 'wishlist' &&
-      settings.modules?.wishlistEnabled === false
-    ) {
-      return 'overview';
-    }
     return subView;
-  }, [subView, settings.modules]);
+  }, [subView]);
 
   const modelContext = useMemo(
     () => ({
@@ -273,7 +253,6 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
   const latestAssessmentAnswer = useCallback(
     (id: string) =>
       [...snapshot.lifeAreaAssessments]
-        .filter((r) => r.scale?.min === 0)
         .sort((a, b) => b.recordedAt.localeCompare(a.recordedAt))
         .flatMap((r) => r.answers)
         .find((a) => a.questionId === id),
@@ -1190,8 +1169,21 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
             </button>
           }
         />
-      ) : (
+      ) : effectiveSubView === 'wishlist' && activeWishFolderId ? (
         <SubHeader
+          title={
+            snapshot.folders.find((f) => f.id === activeWishFolderId)?.name ??
+            'Папка'
+          }
+          onBack={() => {
+            const currentFolder = snapshot.folders.find(
+              (f) => f.id === activeWishFolderId
+            );
+            setActiveWishFolderId(currentFolder?.parentId ?? null);
+          }}
+        />
+      ) : (
+        <PageHeader
           title={
             effectiveSubView === 'records'
               ? 'Статистика'
@@ -1199,7 +1191,6 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
               ? 'Список бажань'
               : 'Налаштування'
           }
-          onBack={() => handleSubViewChange('overview')}
           actions={
             effectiveSubView === 'wishlist' ? (
               <ActionMenu
@@ -1230,7 +1221,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
               const answer = latestAssessmentAnswer(area.id);
               const rating = area.rating ?? answer?.score ?? null;
               const color = areaColor(rating);
-              const iconName = AREA_ICONS[index % AREA_ICONS.length];
+              const iconName = getAreaIcon(area, index);
               const isFocus = Boolean(area.focus || answer?.attentionNow);
 
               return (
@@ -1279,7 +1270,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
       {/* SUBVIEW: RECORDS ("Статистика") */}
       {effectiveSubView === 'records' && (
         <div data-testid="me-subview-records" data-ui="content-start" className="space-y-4">
-          <EmptyState text="Статистика з'явиться пізніше" />
+          <EmptyState text="Статистика з'явиться пізніше" icon="bar-chart" />
         </div>
       )}
 
@@ -1383,7 +1374,8 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
             <Section>
               <EmptyState
                 text="Список бажань порожній"
-                action="Додати"
+                icon="gift"
+                action="Додати бажання"
                 actionTestId="empty-add-wish-button"
                 onAction={openNewWishModal}
               />
@@ -2143,23 +2135,34 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
         isOpen={selectedArea !== null}
         onClose={() => setSelectedAreaId(null)}
         title={selectedArea?.questionTextUk ?? 'Сфера життя'}
+        footer={
+          selectedArea ? (
+            <button
+              type="button"
+              onClick={() => void handleSaveSelectedArea()}
+              className="ui-primary w-full font-semibold"
+            >
+              Зберегти
+            </button>
+          ) : undefined
+        }
       >
         {selectedArea && (
           <div className="space-y-4">
-            {/* Slider 0-10 (unset state; the value floats while dragging) */}
+            {/* Slider 1-10 (unset state; the value floats while dragging) */}
             <div className="p-3.5 rounded-2xl bg-[var(--bg-elevated)] border border-[var(--border-subtle)] space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-semibold text-[var(--text-primary)]">
                   Рівень задоволеності
                 </span>
                 <span className="text-sm font-bold tabular-nums text-[var(--text-secondary)]">
-                  {scoreDraft !== null ? `${scoreDraft}/10` : 'Не визначено'}
+                  {scoreDraft !== null && scoreDraft >= 1 ? `${scoreDraft}/10` : 'Не визначено'}
                 </span>
               </div>
               <Slider
                 label="Рівень задоволеності"
                 value={scoreDraft}
-                min={0}
+                min={1}
                 max={10}
                 step={1}
                 onChange={(v) => setScoreDraft(v)}
@@ -2227,9 +2230,9 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
                             l.kind === 'project'
                               ? 'folder'
                               : l.kind === 'goal'
-                              ? 'check'
+                              ? 'target'
                               : l.kind === 'habit'
-                              ? 'sparkles'
+                              ? 'repeat'
                               : 'check'
                           }
                           size={12}
@@ -2278,17 +2281,6 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
                 <Icon name="link" size={16} /> Пов'язати запис
               </button>
             </div>
-
-            {/* Sticky: "Зберегти" */}
-            <div className="sticky bottom-0 pt-3 bg-gradient-to-t from-[var(--bg-surface)] via-[var(--bg-surface)] to-transparent pb-1">
-              <button
-                type="button"
-                onClick={() => void handleSaveSelectedArea()}
-                className="ui-primary w-full font-semibold"
-              >
-                Зберегти
-              </button>
-            </div>
           </div>
         )}
       </Sheet>
@@ -2335,7 +2327,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
                   key={h.id}
                   leading={
                     <Orb color="var(--color-neutral-slate)" size={24}>
-                      <Icon name="sparkles" size={12} color="rgba(255, 255, 255, 0.95)" />
+                      <Icon name="repeat" size={12} color="rgba(255, 255, 255, 0.95)" />
                     </Orb>
                   }
                   title={h.name}
@@ -2411,6 +2403,37 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
           setReviewDrafts({});
         }}
         title="Огляд сфер життя"
+        footer={
+          currentReviewArea ? (
+            <div className="flex items-center justify-between w-full gap-3">
+              <button
+                type="button"
+                disabled={reviewStep === 0}
+                onClick={() => setReviewStep((s) => Math.max(0, s - 1))}
+                className="ui-pill px-4 py-2 text-xs font-medium disabled:opacity-30 cursor-pointer"
+              >
+                Назад
+              </button>
+              {reviewStep < activeLifeAreas.length - 1 ? (
+                <button
+                  type="button"
+                  onClick={() => setReviewStep((s) => s + 1)}
+                  className="ui-primary text-xs px-5 py-2 cursor-pointer"
+                >
+                  Далі
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void handleSavePeriodicReview()}
+                  className="ui-primary text-xs px-5 py-2 font-semibold cursor-pointer"
+                >
+                  Зберегти огляд
+                </button>
+              )}
+            </div>
+          ) : undefined
+        }
       >
         {currentReviewArea && (
           <div className="space-y-4">
@@ -2460,10 +2483,10 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
             <div className="p-3.5 rounded-2xl bg-[var(--bg-elevated)] border border-[var(--border-subtle)] space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-semibold text-[var(--text-primary)]">
-                  Задоволеність (0–10)
+                  Задоволеність (1–10)
                 </span>
                 <span className="text-sm font-bold tabular-nums text-[var(--text-secondary)]">
-                  {currentReviewAnswer.score !== null
+                  {currentReviewAnswer.score !== null && currentReviewAnswer.score >= 1
                     ? `${currentReviewAnswer.score}/10`
                     : 'Не визначено'}
                 </span>
@@ -2471,7 +2494,7 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
               <Slider
                 label="Задоволеність"
                 value={currentReviewAnswer.score}
-                min={0}
+                min={1}
                 max={10}
                 step={1}
                 onChange={(v) =>
@@ -2537,35 +2560,6 @@ export const MeWorkspaceView: React.FC<MeWorkspaceViewProps> = ({
                   );
                 })}
               </div>
-            </div>
-
-            {/* Navigation & Submit footer */}
-            <div className="flex items-center justify-between pt-3 border-t border-[var(--border-subtle)]">
-              <button
-                type="button"
-                disabled={reviewStep === 0}
-                onClick={() => setReviewStep((s) => Math.max(0, s - 1))}
-                className="ui-pill px-4 py-2 text-xs font-medium disabled:opacity-30 cursor-pointer"
-              >
-                Назад
-              </button>
-              {reviewStep < activeLifeAreas.length - 1 ? (
-                <button
-                  type="button"
-                  onClick={() => setReviewStep((s) => s + 1)}
-                  className="ui-primary text-xs px-5 py-2 cursor-pointer"
-                >
-                  Далі
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => void handleSavePeriodicReview()}
-                  className="ui-primary text-xs px-5 py-2 font-semibold cursor-pointer"
-                >
-                  Зберегти огляд
-                </button>
-              )}
             </div>
           </div>
         )}

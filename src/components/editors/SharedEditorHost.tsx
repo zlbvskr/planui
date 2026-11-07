@@ -266,12 +266,8 @@ type InlineChipKey =
 
 function getContextTypes(
   activeDestination: AnyDestinationId,
-  contexts: DestinationContextMap,
-  enabledModules?: OptionalModulesSettings
+  contexts: DestinationContextMap
 ): ImplementedCreationActionKind[] {
-  const habitsOn = enabledModules?.habitsEnabled !== false;
-  const wishlistOn = enabledModules?.wishlistEnabled !== false;
-
   if (activeDestination === 'calendar') {
     return ['event', 'shift', 'task'];
   }
@@ -287,26 +283,32 @@ function getContextTypes(
 
   if (activeDestination === 'me') {
     if (contexts.me.subView === 'wishlist') {
-      return wishlistOn ? ['wish', 'folder'] : ['folder'];
+      return ['wish', 'folder'];
     }
-    const list: ImplementedCreationActionKind[] = ['task'];
-    if (habitsOn) list.push('habit');
-    if (wishlistOn) list.push('wish');
-    return list;
+    return ['task', 'habit', 'wish'];
   }
 
-  // Default: 'today' (Сьогодні: День -> Завдання, Завдання -> Завдання, Звички -> Звичка)
-  const todayMode = contexts.today.mode ?? 'day';
-  if (todayMode === 'habits' && habitsOn) {
-    return ['habit', 'task', 'event', 'shift'];
+  // Default: 'today' — fixed pill order; activeType preselects 'habit' in habits mode
+  return ['task', 'event', 'shift', 'habit'];
+}
+
+function getDefaultContextType(
+  activeDestination: AnyDestinationId,
+  contexts: DestinationContextMap,
+  availableTypes: readonly ImplementedCreationActionKind[],
+  initialActionKind?: ImplementedCreationActionKind
+): ImplementedCreationActionKind {
+  if (initialActionKind && availableTypes.includes(initialActionKind)) {
+    return initialActionKind;
   }
-  const todayTypes: ImplementedCreationActionKind[] = [
-    'task',
-    'event',
-    'shift',
-  ];
-  if (habitsOn) todayTypes.push('habit');
-  return todayTypes;
+  if (
+    (activeDestination === 'today' || activeDestination === 'habits') &&
+    contexts.today.mode === 'habits' &&
+    availableTypes.includes('habit')
+  ) {
+    return 'habit';
+  }
+  return availableTypes[0] ?? 'task';
 }
 
 function getFolderKindForType(
@@ -368,15 +370,18 @@ export const QuickAddSheet: React.FC<SharedEditorHostProps> = ({
   );
 
   const availableTypes = useMemo(
-    () => getContextTypes(activeDestination, contexts, enabledModules),
-    [activeDestination, contexts, enabledModules]
+    () => getContextTypes(activeDestination, contexts),
+    [activeDestination, contexts]
   );
 
   const [activeType, setActiveType] = useState<ImplementedCreationActionKind>(
     () =>
-      initialActionKind && availableTypes.includes(initialActionKind)
-        ? initialActionKind
-        : availableTypes[0] ?? 'task'
+      getDefaultContextType(
+        activeDestination,
+        contexts,
+        availableTypes,
+        initialActionKind
+      )
   );
 
   const [title, setTitle] = useState('');
@@ -460,10 +465,12 @@ export const QuickAddSheet: React.FC<SharedEditorHostProps> = ({
 
   useEffect(() => {
     if (!isOpen) return;
-    const defaultType =
-      initialActionKind && availableTypes.includes(initialActionKind)
-        ? initialActionKind
-        : availableTypes[0] ?? 'task';
+    const defaultType = getDefaultContextType(
+      activeDestination,
+      contexts,
+      availableTypes,
+      initialActionKind
+    );
     setActiveType(defaultType);
     setTitle('');
     setOpenChip(null);
@@ -500,6 +507,8 @@ export const QuickAddSheet: React.FC<SharedEditorHostProps> = ({
     }
   }, [
     isOpen,
+    activeDestination,
+    contexts,
     initialActionKind,
     availableTypes,
     initialContext.folderId,
@@ -1235,7 +1244,7 @@ export const QuickAddSheet: React.FC<SharedEditorHostProps> = ({
       isOpen={isOpen}
       onClose={onClose}
       title={TYPE_LABELS_UK[activeType] ?? 'Створити'}
-      data-quick-add="true"
+      quickAdd
       footer={
         activeType === 'shift' ? (
           <Button
@@ -1253,7 +1262,7 @@ export const QuickAddSheet: React.FC<SharedEditorHostProps> = ({
               aria-label="Додати"
               data-testid="shared-editor-submit-button"
               onClick={() => void handleSaveItem()}
-              className="w-12 h-12 rounded-full bg-[var(--ink)] text-[var(--on-ink)] inline-grid place-items-center shadow-md disabled:opacity-40 cursor-pointer"
+              className="quick-add-submit-btn w-12 h-12 rounded-full bg-[var(--ink)] text-[var(--on-ink)] inline-grid place-items-center shadow-md disabled:opacity-25 cursor-pointer"
             >
               <Icon name="arrow-up" size={20} />
             </button>
@@ -1264,9 +1273,10 @@ export const QuickAddSheet: React.FC<SharedEditorHostProps> = ({
       <div className="stage2-quick space-y-3" data-testid="quick-add-sheet">
         {error && <InlineBanner tone="error">{error}</InlineBanner>}
 
-        {/* Big borderless 24px title field (auto-focus; Enter saves title-only item) */}
+        {/* Big borderless 24px/600 title field (auto-focus; Enter saves title-only item; 1px hairline below) */}
         {activeType !== 'shift' && (
           <form
+            className="quick-add-title-form"
             onSubmit={(e) => {
               e.preventDefault();
               void handleSaveItem();
@@ -1275,6 +1285,9 @@ export const QuickAddSheet: React.FC<SharedEditorHostProps> = ({
             <input
               ref={titleInputRef}
               type="text"
+              lang="uk"
+              autoCapitalize="sentences"
+              enterKeyHint="done"
               autoFocus
               aria-label="Назва"
               value={title}
@@ -1287,14 +1300,14 @@ export const QuickAddSheet: React.FC<SharedEditorHostProps> = ({
               }}
               placeholder={TYPE_PLACEHOLDERS_UK[activeType] ?? 'Назва…'}
               data-testid="create-task-title-input"
-              className="w-full border-0 bg-transparent text-[24px] leading-tight font-bold text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none py-1"
+              className="quick-add-title-input"
             />
           </form>
         )}
 
-        {/* ONE scrolling row of type pills (selected = ink) */}
+        {/* ONE scrolling row of type pills (selected = ink, fixed order, edge-to-edge) */}
         <div
-          className="ui-pill-row"
+          className="ui-pill-row quick-add-pill-row"
           role="radiogroup"
           aria-label="Тип запису"
           data-testid="quick-add-type-pills"
@@ -1319,7 +1332,7 @@ export const QuickAddSheet: React.FC<SharedEditorHostProps> = ({
           <div className="space-y-3" data-testid="quick-add-shift-stamp-flow">
             {/* Template pills (Денна 08:00-20:00, Нічна 20:00-08:00, + Нова, Вихідний, Сфера) */}
             <div
-              className="ui-pill-row"
+              className="ui-pill-row quick-add-pill-row"
               role="group"
               aria-label="Шаблони змін"
             >
@@ -1613,7 +1626,7 @@ export const QuickAddSheet: React.FC<SharedEditorHostProps> = ({
           <>
             {/* ONE scrolling row of option chips that show their values */}
             <div
-              className="ui-pill-row"
+              className="ui-pill-row quick-add-pill-row"
               role="group"
               aria-label="Параметри запису"
               data-testid="quick-add-option-chips"

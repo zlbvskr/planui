@@ -560,7 +560,7 @@ export interface PlanuiSettings {
   preferredWishlistCurrency: SupportedCurrencyCode | null;
   modules?: OptionalModulesSettings;
   myLife?: string | null;
-  textScale?: 'standard' | 'larger' | 'largest' | number | null;
+  textScale?: 'smallest' | 'smaller' | 'standard' | 'larger' | 'largest' | number | null;
   dbGeneration: number;
   appVersion: string;
   dbSchemaVersion: number;

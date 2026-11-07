@@ -401,12 +401,23 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
   }, [isOpen]);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || typeof window === 'undefined' || typeof document === 'undefined') return;
+    const root = document.documentElement;
     const update = () => {
       const v = window.visualViewport;
       if (v) {
-        const nextHeight = v.height;
-        const nextBottom = Math.max(0, window.innerHeight - v.height - v.offsetTop);
+        const nextHeight = Math.round(v.height);
+        const nextBottom = Math.max(0, Math.round(window.innerHeight - v.height - v.offsetTop));
+        const kbOpen = nextBottom > 60;
+        if (kbOpen) {
+          root.setAttribute('data-keyboard-open', 'true');
+          root.style.setProperty('--kb-offset', `${nextBottom}px`);
+          root.style.setProperty('--vv-height', `${nextHeight}px`);
+        } else {
+          root.removeAttribute('data-keyboard-open');
+          root.style.setProperty('--kb-offset', '0px');
+          root.style.removeProperty('--vv-height');
+        }
         setViewport((prev) =>
           prev.height === nextHeight && prev.bottom === nextBottom
             ? prev
@@ -420,6 +431,11 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
     return () => {
       window.visualViewport?.removeEventListener('resize', update);
       window.visualViewport?.removeEventListener('scroll', update);
+      if (activeOpenSheetCount === 0) {
+        root.removeAttribute('data-keyboard-open');
+        root.style.setProperty('--kb-offset', '0px');
+        root.style.removeProperty('--vv-height');
+      }
     };
   }, [isOpen, quickAdd]);
 
@@ -518,7 +534,7 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
           const orbClip = `inset(${insetTop}px ${insetRight}px ${insetBottom}px ${insetLeft}px round ${Math.round(
             orb.radius
           )}px)`;
-          const sheetClip = 'inset(0px 0px 0px 0px round 28px)';
+          const sheetClip = 'inset(0px 0px 0px 0px round 32px)';
           usedOrbMorphRef.current = { orbClip, sheetClip };
           dialog.setAttribute('data-orb-morph', 'true');
 
@@ -736,21 +752,16 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
     }
   };
 
-  const isKeyboardOpen = viewport.bottom > 40;
-  const sheetBottomOffset = isKeyboardOpen
-    ? `${viewport.bottom}px`
-    : 'calc(var(--dock-height, 118px) + env(safe-area-inset-bottom, 0px) + 8px)';
+  const isKeyboardOpen = viewport.bottom > 60;
 
   const modalContent = (
     <div
       ref={scrimRef}
       data-ui="sheet-scrim"
+      data-keyboard-open={isKeyboardOpen ? 'true' : undefined}
       data-closing={!isOpen ? 'true' : undefined}
-      className="fixed inset-x-0 top-0 z-50 flex items-end justify-center px-3"
+      className="ui-sheet-scrim"
       style={{
-        backgroundColor: 'rgba(16, 16, 20, 0.24)',
-        bottom: isKeyboardOpen ? `${viewport.bottom}px` : 0,
-        paddingBottom: isKeyboardOpen ? 0 : sheetBottomOffset,
         pointerEvents: isOpen ? undefined : 'none',
       }}
       onMouseDown={(e) => {
@@ -766,26 +777,20 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
     >
       <div
         ref={dialogRef}
-        data-quick-add={quickAdd || undefined}
+        data-quick-add={quickAdd ? 'true' : undefined}
+        data-keyboard-open={isKeyboardOpen ? 'true' : undefined}
         data-ui="sheet"
         data-motion="idle"
         data-closing={!isOpen ? 'true' : undefined}
         role={isOpen ? 'dialog' : undefined}
         aria-modal={isOpen ? 'true' : undefined}
         aria-hidden={!isOpen ? 'true' : undefined}
-        aria-labelledby={titleId}
+        aria-labelledby={quickAdd ? undefined : titleId}
+        aria-label={quickAdd ? title : undefined}
         tabIndex={-1}
-        className="ui-sheet planui-floating-capsule w-full sm:max-w-[540px] max-h-[82dvh] flex flex-col rounded-3xl overflow-hidden planui-transition-modal"
+        className="ui-sheet planui-floating-capsule planui-transition-modal"
         style={{
           viewTransitionName: transitionName,
-          maxHeight: viewport.height
-            ? isKeyboardOpen
-              ? viewport.height - 16
-              : Math.max(260, viewport.height - 142)
-            : undefined,
-          backgroundColor: 'var(--glass-sheet-bg)',
-          border: '1px solid var(--glass-border)',
-          boxShadow: 'var(--glass-shadow)',
           pointerEvents: isOpen ? undefined : 'none',
         }}
       >
@@ -803,57 +808,69 @@ export const ModalSheet: React.FC<ModalSheetProps> = ({
           onPointerCancel={(e) => endDrag(e.clientY)}
         >
           <i />
-        </div>
-        <header
-          ref={headerRef}
-          className="ui-sheet-header flex items-center justify-between gap-3 px-5 py-3.5 border-b shrink-0"
-          style={{ borderColor: 'var(--border-subtle)' }}
-          onTouchStart={(e) => {
-            if ((e.target as HTMLElement).closest('button')) return;
-            beginDrag(e.touches[0].clientY);
-          }}
-          onTouchMove={(e) => moveDrag(e.touches[0].clientY)}
-          onTouchEnd={(e) => endDrag(e.changedTouches[0].clientY)}
-          onPointerDown={(e) => {
-            if ((e.target as HTMLElement).closest('button')) return;
-            beginDrag(e.clientY);
-            e.currentTarget.setPointerCapture?.(e.pointerId);
-          }}
-          onPointerMove={(e) => moveDrag(e.clientY)}
-          onPointerUp={(e) => endDrag(e.clientY)}
-          onPointerCancel={(e) => endDrag(e.clientY)}
-        >
-          <div className="min-w-0 flex-1">
-            <h2
-              id={titleId}
-              className="text-[1.1875rem] font-semibold m-0 leading-snug truncate"
-              style={{ color: 'var(--text-primary)' }}
+          {quickAdd && (
+            <button
+              type="button"
+              onClick={requestClose}
+              aria-label={UK_STRINGS.app.closeButton}
+              data-testid="modal-close-button"
+              className="sheet-close-btn ui-pressable"
             >
-              {title}
-            </h2>
-            {subtitle && (
-              <p
-                className="text-[0.875rem] m-0 mt-0.5 truncate"
-                style={{ color: 'var(--text-secondary)' }}
-              >
-                {subtitle}
-              </p>
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={requestClose}
-            aria-label={UK_STRINGS.app.closeButton}
-            data-testid="modal-close-button"
-            className="ui-round ui-pressable planui-floating-capsule shrink-0"
+              <X className="w-4 h-4" aria-hidden="true" />
+            </button>
+          )}
+        </div>
+        {!quickAdd && (
+          <header
+            ref={headerRef}
+            className="ui-sheet-header"
+            onTouchStart={(e) => {
+              if ((e.target as HTMLElement).closest('button')) return;
+              beginDrag(e.touches[0].clientY);
+            }}
+            onTouchMove={(e) => moveDrag(e.touches[0].clientY)}
+            onTouchEnd={(e) => endDrag(e.changedTouches[0].clientY)}
+            onPointerDown={(e) => {
+              if ((e.target as HTMLElement).closest('button')) return;
+              beginDrag(e.clientY);
+              e.currentTarget.setPointerCapture?.(e.pointerId);
+            }}
+            onPointerMove={(e) => moveDrag(e.clientY)}
+            onPointerUp={(e) => endDrag(e.clientY)}
+            onPointerCancel={(e) => endDrag(e.clientY)}
           >
-            <X className="w-4 h-4" aria-hidden="true" />
-          </button>
-        </header>
+            <div className="min-w-0 flex-1">
+              <h2
+                id={titleId}
+                className="text-[1.1875rem] font-semibold m-0 leading-snug truncate"
+                style={{ color: 'var(--text-primary)' }}
+              >
+                {title}
+              </h2>
+              {subtitle && (
+                <p
+                  className="text-[0.875rem] m-0 mt-0.5 truncate"
+                  style={{ color: 'var(--text-secondary)' }}
+                >
+                  {subtitle}
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={requestClose}
+              aria-label={UK_STRINGS.app.closeButton}
+              data-testid="modal-close-button"
+              className="sheet-close-btn ui-pressable shrink-0"
+            >
+              <X className="w-4 h-4" aria-hidden="true" />
+            </button>
+          </header>
+        )}
 
         <div
           ref={bodyRef}
-          className="ui-sheet-body p-5 overflow-y-auto space-y-4"
+          className="ui-sheet-body"
           onTouchStart={(e) => {
             if ((bodyRef.current?.scrollTop ?? 0) <= 0) {
               dragStateRef.current = {

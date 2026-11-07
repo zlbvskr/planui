@@ -36,7 +36,7 @@ export function HabitBand({
   const pressTimer = useRef<number | null>(null);
   const context: ModelContext = { folders, projects };
 
-  if (!habitsEnabled || !habits || habits.length === 0) {
+  if (!habits || habits.length === 0) {
     return null;
   }
 

@@ -99,13 +99,13 @@ export function PageHeader({
       data-compact="false"
       data-motion="idle"
     >
-        <div className="ui-page-title">
-          <div>
-            <h1>{title}</h1>
-            {subtitle && <p>{subtitle}</p>}
-          </div>
-          <div className="ui-header-actions">{actions}</div>
+      <div className="ui-page-title">
+        <h1>{title}</h1>
+        <div className="ui-header-actions" data-ui="subheader-actions">
+          {actions}
         </div>
+      </div>
+      {subtitle && <p className="ui-page-subtitle">{subtitle}</p>}
       {children}
     </header>
   );
@@ -828,7 +828,7 @@ export function ActionMenu({
 export function Slider({
   label,
   value,
-  min = 0,
+  min = 1,
   max = 10,
   step = 1,
   onChange,
@@ -845,6 +845,7 @@ export function Slider({
   const rootRef = useRef<HTMLDivElement>(null);
   const bubbleRef = useRef<HTMLSpanElement>(null);
   const snapFromCenterRef = useRef<number | null>(null);
+  const normalizedValue = value !== null && value >= min ? Math.min(max, value) : null;
 
   useIsomorphicLayoutEffect(() => {
     if (!dragging || !bubbleRef.current) return;
@@ -877,16 +878,19 @@ export function Slider({
       data-motion="idle"
       className="ui-slider"
       data-dragging={dragging}
-      data-unset={value === null}
+      data-unset={normalizedValue === null}
       style={
         {
-          '--slider-fill': value === null ? '0%' : `${((value - min) / (max - min)) * 100}%`,
+          '--slider-fill':
+            normalizedValue === null
+              ? '0%'
+              : `${((normalizedValue - min) / (max - min)) * 100}%`,
         } as React.CSSProperties
       }
     >
       <div>
         <label htmlFor={id}>{label}</label>
-        <output htmlFor={id}>{value ?? '-'}</output>
+        <output htmlFor={id}>{normalizedValue ?? '-'}</output>
         <ActionMenu
           label={`Дії: ${label}`}
           items={[{ label: 'Скинути', onSelect: () => onChange(null) }]}
@@ -894,13 +898,13 @@ export function Slider({
       </div>
       <input
         id={id}
-        aria-valuetext={value === null ? 'Не заповнено' : String(value)}
+        aria-valuetext={normalizedValue === null ? 'Не заповнено' : String(normalizedValue)}
         className="planui-slider"
         type="range"
         min={min}
         max={max}
         step={step}
-        value={value ?? (min + max) / 2}
+        value={normalizedValue ?? Math.round((min + max) / 2)}
         onChange={(e) => onChange(Number(e.target.value))}
         onPointerDown={(e) => {
           const r = e.currentTarget.getBoundingClientRect();
@@ -911,7 +915,7 @@ export function Slider({
               min + Math.round((((e.clientX - r.left) / r.width) * (max - min)) / step) * step
             )
           );
-          if (value === null && r.width > 0) {
+          if (normalizedValue === null && r.width > 0) {
             const targetX = ((nextVal - min) / (max - min)) * r.width;
             const centerX = r.width * 0.5;
             snapFromCenterRef.current = centerX - targetX;
@@ -927,9 +931,14 @@ export function Slider({
         <span
           ref={bubbleRef}
           className="ui-slider-bubble"
-          style={{ left: value === null ? '50%' : `${((value - min) / (max - min)) * 100}%` }}
+          style={{
+            left:
+              normalizedValue === null
+                ? '50%'
+                : `${((normalizedValue - min) / (max - min)) * 100}%`,
+          }}
         >
-          {value ?? '-'}
+          {normalizedValue ?? '-'}
         </span>
       )}
     </div>
@@ -938,10 +947,11 @@ export function Slider({
 
 export function Sheet({
   children,
+  quickAdd = false,
   ...props
-}: Omit<ModalSheetProps, 'quickAdd' | 'contract'>) {
+}: Omit<ModalSheetProps, 'contract'>) {
   return (
-    <ModalSheet {...props} quickAdd contract>
+    <ModalSheet {...props} quickAdd={quickAdd} contract>
       {children}
     </ModalSheet>
   );
@@ -1190,20 +1200,32 @@ export function DurationField({
 
 export function EmptyState({
   text,
-  icon = 'sparkles',
-  color = 'var(--color-today)',
+  icon = 'check-circle',
+  color = 'var(--color-empty-orb-end)',
+  compact = false,
   action,
   onAction,
   actionTestId,
+  secondaryAction,
+  onSecondaryAction,
+  secondaryActionTestId,
   suggestions,
+  testId,
+  'data-testid': dataTestId,
 }: {
   text: string;
   icon?: IconName;
   color?: string;
+  compact?: boolean;
   action?: string;
   onAction?: () => void;
   actionTestId?: string;
+  secondaryAction?: string;
+  onSecondaryAction?: () => void;
+  secondaryActionTestId?: string;
   suggestions?: readonly { label: string; onSelect: () => void; testId?: string }[];
+  testId?: string;
+  'data-testid'?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -1218,28 +1240,79 @@ export function EmptyState({
     });
   }, []);
 
+  // Never vivid blue on empty state orb: fallback to slate-lavender
+  const safeOrbColor =
+    !color || color === 'var(--color-today)' || color === 'var(--color-brand)'
+      ? 'var(--color-empty-orb-end)'
+      : color;
+
+  const actionsList: {
+    label: string;
+    onSelect?: () => void;
+    testId?: string;
+    variant: 'primary' | 'secondary';
+  }[] = [];
+
+  if (action) {
+    actionsList.push({
+      label: action,
+      onSelect: onAction,
+      testId: actionTestId,
+      variant: 'primary',
+    });
+  }
+  if (secondaryAction && actionsList.length < 2) {
+    actionsList.push({
+      label: secondaryAction,
+      onSelect: onSecondaryAction,
+      testId: secondaryActionTestId,
+      variant: 'secondary',
+    });
+  }
+  if (suggestions && suggestions.length > 0) {
+    for (const s of suggestions) {
+      if (actionsList.length >= 2) break;
+      actionsList.push({
+        label: s.label,
+        onSelect: s.onSelect,
+        testId: s.testId,
+        variant: actionsList.length === 0 ? 'primary' : 'secondary',
+      });
+    }
+  }
+
+  const resolvedTestId = testId ?? dataTestId;
+
   return (
-    <div ref={ref} data-motion="idle" className="ui-empty" data-ui="empty-state">
-      <Orb color={color} size={40} className="ui-icon-tile">
-        <Icon name={icon} size={18} />
-      </Orb>
-      <span className="ui-empty-text">{text}</span>
-      {action && (
-        <button type="button" data-testid={actionTestId} onClick={onAction}>
-          {action}
-        </button>
+    <div
+      ref={ref}
+      data-motion="idle"
+      data-testid={resolvedTestId}
+      className={`ui-empty ${compact ? 'ui-empty-compact' : ''}`.trim()}
+      data-ui="empty-state"
+    >
+      {!compact && (
+        <Orb color={safeOrbColor} size={72} className="ui-empty-orb">
+          <Icon name={icon} size={28} color="rgba(255, 255, 255, 0.9)" />
+        </Orb>
       )}
-      {suggestions && suggestions.length > 0 && (
-        <div className="ui-pill-row" data-ui="empty-suggestions">
-          {suggestions.map((s) => (
+      <p className="ui-empty-text">{text}</p>
+      {actionsList.length > 0 && (
+        <div className="ui-empty-actions" data-ui="empty-suggestions">
+          {actionsList.map((btn) => (
             <button
-              key={s.label}
+              key={btn.label}
               type="button"
-              className="ui-pill ui-pressable"
-              data-testid={s.testId}
-              onClick={s.onSelect}
+              data-testid={btn.testId}
+              data-variant={btn.variant}
+              onClick={btn.onSelect}
+              className={`ui-empty-btn ui-pressable ${
+                btn.variant === 'primary'
+                  ? 'ui-empty-btn-primary'
+                  : 'ui-empty-btn-secondary planui-floating-capsule'
+              }`}
             >
-              {s.label}
+              {btn.label}
             </button>
           ))}
         </div>

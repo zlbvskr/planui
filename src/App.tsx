@@ -637,8 +637,8 @@ export function App() {
         meSubView={meCtx.subView}
         calendarMode={calendarCtx.mode}
         isCalendarOpen={isCalendarOpen}
-        habitsEnabled={snapshot?.settings.modules?.habitsEnabled !== false}
-        wishlistEnabled={snapshot?.settings.modules?.wishlistEnabled !== false}
+        habitsEnabled={true}
+        wishlistEnabled={true}
         onSelectDestination={handleSelectDestination}
         onChangeTodayMode={(mode) => {
           setContexts((prev) =>
@@ -749,7 +749,7 @@ export function App() {
               onInspectHabitSession={session => { if(session.habitOccurrence) setHabitOccurrence({habitId: session.habitOccurrence.habitId,date: session.habitOccurrence.localDate}); }}
               habits={habits}
               habitEntries={habitEntries}
-              habitsEnabled={snapshot?.settings.modules?.habitsEnabled !== false}
+              habitsEnabled={true}
               repositories={repositories}
               onSelectDate={(nextDate) =>
                 setContexts((prev) =>

@@ -48,11 +48,7 @@ export function LifeAreasReviewView({ snapshot, zone, today, repositories, onCha
   const [planning, setPlanning] = useState<{ task: Task; reservationId?: string } | null>(null);
   const [roadmap, setRoadmap] = useState<RoadmapOwner | null>(null);
   const selected = areas.find(a => a.id === areaId && !a.mergedIntoId);
-  const desiredLifeOn = snapshot.settings.modules?.desiredLifeEnabled !== false;
-  const habitsOn = snapshot.settings.modules?.habitsEnabled !== false;
-  const links = projectLifeAreaLinks(snapshot).filter(
-    link => (link.kind !== 'inspiration' || desiredLifeOn) && (link.kind !== 'habit' || habitsOn)
-  );
+  const links = projectLifeAreaLinks(snapshot);
   const related = links.filter(link => link.effectiveId === areaId);
   const missing = STARTER_LIFE_AREAS.filter(([key]) => !areas.some(a => a.starterKeys?.includes(key)));
   const [lifeReviewOpen,setLifeReviewOpen]=useState(false);

@@ -557,7 +557,6 @@ export function CalendarWorkspaceView({
             repositories={repositories}
             onChanged={onDataChanged}
             onPlanHabit={onPlanHabit}
-            habitsEnabled={settings.modules?.habitsEnabled !== false}
           />
 
           {/* 2. Зміна (EventBars) */}

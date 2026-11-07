@@ -70,6 +70,7 @@ function DockContextualButton({
   onClick: () => void;
 }) {
   const press = usePressFeedback<HTMLButtonElement>(true);
+  const hideLabel = compactUnselected && !selected;
   return (
     <button
       ref={press.ref}
@@ -77,7 +78,8 @@ function DockContextualButton({
       data-motion="idle"
       aria-label={option.label}
       aria-pressed={selected}
-      data-compact-unselected={compactUnselected && !selected ? 'true' : undefined}
+      data-selected={selected ? 'true' : 'false'}
+      data-compact-unselected={hideLabel ? 'true' : undefined}
       data-testid={option.testId ?? `dock-context-${option.value}`}
       onClick={onClick}
       onPointerDown={press.onPointerDown}
@@ -86,8 +88,8 @@ function DockContextualButton({
       onPointerLeave={press.onPointerLeave}
       className="dock-ctx-btn ui-pressable"
     >
-      <Icon name={option.icon} size={15} />
-      <span className="dock-ctx-label">{option.label}</span>
+      <Icon name={option.icon} size={16} />
+      {!hideLabel && <span className="dock-ctx-label">{option.label}</span>}
     </button>
   );
 }
@@ -123,13 +125,15 @@ function DockTabButton({
       className="dock-tab-btn ui-pressable"
     >
       <Icon name={icon} size={20} strokeWidth={active ? 2 : 1.75} />
-      <span
-        className="dock-tab-label-wrap"
-        data-active={active ? 'true' : 'false'}
-        aria-hidden={!active ? 'true' : undefined}
-      >
-        <span className="dock-tab-label">{label}</span>
-      </span>
+      {active && (
+        <span
+          className="dock-tab-label-wrap"
+          data-active="true"
+          data-expanded="true"
+        >
+          <span className="dock-tab-label">{label}</span>
+        </span>
+      )}
     </button>
   );
 }
@@ -142,8 +146,6 @@ export const Dock: React.FC<DockProps> = ({
   calendarMode,
   isCalendarOpen,
   isEditorOpen,
-  habitsEnabled = true,
-  wishlistEnabled = true,
   onTabPress,
   onChangeTodayMode,
   onChangeDirectionsSubMode,
@@ -152,9 +154,10 @@ export const Dock: React.FC<DockProps> = ({
   onToggleCalendarWindow,
   onCenterCreateClick,
 }) => {
+  const dockRef = useRef<HTMLDivElement>(null);
   const calPress = usePressFeedback<HTMLButtonElement>(true);
   const orbPress = usePressFeedback<HTMLButtonElement>(true);
-  const [compactUnselected, setCompactUnselected] = useState(false);
+  const [todayNarrow, setTodayNarrow] = useState(false);
 
   const contextGroupKey = isCalendarOpen ? 'calendar' : activeDestination;
   const prevContextGroupRef = useRef(contextGroupKey);
@@ -167,14 +170,11 @@ export const Dock: React.FC<DockProps> = ({
       ];
     }
     if (activeDestination === 'today') {
-      const items: ContextualSegmentOption[] = [
+      return [
         { value: 'day', label: 'День', icon: 'sun' },
         { value: 'tasks', label: 'Завдання', icon: 'check' },
+        { value: 'habits', label: 'Звички', icon: 'repeat' },
       ];
-      if (habitsEnabled) {
-        items.push({ value: 'habits', label: 'Звички', icon: 'sparkles' });
-      }
-      return items;
     }
     if (activeDestination === 'directions') {
       return [
@@ -182,22 +182,18 @@ export const Dock: React.FC<DockProps> = ({
         { value: 'goals', label: 'Цілі', icon: 'target' },
       ];
     }
-    const meItems: ContextualSegmentOption[] = [
-      { value: 'records', label: 'Статистика', icon: 'sparkles' },
+    return [
+      { value: 'records', label: 'Статистика', icon: 'bar-chart' },
+      { value: 'wishlist', label: 'Бажання', icon: 'gift' },
+      { value: 'settings', label: 'Налаштування', icon: 'settings' },
     ];
-    if (wishlistEnabled) {
-      meItems.push({ value: 'wishlist', label: 'Список бажань', icon: 'heart' });
-    }
-    meItems.push({ value: 'settings', label: 'Налаштування', icon: 'settings' });
-    return meItems;
-  }, [isCalendarOpen, activeDestination, habitsEnabled, wishlistEnabled]);
+  }, [isCalendarOpen, activeDestination]);
 
   const activeContextValue = React.useMemo(() => {
     if (isCalendarOpen) {
       return calendarMode === 'week' ? 'week' : 'month';
     }
     if (activeDestination === 'today') {
-      if (todayMode === 'habits' && !habitsEnabled) return 'day';
       return todayMode ?? 'day';
     }
     if (activeDestination === 'directions') {
@@ -205,7 +201,7 @@ export const Dock: React.FC<DockProps> = ({
     }
     if (
       meSubView === 'records' ||
-      (meSubView === 'wishlist' && wishlistEnabled) ||
+      meSubView === 'wishlist' ||
       meSubView === 'settings'
     ) {
       return meSubView;
@@ -216,22 +212,46 @@ export const Dock: React.FC<DockProps> = ({
     calendarMode,
     activeDestination,
     todayMode,
-    habitsEnabled,
     directionsSubMode,
     meSubView,
-    wishlistEnabled,
   ]);
+
+  // In Я: at root nothing is selected (all 3 icon-only); when one is selected, selected shows icon + full label, unselected are icon-only.
+  // In 2-segment bars (Проєкти|Цілі, Місяць|Тиждень) and Сьогодні: show all labels when they fit.
+  const compactUnselected =
+    !isCalendarOpen &&
+    (activeDestination === 'me' ||
+      (activeDestination === 'today' && todayNarrow));
 
   const { containerRef: ctxTrackRef, thumbRef: ctxThumbRef } =
     useSelectionThumb(activeContextValue || '__none__', {
       dynamicLayout: true,
-      layoutKey: contextGroupKey,
+      layoutKey: `${contextGroupKey}:${activeContextValue}:${compactUnselected ? 'compact' : 'full'}`,
     });
 
   const { containerRef: tabTrackRef, thumbRef: tabThumbRef } =
     useSelectionThumb(activeDestination, {
       dynamicLayout: true,
     });
+
+  // Measure dock height into --dock-h (and --dock-height) via ResizeObserver
+  useIsomorphicLayoutEffect(() => {
+    const el = dockRef.current;
+    if (!el || typeof document === 'undefined') return;
+    const updateDockHeight = () => {
+      const h = Math.round(el.getBoundingClientRect().height);
+      if (h > 0) {
+        document.documentElement.style.setProperty('--dock-h', `${h}px`);
+        document.documentElement.style.setProperty('--dock-height', `${h}px`);
+      }
+    };
+    updateDockHeight();
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(updateDockHeight);
+      ro.observe(el);
+      return () => ro.disconnect();
+    }
+  }, []);
 
   // Animate contextual bar segments when context group changes (tab switch or calendar open)
   useIsomorphicLayoutEffect(() => {
@@ -271,10 +291,9 @@ export const Dock: React.FC<DockProps> = ({
   useIsomorphicLayoutEffect(() => {
     const track = ctxTrackRef.current;
     if (!track) return;
-    const totalChars = contextualOptions.reduce((sum, o) => sum + o.label.length, 0);
     const updateFit = () => {
       const w = track.clientWidth || 260;
-      setCompactUnselected(contextualOptions.length >= 3 && (w < 290 || totalChars > 20));
+      setTodayNarrow(w < 215);
     };
     updateFit();
     if (typeof ResizeObserver !== 'undefined') {
@@ -282,7 +301,7 @@ export const Dock: React.FC<DockProps> = ({
       ro.observe(track);
       return () => ro.disconnect();
     }
-  }, [contextualOptions, ctxTrackRef]);
+  }, [ctxTrackRef]);
 
   const handleContextSelect = (val: string) => {
     if (isCalendarOpen) {
@@ -315,134 +334,146 @@ export const Dock: React.FC<DockProps> = ({
   };
 
   return (
-    <div
-      className="planui-dock"
-      data-ui="dock"
-      data-testid="bottom-dock"
-    >
+    <>
+      <div className="planui-dock-fade" aria-hidden="true" />
       <div
-        className="planui-dock-left planui-floating-capsule"
-        data-ui="dock-left"
+        ref={dockRef}
+        className="planui-dock"
+        data-ui="dock"
+        data-testid="bottom-dock"
       >
-        {/* Row 1: Contextual bar (segmented 40px) */}
         <div
-          ref={ctxTrackRef as React.RefObject<HTMLDivElement>}
-          data-motion="idle"
-          data-ui="dock-contextual-bar"
-          data-testid="dock-contextual-bar"
-          role="group"
-          aria-label="Контекстний перемикач"
-          className="planui-dock-context-track"
+          className="planui-dock-left planui-floating-capsule"
+          data-ui="dock-left"
         >
-          <span
-            ref={ctxThumbRef}
-            aria-hidden="true"
-            data-ui="selection-thumb"
-            className="ui-selection-thumb planui-dock-context-thumb"
-            style={{ opacity: activeContextValue ? 1 : 0 }}
-          />
-          {contextualOptions.map((opt) => (
-            <DockContextualButton
-              key={opt.value}
-              option={opt}
-              selected={opt.value === activeContextValue}
-              compactUnselected={compactUnselected}
-              onClick={() => handleContextSelect(opt.value)}
+          {/* Row 1: Contextual bar (segmented 40px) */}
+          <div
+            ref={ctxTrackRef as React.RefObject<HTMLDivElement>}
+            data-motion="idle"
+            data-ui="dock-contextual-bar"
+            data-testid="dock-contextual-bar"
+            data-context-group={contextGroupKey}
+            data-has-selection={activeContextValue ? 'true' : 'false'}
+            role="group"
+            aria-label="Контекстний перемикач"
+            className="planui-dock-context-track"
+          >
+            <span
+              ref={ctxThumbRef}
+              aria-hidden="true"
+              data-ui="selection-thumb"
+              className="ui-selection-thumb planui-dock-context-thumb"
+              style={{ opacity: activeContextValue ? 1 : 0 }}
             />
-          ))}
+            {contextualOptions.map((opt) => (
+              <DockContextualButton
+                key={opt.value}
+                option={opt}
+                selected={opt.value === activeContextValue}
+                compactUnselected={compactUnselected}
+                onClick={() => handleContextSelect(opt.value)}
+              />
+            ))}
+          </div>
+
+          {/* Row 2: Tab capsule (height 52px) */}
+          <nav
+            ref={tabTrackRef as React.RefObject<HTMLElement>}
+            data-motion="idle"
+            aria-label={UK_STRINGS.app.mainNavigationAria}
+            data-ui="dock-tabs"
+            className="planui-dock-tabs"
+          >
+            <span
+              ref={tabThumbRef}
+              aria-hidden="true"
+              data-ui="selection-thumb"
+              className="ui-selection-thumb planui-dock-tab-thumb"
+            />
+            {PRIMARY_NAV_ITEMS.map((item) => (
+              <DockTabButton
+                key={item.id}
+                id={item.id}
+                label={item.labelUk}
+                icon={tabIcons[item.id]}
+                active={activeDestination === item.id}
+                onClick={() => onTabPress(item.id)}
+              />
+            ))}
+          </nav>
         </div>
 
-        {/* Row 2: Tab capsule (56px) */}
-        <nav
-          ref={tabTrackRef as React.RefObject<HTMLElement>}
-          data-motion="idle"
-          aria-label={UK_STRINGS.app.mainNavigationAria}
-          data-ui="dock-tabs"
-          className="planui-dock-tabs"
-        >
-          <span
-            ref={tabThumbRef}
-            aria-hidden="true"
-            data-ui="selection-thumb"
-            className="ui-selection-thumb planui-dock-tab-thumb"
-          />
-          {PRIMARY_NAV_ITEMS.map((item) => (
-            <DockTabButton
-              key={item.id}
-              id={item.id}
-              label={item.labelUk}
-              icon={tabIcons[item.id]}
-              active={activeDestination === item.id}
-              onClick={() => onTabPress(item.id)}
-            />
-          ))}
-        </nav>
-      </div>
-
-      {/* Right vertical stack: Calendar button (48px) above + orb (56px) */}
-      <div className="planui-dock-right" data-ui="dock-right">
-        <button
-          ref={calPress.ref}
-          type="button"
-          data-motion="idle"
-          aria-label={isCalendarOpen ? 'Закрити календар' : 'Календар'}
-          aria-pressed={isCalendarOpen}
-          data-open={isCalendarOpen ? 'true' : 'false'}
-          data-testid="dock-calendar-button"
-          onClick={onToggleCalendarWindow}
-          onPointerDown={calPress.onPointerDown}
-          onPointerUp={calPress.onPointerUp}
-          onPointerCancel={calPress.onPointerCancel}
-          onPointerLeave={calPress.onPointerLeave}
-          className="planui-dock-calendar-btn ui-pressable planui-floating-capsule"
-        >
-          <span
-            className="dock-cal-icon-stack"
+        {/* Right vertical stack: Calendar button (48px) above + orb (56px) */}
+        <div className="planui-dock-right" data-ui="dock-right">
+          <button
+            ref={calPress.ref}
+            type="button"
+            data-motion="idle"
+            aria-label={isCalendarOpen ? 'Закрити календар' : 'Календар'}
+            aria-pressed={isCalendarOpen}
             data-open={isCalendarOpen ? 'true' : 'false'}
+            data-testid="dock-calendar-button"
+            onClick={onToggleCalendarWindow}
+            onPointerDown={calPress.onPointerDown}
+            onPointerUp={calPress.onPointerUp}
+            onPointerCancel={calPress.onPointerCancel}
+            onPointerLeave={calPress.onPointerLeave}
+            className="planui-dock-calendar-btn ui-pressable planui-floating-capsule"
           >
-            <span className="dock-cal-icon-cal" aria-hidden={isCalendarOpen ? 'true' : undefined}>
-              <Icon name="calendar" size={20} />
+            <span
+              className="dock-cal-icon-stack"
+              data-open={isCalendarOpen ? 'true' : 'false'}
+            >
+              <span
+                className="dock-cal-icon dock-cal-icon-cal"
+                aria-hidden={isCalendarOpen ? 'true' : undefined}
+              >
+                <Icon name="calendar" size={20} />
+              </span>
+              <span
+                className="dock-cal-icon dock-cal-icon-close"
+                aria-hidden={!isCalendarOpen ? 'true' : undefined}
+              >
+                <Icon name="x" size={20} />
+              </span>
             </span>
-            <span className="dock-cal-icon-close" aria-hidden={!isCalendarOpen ? 'true' : undefined}>
-              <Icon name="x" size={20} />
-            </span>
-          </span>
-        </button>
+          </button>
 
-        <button
-          ref={orbPress.ref}
-          type="button"
-          data-motion="idle"
-          data-ui="create-orb"
-          data-open={isEditorOpen ? 'true' : 'false'}
-          aria-label={
-            isEditorOpen
-              ? 'Закрити створення'
-              : UK_STRINGS.app.globalCreateButtonAria
-          }
-          aria-expanded={isEditorOpen}
-          data-testid="nav-create-Action"
-          onClick={(e) => {
-            captureOrbRect(e.currentTarget);
-            onCenterCreateClick();
-          }}
-          onPointerDown={orbPress.onPointerDown}
-          onPointerUp={orbPress.onPointerUp}
-          onPointerCancel={orbPress.onPointerCancel}
-          onPointerLeave={orbPress.onPointerLeave}
-          className="planui-dock-orb ui-pressable"
-        >
-          <span
-            className="planui-dock-orb-glyph"
-            style={{
-              transform: isEditorOpen ? 'rotate(45deg)' : 'rotate(0deg)',
+          <button
+            ref={orbPress.ref}
+            type="button"
+            data-motion="idle"
+            data-ui="create-orb"
+            data-open={isEditorOpen ? 'true' : 'false'}
+            aria-label={
+              isEditorOpen
+                ? 'Закрити створення'
+                : UK_STRINGS.app.globalCreateButtonAria
+            }
+            aria-expanded={isEditorOpen}
+            data-testid="nav-create-Action"
+            onClick={(e) => {
+              captureOrbRect(e.currentTarget);
+              onCenterCreateClick();
             }}
+            onPointerDown={orbPress.onPointerDown}
+            onPointerUp={orbPress.onPointerUp}
+            onPointerCancel={orbPress.onPointerCancel}
+            onPointerLeave={orbPress.onPointerLeave}
+            className="planui-dock-orb ui-pressable"
           >
-            <Icon name="plus" size={24} />
-          </span>
-        </button>
+            <span
+              className="planui-dock-orb-glyph"
+              style={{
+                transform: isEditorOpen ? 'rotate(45deg)' : 'rotate(0deg)',
+              }}
+            >
+              <Icon name="plus" size={24} />
+            </span>
+          </button>
+        </div>
       </div>
-    </div>
+    </>
   );
 };
 
@@ -688,7 +719,7 @@ export const CalendarWindow: React.FC<CalendarWindowProps> = ({
             aria-label="Закрити календар"
             data-testid="calendar-window-close"
             onClick={onClose}
-            className="ui-round ui-pressable planui-floating-capsule"
+            className="sheet-close-btn ui-pressable"
           >
             <Icon name="x" size={18} />
           </button>
@@ -742,8 +773,6 @@ export const FloatingShell: React.FC<FloatingShellProps> = ({
   meSubView = 'overview',
   calendarMode = 'month',
   isCalendarOpen = false,
-  habitsEnabled = true,
-  wishlistEnabled = true,
   onSelectDestination,
   onChangeTodayMode = () => {},
   onChangeDirectionsSubMode = () => {},
@@ -761,6 +790,33 @@ export const FloatingShell: React.FC<FloatingShellProps> = ({
     activeDestination === 'directions' || activeDestination === 'me'
       ? activeDestination
       : 'today';
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+    const root = document.documentElement;
+    const updateVv = () => {
+      const v = window.visualViewport;
+      if (!v) return;
+      const nextHeight = Math.round(v.height);
+      const nextBottom = Math.max(0, Math.round(window.innerHeight - v.height - v.offsetTop));
+      if (nextBottom > 60) {
+        root.setAttribute('data-keyboard-open', 'true');
+        root.style.setProperty('--kb-offset', `${nextBottom}px`);
+        root.style.setProperty('--vv-height', `${nextHeight}px`);
+      } else {
+        root.removeAttribute('data-keyboard-open');
+        root.style.setProperty('--kb-offset', '0px');
+        root.style.removeProperty('--vv-height');
+      }
+    };
+    updateVv();
+    window.visualViewport?.addEventListener('resize', updateVv);
+    window.visualViewport?.addEventListener('scroll', updateVv);
+    return () => {
+      window.visualViewport?.removeEventListener('resize', updateVv);
+      window.visualViewport?.removeEventListener('scroll', updateVv);
+    };
+  }, []);
 
   const handleCalendarButtonPress = () => {
     // Requirement 6: The calendar button also closes another open overlay first.
@@ -816,8 +872,6 @@ export const FloatingShell: React.FC<FloatingShellProps> = ({
         calendarMode={calendarMode}
         isCalendarOpen={isCalendarOpen}
         isEditorOpen={isEditorOpen}
-        habitsEnabled={habitsEnabled}
-        wishlistEnabled={wishlistEnabled}
         onTabPress={onSelectDestination}
         onChangeTodayMode={onChangeTodayMode}
         onChangeDirectionsSubMode={onChangeDirectionsSubMode}

@@ -10,6 +10,70 @@ import {
   Project,
   Task,
 } from './types';
+import type { IconName } from '../ui/icons';
+
+export const AREA_KEY_ICONS: Record<string, IconName> = {
+  physical: 'heart-pulse',
+  mental: 'brain',
+  recovery: 'moon',
+  relationships: 'users',
+  creativity: 'palette',
+  work: 'briefcase',
+  finance: 'wallet',
+  finances: 'wallet',
+  learning: 'book-open',
+  home: 'home',
+  meaning: 'compass',
+};
+
+export const CANONICAL_AREA_ICONS: IconName[] = [
+  'heart-pulse',
+  'brain',
+  'moon',
+  'users',
+  'palette',
+  'briefcase',
+  'wallet',
+  'book-open',
+  'home',
+  'compass',
+];
+
+export function getAreaIcon(
+  area?: { starterKeys?: readonly string[] | string[]; questionTextUk?: string; name?: string; id?: string } | null,
+  fallbackIndex?: number
+): IconName {
+  if (!area) {
+    if (typeof fallbackIndex === 'number' && fallbackIndex >= 0) {
+      return CANONICAL_AREA_ICONS[fallbackIndex % CANONICAL_AREA_ICONS.length];
+    }
+    return 'compass';
+  }
+
+  if (area.starterKeys && area.starterKeys.length > 0) {
+    for (const key of area.starterKeys) {
+      const icon = AREA_KEY_ICONS[key.toLowerCase()];
+      if (icon) return icon;
+    }
+  }
+
+  const text = (area.questionTextUk ?? area.name ?? '').toLowerCase();
+  if (text.includes('фізичн') || text.includes('здоров')) return 'heart-pulse';
+  if (text.includes('психічн') || text.includes('ментал')) return 'brain';
+  if (text.includes('відновлен') || text.includes('відпочин')) return 'moon';
+  if (text.includes('стосунк') || text.includes('близьк')) return 'users';
+  if (text.includes('творч') || text.includes('самовираж')) return 'palette';
+  if (text.includes('робот') || text.includes('профес') || text.includes('кар’єр')) return 'briefcase';
+  if (text.includes('фінанс') || text.includes('грош') || text.includes('матеріал')) return 'wallet';
+  if (text.includes('навчан') || text.includes('розвит')) return 'book-open';
+  if (text.includes('дім') || text.includes('побут') || text.includes('середовищ')) return 'home';
+  if (text.includes('сенс') || text.includes('цінност') || text.includes('свобод')) return 'compass';
+
+  if (typeof fallbackIndex === 'number' && fallbackIndex >= 0) {
+    return CANONICAL_AREA_ICONS[fallbackIndex % CANONICAL_AREA_ICONS.length];
+  }
+  return 'compass';
+}
 
 /**
  * Context passed to model helpers to resolve inherited attributes.

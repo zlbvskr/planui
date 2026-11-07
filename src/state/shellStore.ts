@@ -494,45 +494,24 @@ export function buildInitialCreationContext(
  */
 export function getContextualCreationActions(
   activeDestination: PrimaryDestinationId | 'plans' | 'habits',
-  contextsOrModules?: DestinationContextMap | {
-    habitsEnabled?: boolean;
-    stateCheckInsEnabled?: boolean;
-    desiredLifeEnabled?: boolean;
-    wishlistEnabled?: boolean;
-  },
-  maybeModules?: {
-    habitsEnabled?: boolean;
-    stateCheckInsEnabled?: boolean;
-    desiredLifeEnabled?: boolean;
-    wishlistEnabled?: boolean;
-  }
+  enabledModulesOrContexts?: DestinationContextMap | object | null,
+  maybeContexts?: DestinationContextMap
 ): CreationActionDescriptor[] {
-  const isModulesObject = (obj: any): obj is { habitsEnabled?: boolean } =>
-    obj && typeof obj === 'object' && ('habitsEnabled' in obj || 'stateCheckInsEnabled' in obj || 'desiredLifeEnabled' in obj || 'wishlistEnabled' in obj);
-
-  const contexts = isModulesObject(contextsOrModules)
-    ? undefined
-    : (contextsOrModules as DestinationContextMap | undefined);
-  const enabledModules = isModulesObject(contextsOrModules)
-    ? contextsOrModules
-    : maybeModules;
-
+  const contexts =
+    maybeContexts ??
+    (enabledModulesOrContexts && 'today' in enabledModulesOrContexts
+      ? (enabledModulesOrContexts as DestinationContextMap)
+      : undefined);
   const implemented = CREATION_ACTION_REGISTRY.filter((a) => a.implementedInCurrentStage);
   const byKind = new Map(implemented.map((a) => [a.kind, a]));
 
-  const habitsOn = enabledModules?.habitsEnabled !== false;
-  const stateCheckInsOn = enabledModules?.stateCheckInsEnabled !== false;
-  const desiredLifeOn = enabledModules?.desiredLifeEnabled !== false;
-  const wishlistOn = enabledModules?.wishlistEnabled !== false;
-
   if (activeDestination === 'today' || activeDestination === 'habits') {
-    const order: ImplementedCreationActionKind[] = ['task', 'event'];
-    if (habitsOn) order.push('habit');
+    const order: ImplementedCreationActionKind[] = ['task', 'event', 'habit'];
     return order.map((k) => byKind.get(k)!).filter(Boolean);
   }
 
   if (activeDestination === 'calendar') {
-    if (contexts?.calendar.mode === 'work_schedule') {
+    if (contexts?.calendar?.mode === 'work_schedule') {
       const order: ImplementedCreationActionKind[] = [
         'shift',
         'day_off',
@@ -572,17 +551,12 @@ export function getContextualCreationActions(
   }
 
   if (activeDestination === 'me') {
-    const subView = contexts?.me.subView ?? 'overview';
+    const subView = contexts?.me?.subView ?? 'overview';
     if (subView === 'wishlist') {
-      const order: ImplementedCreationActionKind[] = [];
-      if (wishlistOn) {
-        order.push('wish', 'folder');
-      }
+      const order: ImplementedCreationActionKind[] = ['wish', 'folder'];
       return order.map((k) => byKind.get(k)!).filter(Boolean);
     }
-    const order: ImplementedCreationActionKind[] = ['task'];
-    if (habitsOn) order.push('habit');
-    if (wishlistOn) order.push('wish');
+    const order: ImplementedCreationActionKind[] = ['task', 'habit', 'wish'];
     return order.map((k) => byKind.get(k)!).filter(Boolean);
   }
 
@@ -593,6 +567,40 @@ export function getContextualCreationActions(
 export const THEME_BOOTSTRAP_STORAGE_KEY = 'planui_theme_bootstrap';
 export const REDUCED_MOTION_STORAGE_KEY = 'planui_reduced_motion';
 export const REDUCED_TRANSPARENCY_STORAGE_KEY = 'planui_reduced_transparency';
+
+export const TEXT_SCALE_STEPS = [0.85, 0.92, 1, 1.12, 1.25] as const;
+export type TextScaleStep = (typeof TEXT_SCALE_STEPS)[number];
+
+export function resolveTextScaleValue(
+  textScale?: 'smallest' | 'smaller' | 'standard' | 'larger' | 'largest' | number | string | null
+): TextScaleStep {
+  if (typeof textScale === 'number') {
+    if (textScale <= 0.88) return 0.85;
+    if (textScale <= 0.96) return 0.92;
+    if (textScale <= 1.06) return 1;
+    if (textScale <= 1.18) return 1.12;
+    return 1.25;
+  }
+  if (typeof textScale === 'string') {
+    const parsed = Number(textScale);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return resolveTextScaleValue(parsed);
+    }
+  }
+  switch (textScale) {
+    case 'smallest':
+      return 0.85;
+    case 'smaller':
+      return 0.92;
+    case 'larger':
+      return 1.12;
+    case 'largest':
+      return 1.25;
+    case 'standard':
+    default:
+      return 1;
+  }
+}
 
 export function resolveEffectiveTheme(
   preference: ThemePreference,
@@ -607,7 +615,7 @@ export function applyThemeAndAccessibilityToDocument(
   themePreference: ThemePreference,
   reducedMotion: boolean,
   reducedTransparency: boolean,
-  textScale?: 'standard' | 'larger' | 'largest' | number | null
+  textScale?: 'smallest' | 'smaller' | 'standard' | 'larger' | 'largest' | number | string | null
 ): 'light' | 'dark' {
   if (typeof window === 'undefined' || typeof document === 'undefined') {
     return resolveEffectiveTheme(themePreference, false);
@@ -635,14 +643,7 @@ export function applyThemeAndAccessibilityToDocument(
   }
 
   if (textScale !== undefined && textScale !== null) {
-    const scaleVal =
-      textScale === 'largest'
-        ? 1.25
-        : textScale === 'larger'
-        ? 1.12
-        : typeof textScale === 'number'
-        ? textScale
-        : 1;
+    const scaleVal = resolveTextScaleValue(textScale);
     root.style.setProperty('--text-scale', String(scaleVal));
   }
 

@@ -1,0 +1,37 @@
+{
+  "id": "./",
+  "name": "PLANUI — Особистий локальний планувальник",
+  "short_name": "PLANUI",
+  "description": "Приватний локальний планувальник розкладу, справ, змін, звичок, особистого простору та списку бажань.",
+  "lang": "uk",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#FAF9FD",
+  "theme_color": "#FAF9FD",
+  "categories": [
+    "productivity"
+  ],
+  "icons": [
+    {
+      "src": "pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "pwa-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
